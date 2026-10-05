@@ -1,0 +1,38 @@
+# C++ / CUDA build output
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.o
+*.obj
+*.a
+*.so
+*.lib
+*.dll
+*.exe
+*.out
+*.ptx
+*.cubin
+*.fatbin
+
+# ROS2 colcon workspace
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
