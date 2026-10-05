@@ -2,13 +2,15 @@
 
 Status: design draft, 2026-10-05. Model: `optics/spectrograph_model.py` (Optiland 0.6, ideal thin lenses). Results: `optics/model_output/results.txt` and the layout PNGs. Diagram: `docs/optical_train_v2.svg`.
 
-## 1. What the model changed
+This is the full bill of materials for building the rig from scratch. Every part has a row, including the computer, robot arm and electronics. Where a part has a recommended pick and a cheaper budget pick, both are listed. Skip any row you already have.
 
-I built the earlier optical train in Optiland and traced it. Three findings change the parts list.
+## 1. Design findings from the optical model
 
-1. **The stock Pi NoIR v2 lens doesn't work as the spectrograph camera.** Its entrance pupil is 1.5 mm wide, while the collimated beam from a 25 mm collimator at f/4 is about 6 mm. Only 8% of the light reaches the sensor at the center of the line. At the ends of the line the light walks off the pupil entirely, so 0% gets through. The 650-pixel line I quoted earlier would really be a short bright stub. The fix is an IMX219 NoIR board with an **M12 lens mount** and a 12 mm f/2 lens, which has a 6 mm pupil. It is the same sensor and driver, so it still plugs into the Jetson Nano CSI port.
-2. **A field lens at the slit is needed.** Without one, the bundles from the ends of the slit leave the collimator at an angle and miss the camera lens, so the line ends get 12–14% of the light. A small lens with f ≈ 18 mm right behind the slit makes the chief rays parallel. Every point on the slit then lands on the same patch of the camera lens, which brings the line ends up to 98–100%.
-3. **Expect about 32 px of smile and about 11 px of keystone.** Smile means a single wavelength traces a curve rather than a straight row across the sensor. It comes from conical diffraction at the grating and is unavoidable with a flat transmission grating. Keystone means the line length changes slightly with wavelength. You calibrate both once with lamp lines, then remap every frame with a warp. Writing that warp as a CUDA kernel is a good first CUDA exercise.
+The obvious cheap build puts a slit, collimator and grating in front of a stock Raspberry Pi NoIR camera. The Optiland model shows that this doesn't work, and it points to three design rules.
+
+1. **Don't use a camera with a tiny fixed lens.** The Pi NoIR v2's stock lens has a 1.5 mm entrance pupil, while the collimated beam from a 25 mm collimator at f/4 is about 6 mm wide. Only 8% of the light reaches the sensor at the center of the line. At the ends of the line, the light walks off the pupil entirely and 0% gets through. Use an IMX219 NoIR board with an **M12 lens mount** and a 12 mm f/2 lens, which has a 6 mm pupil. It is the same sensor and driver, so it still plugs into a Raspberry Pi or Jetson CSI port.
+2. **Put a field lens at the slit.** Without one, the bundles from the ends of the slit leave the collimator at an angle and miss the camera lens, so the line ends get 12–14% of the light. A small lens with f ≈ 18 mm right behind the slit makes the chief rays parallel. Every point on the slit then lands on the same patch of the camera lens, and the line ends get 98–100%.
+3. **Plan to calibrate smile and keystone.** Expect about 32 px of smile, meaning one wavelength traces a curve across the sensor rather than a straight row. Conical diffraction at the grating causes it, and every flat transmission grating has it. Expect about 11 px of keystone, meaning the line length changes slightly with wavelength. You calibrate both once with lamp lines, then remap every frame with a warp. Writing that warp as a CUDA kernel makes a good first CUDA exercise.
 
 | Config (ideal lenses) | Light at line center | Light at line ends | Dispersion | Spectral res. | Pixels along line |
 |---|---|---|---|---|---|
@@ -38,63 +40,85 @@ Scene coverage at 150 mm: the line is 42 mm long and 0.42 mm thick. About 150 li
 
 - **Objective:** Images the scene onto the slit. Any M12 lens works, as long as it has no IR-cut filter. The f/4 stop matches the beam the camera lens can accept, so a faster lens only adds stray light.
 - **Slit:** Picks one line of the scene. Narrower gives better spectral resolution and less light.
-- **Field lens:** Doesn't change focus. It only steers each bundle so all of them hit the camera lens (finding 2).
+- **Field lens:** Doesn't change focus. It only steers each bundle so all of them hit the camera lens (rule 2).
 - **Collimator:** Turns each slit point into a parallel beam, so the grating sees one clean angle.
 - **Grating:** Spreads wavelength by angle. At 500 l/mm, 500–1000 nm spans 14.5°–30°. The camera sits at 22°.
 - **Long-pass filter:** The grating also throws a 2nd order at twice the angle-per-nm. Without the filter, 2nd-order 400–500 nm light lands on top of 1st-order 800–1000 nm.
 
 ## 3. Parts list
 
-Every row names a vendor and a part number. Prices marked ✓ were checked on the vendor page on 2026-10-05. Prices marked ~ are typical street prices I did not check.
+Prices marked ✓ were checked on the vendor page on 2026-10-05. Prices marked ~ are typical street prices that were not checked.
 
-### Spectrograph optics
+### 3.1 Spectrograph optics
 
-| # | Part | Vendor and part number | Price | Why this one |
+| # | Part | Recommended | Budget | Notes |
 |---|---|---|---|---|
-| 1 | Spectrograph camera | RobotShop: Arducam NoIR 8 MP IMX219 with M12 lens (LS1820) | $61.18 ✓ | NoIR IMX219 with an M12 thread, and the same 15-pin CSI as the Pi v2, so the Nano's stock IMX219 driver works. Avoid Arducam B0183 (fixed IR-cut filter) and B0187 (discontinued). |
-| 2 | Camera lens, 12 mm f/2 | Commonlands **CIL122-F2.0-M12ANIR** (the "ANIR" suffix means no IR-cut filter) | $59 ✓ | IR-corrected, so 500 nm and 900 nm focus on nearly the same plane. Budget option: Arducam LN065 (M2512ZH03), 12 mm f/2, $12.99 ✓, but its listing doesn't say whether it has an IR-cut filter, so check on arrival. |
-| 3 | Objective, 16 mm f/2 (stop to f/4) | Commonlands **CIL161-F2.0-M12ANIR** | $39 ✓ | The objective's focus has to hold across the whole band, otherwise each wavelength images a slightly different line. Avoid Arducam LN001 16 mm: it has a 650 nm IR-cut filter. |
-| 4 | Collimator, 25 mm f/2 | Arducam / UCTRONICS **LN016** (M2025ZH01) | $17.99 ✓ | The listing says "without IR filter". Its holder is not included. |
-| 5 | M12 lens holders ×2 (objective, collimator) | Arducam M12 lens holder, from the "compatible holders" list on the LN016 page, or 3D-print one | ~$5 each | Any metal M12×0.5 holder works. |
-| 6 | Field lens, f = 18 mm | Edmund Optics **#32-008**, 9 mm dia × 18 mm FL plano-convex, uncoated N-BK7 | $30.50 ✓ | Exactly the f ≈ 18 mm the model wants. Put the flat side toward the slit. |
-| 7 | Slit, 50 µm | DIY: 2 single-edge razor blades + a 0.05 mm (0.002") blade from a feeler-gauge set (any hardware store) | ~$8 | Upgrade: Thorlabs **S50LK** (Ø1" mounted, 50 µm × 10 mm). I couldn't load its price, so check it before ordering. Don't buy the S50RD: it's only 3 mm long. |
-| 8 | Grating, 500 l/mm | Bartovation 500 lines/mm linear sheet, 1 ft × 6 in | $12.38 ✓ | Alternative: Edmund **#54-509** (12,700 lines/inch = 500 l/mm, 2 sheets), $19.75 ✓. EO only rates it to 700 nm, but holographic film works further into the NIR at lower efficiency. |
-| 9 | Long-pass filter ≥500 nm | Cheap: any 530 nm "IR photography" screw-in filter (K&F Concept or Zomei, 37 mm). Lab grade: Thorlabs **FELH0500** (Ø25 mm) | ~$15 / price not checked | Blocks 2nd-order light. |
-| 10 | Scan mirror | Edmund Optics **#43-792**, 25 × 25 mm enhanced-aluminum first-surface mirror | $31.00 ✓ | A first-surface mirror has no ghost reflection. EO #15-490 (rhodium) costs $47.75 and isn't needed. |
+| 1 | Spectrograph camera | RobotShop: Arducam NoIR 8 MP IMX219 with M12 lens (LS1820), $61.18 ✓ | Same | NoIR IMX219 with an M12 thread and the Pi v2's 15-pin CSI connector. It works on a Raspberry Pi and on Jetson boards with the stock IMX219 driver. Avoid Arducam B0183, which has a fixed IR-cut filter, and B0187, which is discontinued. Experimental alternative: a Pi NoIR v2 ($15.95 ✓ at PiShop) with its lens removed and an M12 holder glued on. It risks dust on the bare sensor and a fiddly alignment. |
+| 2 | Camera lens, 12 mm f/2 | Commonlands **CIL122-F2.0-M12ANIR**, $59 ✓ | Arducam **LN065** (M2512ZH03), $12.99 ✓ | The "ANIR" suffix means no IR-cut filter. The Commonlands lens is IR-corrected, so 500 nm and 900 nm focus on nearly the same plane. The LN065 listing doesn't say whether it has an IR-cut filter, so check it on arrival. |
+| 3 | Objective, 16 mm f/2 (stop to f/4) | Commonlands **CIL161-F2.0-M12ANIR**, $39 ✓ | Same | The objective's focus has to hold across the whole band, or each wavelength images a slightly different line. Avoid Arducam LN001 16 mm, which has a 650 nm IR-cut filter. |
+| 4 | Collimator, 25 mm f/2 | Arducam / UCTRONICS **LN016** (M2025ZH01), $17.99 ✓ | Same | The listing says "without IR filter". The holder is not included. |
+| 5 | M12 lens holders ×2 (objective, collimator) | Arducam metal M12 holder, from the "compatible holders" list on the LN016 page, ~$5 each | 3D-printed M12×0.5 holder, ~$0 | |
+| 6 | Field lens, f = 18 mm | Edmund Optics **#32-008**, 9 mm dia × 18 mm FL plano-convex, uncoated N-BK7, $30.50 ✓ | Any 15–20 mm PCX from a surplus lens assortment, ~$10 | Put the flat side toward the slit. To check an unknown lens, measure its focal length by focusing a distant light. |
+| 7 | Slit, 50 µm | DIY: 2 single-edge razor blades + a 0.05 mm (0.002") feeler-gauge blade as a spacer, ~$8 | Same | Set the gap with the feeler gauge, glue the blades, and pull the gauge out once the glue sets. The lab-grade option is in row 29. |
+| 8 | Grating, 500 l/mm | Edmund **#54-509** (12,700 lines/inch, 2 sheets), $19.75 ✓ | Bartovation 500 lines/mm linear sheet, 1 ft × 6 in, $12.38 ✓ | Edmund only rates #54-509 to 700 nm, but holographic film keeps working into the NIR at lower efficiency. A 1000 l/mm grating only covers about 400–700 nm in this layout. |
+| 9 | Long-pass filter ≥500 nm | Any 530 nm "IR photography" screw-in filter (K&F Concept or Zomei, 37 mm), ~$15 | Same | It blocks 2nd-order light. The cheap glass filters have a soft edge, which is fine here. The lab-grade option is in row 29. |
+| 10 | Scan mirror | Edmund Optics **#43-792**, 25 × 25 mm enhanced-aluminum first-surface mirror, $31.00 ✓ | Any first-surface mirror offcut, ~$10 | A rear-surface (bathroom-type) mirror creates ghost lines. |
 
-### Scanning, lighting, calibration
+### 3.2 Scanning, lighting, calibration
 
-| # | Part | Vendor and part number | Price | Why this one |
+| # | Part | Pick | Price | Notes |
 |---|---|---|---|---|
-| 11 | Mirror stepper, 0.9° | StepperOnline **17HM19-1684S** (NEMA17, 0.9°, 1.68 A) | $11.41 ✓ | At 1/16 microstepping, one microstep moves the line 0.29 mm at 150 mm. |
-| 12 | Stepper driver | Adafruit **#6121** TMC2209 breakout | ~$10 | Quiet, with UART control from one of your ESP32s. Run the ESP32 as a micro-ROS node. |
-| 13 | Home switch | Any A3144 hall sensor + a small magnet | ~$3 | Gives each scan an absolute start angle. |
-| 14 | Lights | 2× halogen clamp or work lights (any MR16/GU10 halogen) from a hardware store | ~$25 | You need the NIR output, and LEDs have almost none past 700 nm. |
-| 15 | Wavelength calibration | NE-2 neon indicator lamp (Digi-Key or Amazon) + any CFL bulb + your red diode | ~$8 | Neon covers 585–880 nm, mercury in the CFL gives 546/611 nm, and the diode gives about 650 nm. |
-| 16 | White reference | White PTFE sheet, 1/8" (McMaster-Carr "PTFE sheets", or the Walmart-listed 12×24 in sheet) | ~$15 | Flat-field and reflectance reference. |
-| 17 | Stray-light lining | Black PLA for the housing + Protostar or Acktar-style flocking paper | ~$15 | Stray light is the main enemy. |
+| 11 | Mirror stepper, 0.9° | StepperOnline **17HM19-1684S** (NEMA17, 0.9°, 1.68 A) | $11.41 ✓ | At 1/16 microstepping, one microstep moves the line 0.29 mm at 150 mm. A 1.8° motor also works if you add a 3:1 GT2 belt reduction. |
+| 12 | Stepper driver | Adafruit **#6121** TMC2209 breakout | ~$10 | It's quiet and can be controlled over UART. |
+| 13 | Microcontroller | Espressif **ESP32-DevKitC-32E** (Digi-Key) | ~$10 | Drives the stepper. It can run as a micro-ROS node so the mirror shows up in ROS2. Any Arduino-class board works if you skip micro-ROS. |
+| 14 | Stepper power supply | 12–24 V, 2 A DC brick with a barrel jack, plus a jack adapter | ~$12 | |
+| 15 | Home switch | A3144 hall sensor + a small magnet | ~$3 | Gives each scan an absolute start angle. |
+| 16 | Breadboard and wiring | Half-size breadboard, jumper wires, 100 µF capacitor across the motor supply | ~$10 | |
+| 17 | Lights | 2× halogen clamp or work lights (MR16/GU10 halogen) | ~$25 | LEDs have almost no output past 700 nm, and you need the NIR. |
+| 18 | Wavelength calibration | NE-2 neon indicator lamp (Digi-Key or Amazon) + any CFL bulb | ~$8 | Neon covers 585–880 nm, and the mercury in a CFL gives 546 and 611 nm. |
+| 19 | Alignment laser | 650 nm red laser diode module | ~$8 | For aligning the optical axis. It also adds a third calibration line near 650 nm. |
+| 20 | White reference | White PTFE sheet, 1/8" (McMaster-Carr "PTFE sheets", or a 12 × 24 in sheet from Walmart) | ~$15 | Flat-field and reflectance reference. |
+| 21 | Housing and stray-light lining | Black PLA print + flocking paper (Protostar or similar) | ~$15 | Stray light is the main enemy. Make the camera tilt adjustable by ±3°. You need a 3D printer or a print service. |
 
-### Pose and robot (mostly owned)
+### 3.3 Compute and pose camera
 
-| # | Part | Vendor and part number | Price | Notes |
+| # | Part | Recommended | Budget | Notes |
 |---|---|---|---|---|
-| 18 | Pose camera | Any camera you own (second CSI port on a Nano B01, else USB) | $0 | |
-| 19 | Tag board | AprilTag grid printed and glued to foam board | ~$5 | |
-| 20 | Arm, Jetson Nano, ESP32, AD3 | Owned | $0 | |
+| 22 | GPU computer (capture + CUDA splat renderer) | NVIDIA **Jetson Orin Nano Super Developer Kit**, $399 (NVIDIA raised it from $249 in July 2026) | Used original **Jetson Nano 4 GB** dev kit, ~$100–150 | The original Nano is end-of-life and stuck on JetPack 4.6 (Ubuntu 18.04, CUDA 10.2), so ROS2 needs Docker. A desktop with an NVIDIA GPU trains the splat much faster. If you have one, a Raspberry Pi 4/5 (~$60–80) is enough for capture. |
+| 23 | Storage | 256 GB NVMe SSD, ~$25 | 64 GB microSD, ~$10 | The Orin Nano boots from NVMe. The original Nano uses microSD. |
+| 24 | CSI cable | 15-pin to 22-pin camera cable, ~$5 | Not needed on an original Nano or Pi 4 | The Orin Nano and Pi 5 have 22-pin CSI connectors, while these cameras ship with 15-pin cables. |
+| 25 | Pose camera | **Raspberry Pi Camera Module v2** (IMX219), $16.50 ✓ at PiShop | Any USB webcam (UVC) | It reads the AprilTag board. IMX219 works natively on Jetson. The Camera Module 3 (IMX708) does not work on Jetson without extra drivers. |
 
-**Totals:**
-- **Recommended: about $375.** This includes the two Commonlands IR-corrected lenses, which are the biggest optical-quality upgrade.
-- **Budget: about $330**, using Arducam LN065 instead of CIL122 for the camera lens.
-- Each of the Thorlabs slit and filter adds about $100.
+### 3.4 Viewpoints
 
-To save more, check your Amazon gratings first (−$12). You could also try mirrors you already own on your optics table, if any are first-surface (−$31).
+| # | Part | Recommended | Budget | Notes |
+|---|---|---|---|---|
+| 26 | Robot arm | **SO-ARM101 follower only** (PartaBot), $299 ✓, but sold out when checked. Alternative: Seeed **SO-ARM101 Pro motor kit**, $277.99 ✓, which includes leader + follower servos and the driver board but no printed parts (Seeed sells those for $29.90). | Tripod or camera slider, moved by hand, ~$25 | Pose comes from the tag board, not the arm, so manual viewpoints work. The arm adds repeatable, automated viewpoints and the ROS2 side of the project. Check whether your kit includes the 12 V servo power supply. |
+| 27 | Tag board | AprilTag grid printed and glued to foam board, ~$5 | Same | Gives one pose per viewpoint, then splatting refines it. |
+
+### 3.5 Optional test gear
+
+| # | Part | Pick | Price | Notes |
+|---|---|---|---|---|
+| 28 | Scope / logic analyzer | Digilent **Analog Discovery 3** | $379 ✓ | For checking the camera exposure strobe against the mirror step timing. A ~$15 8-channel USB logic analyzer covers the timing check alone. |
+| 29 | Lab-grade slit and filter | Thorlabs **S50LK** (Ø1" mounted slit, 50 µm × 10 mm) + Thorlabs **FELH0500** (Ø25 mm long-pass) | about $100 each, not checked | These replace rows 7 and 9. Don't buy the Thorlabs S50RD slit, which is only 3 mm long. |
+
+### 3.6 Totals
+
+| Build | Recommended | Budget |
+|---|---|---|
+| Spectrograph + scanner (3.1 + 3.2) | ~$420 | ~$315 |
+| + compute and pose camera (3.3) | ~$865 | ~$465 |
+| + viewpoints (3.4), full rig | **~$1,170** | **~$495** |
+
+The spectrograph and scanner rows are the core of the project. Everything else is common hobby gear, so check what you already have before buying. The totals leave out section 3.5. The bench spectrometer stage (build step 1 below) needs only rows 1–2 and 4–9, the lamps in row 18, the laser in row 19, the housing in row 21, and a Raspberry Pi or Jetson to read the camera.
 
 ## 4. Build order
 
 1. **Bench spectrometer.** Build the slit, field lens, collimator, grating and camera with no objective, pointed at the neon and CFL lamps. Fit the wavelength map and the smile/keystone warp. This is where you learn alignment.
 2. **Line imager.** Add the objective and focus it on a printed target. Measure the line thickness on a knife edge.
-3. **Scanner.** Add the mirror and stepper. Scan a flat Macbeth-style color card, then assemble the 2D datacube on the Jetson (first CUDA kernel: warp + bin).
-4. **3D.** Use arm viewpoints, AprilTag poses, and the line-camera splat renderer.
+3. **Scanner.** Add the mirror and stepper. Scan a flat Macbeth-style color card, then assemble the 2D datacube on the GPU (first CUDA kernel: warp + bin).
+4. **3D.** Capture from several viewpoints (arm or tripod), get poses from the AprilTag board, and train the splat with the line-camera renderer.
 
 ## 5. Modeling notes and limits
 
@@ -108,11 +132,16 @@ To save more, check your Amazon gratings first (−$12). You could also try mirr
 - [Arducam NoIR IMX219 with M12 lens (RobotShop)](https://www.robotshop.com/products/arducam-noir-8-mp-sony-imx219-camera-module-m12-lens-ls1820)
 - [Arducam B0183 (IR-cut, lens not swappable)](https://www.arducam.com/b0183-arducam-imx219-distortioin-m12-mount-camera-module-raspberry-pi-compute-module.html)
 - [Arducam B0187 NoIR M12 for Jetson (discontinued)](https://arducam.com/product/b0187-arducam-imx219-low-distortion-ir-sensitive-noir-m12-mount-camera-module-for-nvidia-jetson-board)
-- [Bartovation 500 l/mm grating sheet](https://bartovation.com/product/other-lab-supplies/diffraction-grating-sheets/500-lines-mm-linear-diffraction-grating-sheet/)
-- [Thorlabs precision slits](https://www.thorlabs.com/newgrouppage9.cfm?objectgroup_id=1464), [S50LK](https://www.thorlabs.com/item/S50LK)
-- [Thorlabs hard-coated edgepass filters (FELH0500)](https://www.thorlabs.com/hard-coated-edgepass-filters?pn=FEL+H0500)
-- [Adafruit TMC2209 breakout](https://www.adafruit.com/product/6121)
 - [Commonlands CIL161 16 mm IR-corrected](https://commonlands.com/products/ir-corrected-16mm-m12-lens-cil161), [CIL122 12 mm IR-corrected](https://commonlands.com/products/ir-corrected-12mm-m12-lens)
 - [Arducam LN016 25 mm (UCTRONICS)](https://www.uctronics.com/m12-mount-mtv2520b-25mm-focal-length-camera-lens-2219.html), [LN065 12 mm](https://www.uctronics.com/arducam-12mm-m12-lens-m2512zh03-for-usb-camera.html), [LN001 16 mm (has IR-cut, avoid)](https://www.uctronics.com/arducam-1/2.5-m12-mount-16mm-focal-length-camera-lens-m2016zh01.html)
 - [Edmund #32-008 field lens](https://www.edmundoptics.com/p/90mm-dia-x-180mm-fl-uncoated-plano-convex-lens/2084/), [Edmund #43-792 mirror](https://www.edmundoptics.com/p/25-x-25mm-enhanced-aluminum-4-6lambda-mirror/5288/), [Edmund #54-509 grating film](https://www.edmundoptics.com/p/12700-linesinch-6quot-x-12quot-sheets-2pack/11226/)
+- [Bartovation 500 l/mm grating sheet](https://bartovation.com/product/other-lab-supplies/diffraction-grating-sheets/500-lines-mm-linear-diffraction-grating-sheet/)
+- [Thorlabs precision slits](https://www.thorlabs.com/newgrouppage9.cfm?objectgroup_id=1464), [S50LK](https://www.thorlabs.com/item/S50LK)
+- [Thorlabs hard-coated edgepass filters (FELH0500)](https://www.thorlabs.com/hard-coated-edgepass-filters?pn=FEL+H0500)
 - [StepperOnline 17HM19-1684S](https://www.omc-stepperonline.com/nema-17-bipolar-0-9deg-44ncm-62-3oz-in-1-68a-2-8v-42x42x47mm-4-wires-17hm19-1684s)
+- [Adafruit TMC2209 breakout](https://www.adafruit.com/product/6121)
+- [Espressif ESP32-DevKitC-32E (Digi-Key)](https://www.digikey.com/en/products/detail/espressif-systems/ESP32-DEVKITC-32E/12091810)
+- [Jetson price increase, Hardware Busters, July 2026](https://hwbusters.com/news/nvidia-jetson-prices-jump-up-to-101-the-249-orin-nano-super-is-now-399/), [NVIDIA: buy Jetson](https://developer.nvidia.com/buy-jetson)
+- [Raspberry Pi Camera Module v2 (PiShop)](https://www.pishop.us/product/raspberry-pi-camera-module-v2/)
+- [SO-ARM101 follower only (PartaBot)](https://partabot.com/products/so-arm101-follower-only), [Seeed SO-ARM101 Pro motor kit](https://www.seeedstudio.com/SO-101-Low-Cost-AI-Arm-Kit-Pro-p-6427.html)
+- [Digilent Analog Discovery 3](https://digilent.com/shop/analog-discovery-3/)
