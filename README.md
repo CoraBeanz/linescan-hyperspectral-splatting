@@ -4,7 +4,7 @@ A low-cost pushbroom hyperspectral scanner on a robot arm, feeding a 3D Gaussian
 
 ## Hardware
 
-**Pushbroom spectrograph.** Light enters through a slit, is collimated by a 16 mm f/4 M12 objective, dispersed by a 500 lines/mm transmission grating, and refocused by a 25 mm M12 lens used backward as the camera-side collimator. A 500 nm long-pass filter blocks second-order overlap. A Raspberry Pi NoIR camera sits tilted to the first diffraction order, so each frame is one spatial line by many wavelengths.
+**Pushbroom spectrograph.** A 16 mm f/4 M12 objective images the scene onto a 50 µm slit, so the instrument sees one line of the scene at a time. A small field lens right behind the slit steers every point of the line toward the camera. A 25 mm M12 lens, used backward, collimates the light from the slit, and a 500 lines/mm transmission grating disperses it by wavelength. A 500 nm long-pass filter blocks second-order overlap. An IMX219 NoIR camera with a 12 mm f/2 M12 lens, tilted 22° to the first diffraction order, refocuses the spectrum, so each frame is one spatial line by many wavelengths (about 500–950 nm).
 
 **Line sweep.** A stepper-driven scan mirror sweeps the slit across the scene to build up a hyperspectral cube one line at a time.
 
@@ -20,11 +20,11 @@ The splat is trained directly from scan lines rather than from assembled image c
 - [`docs/optical_train_v2.svg`](docs/optical_train_v2.svg): current optical train (v1 kept alongside for reference)
 - [`optics/spectrograph_model.py`](optics/spectrograph_model.py): Optiland model of the spectrograph; results and ray layouts in [`optics/model_output/`](optics/model_output/)
 
-The model changed two things from the sketch above: the stock Pi NoIR lens is replaced by an M12-mount IMX219 NoIR with a 12 mm f/2 lens, and a field lens (f ≈ 18 mm) sits right behind the slit.
+The Optiland model changed two things from the first sketch (v1): the stock Pi NoIR lens is replaced by an M12-mount IMX219 NoIR with a 12 mm f/2 lens, and a field lens (f ≈ 18 mm) sits right behind the slit. Without them, almost no light from the ends of the slit reaches the sensor.
 
 ## Planned stack
 
 - **Renderer:** C++/CUDA line-camera Gaussian splat renderer running on a Jetson Nano
 - **Robotics:** ROS2 for the arm and the scan mirror
 - **Optics:** Optiland for the optical model of the spectrograph
-- **Capture:** Python for the Pi camera
+- **Capture:** Python for the IMX219 NoIR camera
