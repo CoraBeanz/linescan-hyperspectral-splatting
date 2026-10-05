@@ -1,0 +1,32 @@
+== A: stock Pi NoIR v2 lens (3.04 mm f/2)
+  scene line length       : 41.9 mm at 150 mm
+  spectrum 500-1000 nm    : 0.83 mm on sensor (sensor is 3.68 x 2.76 mm)
+  dispersion              : 1.48 px/nm
+  slit image width        : 6.1 um (5.4 px)
+  spectral resolution     : 3.7 nm (geometric, ideal lenses)
+  pixels along the line   : 543
+  smile at line end       : 8.0 px
+  keystone                : 2.8 px
+  light reaching sensor   :  center@500nm=  8%  center@750nm=  8%  center@1000nm=  8%  edge@500nm=  0%  edge@750nm=  0%  edge@1000nm=  0%
+
+== B: M12-mount IMX219 + 12 mm f/2 lens
+  scene line length       : 41.9 mm at 150 mm
+  spectrum 500-1000 nm    : 3.27 mm on sensor (sensor is 3.68 x 2.76 mm)
+  dispersion              : 5.84 px/nm
+  slit image width        : 24.0 um (21.4 px)
+  spectral resolution     : 3.7 nm (geometric, ideal lenses)
+  pixels along the line   : 2143
+  smile at line end       : 31.5 px
+  keystone                : 10.9 px
+  light reaching sensor   :  center@500nm= 92%  center@750nm=100%  center@1000nm= 97%  edge@500nm= 12%  edge@750nm= 14%  edge@1000nm= 13%
+
+== C: as B + 18 mm field lens at slit
+  scene line length       : 41.9 mm at 150 mm
+  spectrum 500-1000 nm    : 3.27 mm on sensor (sensor is 3.68 x 2.76 mm)
+  dispersion              : 5.84 px/nm
+  slit image width        : 24.0 um (21.4 px)
+  spectral resolution     : 3.7 nm (geometric, ideal lenses)
+  pixels along the line   : 2204
+  smile at line end       : 33.3 px
+  keystone                : 11.2 px
+  light reaching sensor   :  center@500nm=100%  center@750nm=100%  center@1000nm=100%  edge@500nm= 98%  edge@750nm= 99%  edge@1000nm= 99%

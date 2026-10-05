@@ -14,6 +14,14 @@ A low-cost pushbroom hyperspectral scanner on a robot arm, feeding a 3D Gaussian
 
 The splat is trained directly from scan lines rather than from assembled image cubes. Each Gaussian stores a spectrum, and the renderer models the instrument as a line camera: for each pose it draws a single line, which is compared against the measured scan line.
 
+## Design
+
+- [`docs/parts_list_and_design.md`](docs/parts_list_and_design.md): parts list, first-order design and build order
+- [`docs/optical_train_v2.svg`](docs/optical_train_v2.svg): current optical train (v1 kept alongside for reference)
+- [`optics/spectrograph_model.py`](optics/spectrograph_model.py): Optiland model of the spectrograph; results and ray layouts in [`optics/model_output/`](optics/model_output/)
+
+The model changed two things from the sketch above: the stock Pi NoIR lens is replaced by an M12-mount IMX219 NoIR with a 12 mm f/2 lens, and a field lens (f ≈ 18 mm) sits right behind the slit.
+
 ## Planned stack
 
 - **Renderer:** C++/CUDA line-camera Gaussian splat renderer running on a Jetson Nano
