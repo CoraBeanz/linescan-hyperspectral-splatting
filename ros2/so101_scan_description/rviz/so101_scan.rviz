@@ -82,10 +82,10 @@ Visualization Manager:
         {}
       Topic:
         Depth: 5
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /scan_sweep/markers
+        Value: /scan/markers
       Value: true
   Enabled: true
   Global Options:
