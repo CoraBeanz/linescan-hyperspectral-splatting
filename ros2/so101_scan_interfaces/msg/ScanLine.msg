@@ -8,9 +8,10 @@
 # header.frame_id  "scan_mirror_link"
 std_msgs/Header header
 
-builtin_interfaces/Time hold_until  # ROS time at which the mirror starts moving to the next line.
-                                    # A camera frame belongs to this line if its whole exposure
-                                    # falls between header.stamp and hold_until.
+builtin_interfaces/Time hold_until  # ROS time at which the mirror moves on to the next line
+                                    # (rounded early by the ESP32's 50 us timer step). A camera
+                                    # frame belongs to this line if its whole exposure falls
+                                    # between header.stamp and hold_until.
 uint32 sweep_id   # from the StartSweep response
 uint32 index      # 0 .. n_lines - 1 within the sweep
 int32 step        # the ESP32's position in microsteps; 0 is the 45 deg rest once homed

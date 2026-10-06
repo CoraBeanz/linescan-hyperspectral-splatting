@@ -26,6 +26,7 @@ import itertools
 import math
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 
 import rclpy
@@ -75,7 +76,7 @@ class MirrorLink:
         self._waiters = []
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
-        self._write_lock = threading.Lock()
+        self._write_lock = threading.RLock()  # also guards ser and connected
         self._running = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self.skipped_lines = 0
@@ -106,12 +107,13 @@ class MirrorLink:
 
     def send(self, text):
         with self._write_lock:
-            if not self.connected:
+            ser = self.ser
+            if not self.connected or ser is None:
                 return False
             try:
-                self.ser.write(text.encode())
+                ser.write(text.encode())
                 return True
-            except (OSError, serial.SerialException) as e:
+            except Exception as e:  # unplugged: pyserial raises more than SerialException
                 self.log.warning("write to %s failed: %s" % (self.port, e))
                 self._close()
                 return False
@@ -142,14 +144,14 @@ class MirrorLink:
         return s
 
     def _close(self):
-        was = self.connected
-        self.connected = False
-        if self.ser is not None:
+        with self._write_lock:
+            was, self.connected = self.connected, False
+            ser, self.ser = self.ser, None
+        if ser is not None:
             try:
-                self.ser.close()
+                ser.close()
             except Exception:
                 pass
-            self.ser = None
         if was:
             self.on_state(False)
 
@@ -159,8 +161,8 @@ class MirrorLink:
         while self._running:
             if not self.connected:
                 try:
-                    self.ser = self._open()
-                except (OSError, serial.SerialException) as e:
+                    ser = self._open()
+                except Exception as e:
                     if not warned:
                         self.log.warning("waiting for the mirror ESP32 on %s (%s)" % (self.port, e))
                         warned = True
@@ -168,34 +170,50 @@ class MirrorLink:
                     continue
                 warned = False
                 buf = b""
-                self.connected = True
+                with self._write_lock:
+                    self.ser, self.connected = ser, True
                 self.log.info("connected to the mirror ESP32 on %s" % self.port)
                 self.on_state(True)
+            ser = self.ser
             try:
-                buf += self.ser.read(self.ser.in_waiting or 1)
-            except (OSError, serial.SerialException) as e:
-                self.log.warning("lost the mirror ESP32 on %s: %s" % (self.port, e))
+                if ser is None:
+                    raise serial.SerialException("the port was closed")
+                buf += ser.read(ser.in_waiting or 1)
+            except Exception as e:
+                if self._running:
+                    self.log.warning("lost the mirror ESP32 on %s: %s" % (self.port, e))
                 self._close()
                 continue
             while b"\n" in buf:
                 raw, buf = buf.split(b"\n", 1)
                 self._dispatch(raw.decode(errors="replace"))
+            if len(buf) > 4096:  # no newline in sight: not the firmware talking
+                buf = b""
 
     def _dispatch(self, text):
-        if not text.strip():
-            return
+        found = mp.find_message(text)
         try:
-            message = mp.parse(text)
+            if found is None:
+                raise mp.ProtocolError("not a protocol line")
+            message = mp.parse(found)
         except mp.ProtocolError:
             # the boot ROM's output after a reset, or a line garbled on the wire
-            self.skipped_lines += 1
-            self.log.debug("skipped %r" % text)
+            if text.strip():
+                self.skipped_lines += 1
+                self.log.debug("skipped %r" % text)
             return
+        self.deliver(message)
+
+    def deliver(self, message):
+        """Hand a message to the waiters it matches, then to on_message."""
         with self._lock:
             waiters = list(self._waiters)
         for w in waiters:
             w.offer(message)
-        self.on_message(message)
+        try:
+            self.on_message(message)
+        except Exception:
+            self.log.error("handling %s failed:\n%s" % (message, traceback.format_exc()))
 
 
 @dataclass
@@ -204,6 +222,7 @@ class Sweep:
     n_lines: int
     period_us: float
     seen: int = 0
+    started: bool = False   # the ESP32 has accepted it (OK SCAN)
 
 
 def why(reply, verb):
@@ -230,7 +249,9 @@ class ScanMirrorBridge(Node):
 
         self.clock_sync = ClockSync()
         self.rad_per_step = 2.0 * math.pi / 6400  # until the ESP32's INFO says otherwise
+        self.tick_us = 50       # its step timer; INFO says too
         self.firmware = None    # the fields of its INFO reply
+        self.last_esp_now = None  # its clock in the last PING or STATUS reply
         self.esp_state = "disconnected"
         self.homed = False
         self.pos = 0
@@ -295,6 +316,7 @@ class ScanMirrorBridge(Node):
     def restart_link(self):
         """A new connection, or the ESP32 restarted: ask what it runs and resync the clock."""
         self.clock_sync.reset()
+        self.last_esp_now = None
         self.link.send_command("INFO")
         threading.Thread(target=self._ping_burst, daemon=True).start()
 
@@ -313,18 +335,27 @@ class ScanMirrorBridge(Node):
                 # the service that sent the command reports it to its caller too
                 self.get_logger().info("ESP32: %s" % m)
             elif m.name == "PING":
+                t = m.int("t")
+                self.check_clock(t)
                 with self._ping_lock:
                     sent = self._pings.pop(m.id, None)
                 if sent is not None:
-                    self.clock_sync.add(sent, self.now_ns(), m.int("t"))
+                    self.clock_sync.add(sent, self.now_ns(), t)
             elif m.name == "STATUS":
+                self.check_clock(m.int("t"))
+                state = m.get("state", "?")
                 with self._lock:
-                    self.esp_state, self.homed, self.pos = m.get("state", "?"), m.get("homed") == "1", m.int("pos")
+                    self.esp_state, self.homed, self.pos = state, m.get("homed") == "1", m.int("pos")
+                    # it leaves "scanning" only as it sends SCAN_DONE, so that line was lost
+                    lost = self.active is not None and self.active.started and state not in ("scanning", "stopping")
+                if lost:
+                    self.end_sweep("the ESP32 stopped scanning and its SCAN_DONE was lost")
                 self.publish_joint()
                 self.publish_state()
             elif m.name == "SCAN":
                 with self._lock:
                     if self.active is not None:
+                        self.active.started = True
                         self.sweep_id, self.esp_state = self.active.id, "scanning"
                 self.publish_state()
             elif m.name == "INFO":
@@ -332,8 +363,16 @@ class ScanMirrorBridge(Node):
         except mp.ProtocolError as e:
             self.get_logger().warning("ESP32 sent %r: %s" % (str(m), e))
 
+    def check_clock(self, t_us):
+        """Its clock going back means the ESP32 restarted and the EV BOOT got lost on the way."""
+        last, self.last_esp_now = self.last_esp_now, t_us
+        if last is not None and t_us < last:
+            self.link.deliver(mp.Message("EV", "BOOT", {"reset": "unknown, its clock went back", "t": str(t_us)}))
+
     def on_info(self, m):
         self.firmware = dict(m.fields)
+        if "tick_us" in m.fields:
+            self.tick_us = m.int("tick_us")
         if m.int("proto") != mp.PROTOCOL_VERSION:
             self.get_logger().error("the mirror ESP32 speaks protocol %s and this bridge speaks %d; "
                                     "flash the firmware from this repo" % (m.get("proto"), mp.PROTOCOL_VERSION))
@@ -384,7 +423,9 @@ class ScanMirrorBridge(Node):
         msg = ScanLine()
         msg.header.stamp = Time(nanoseconds=stamp_ns).to_msg()
         msg.header.frame_id = self.frame_id
-        msg.hold_until = Time(nanoseconds=stamp_ns + int(round((t + sweep.period_us - at) * 1000))).to_msg()
+        # the next line's tick, less one step-timer tick: the timer can act that much early
+        moves_on = t + sweep.period_us - self.tick_us
+        msg.hold_until = Time(nanoseconds=stamp_ns + int(round((moves_on - at) * 1000))).to_msg()
         msg.sweep_id = sweep.id
         msg.index = n
         msg.step = pos

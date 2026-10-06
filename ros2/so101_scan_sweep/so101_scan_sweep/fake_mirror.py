@@ -51,6 +51,7 @@ class FakeMirror:
         self.latency = latency_ms
         self.drift = drift_ppm * 1e-6
         self.limits = (-3200, 3200)
+        self.drop = set()           # names of events to lose on the way, for tests
         self.lock = threading.RLock()
         self.received = []          # every command line, for tests
         self.line_times = []        # (scan number, line, wall-clock ns when it was ready), for tests
@@ -72,45 +73,53 @@ class FakeMirror:
             self.target, self._motion = self.pos, None
             self.state, self.homed = "disabled", False
             self.line = self.lines = 0
-            self._send("ets Jun  8 2016 00:22:57")  # what the boot ROM prints, not protocol
+            # the boot ROM's message at 115200 baud reads as a few bytes and no newline at 921600
+            self._out.put(b"\x00\x80\x80\x00\xf8\x80")
             self._ev("BOOT", fw="fake", proto=1, reset=reset, drv="ok", t=self.now_us())
 
     # --- clock and motion -----------------------------------------------------------------
+    # The firmware moves the motor and ticks scan lines from a timer interrupt, and every time
+    # it reports is when the interrupt acted. The fake works those times out from its schedule
+    # instead of reading its clock after a sleep, so a busy machine that wakes it late delays
+    # its events but doesn't change the times in them.
 
     def now_us(self):
         return self.clock_offset_us + int((time.monotonic() - self._t0) * 1e6 * (1.0 + self.drift))
 
-    def _wait(self, seconds):
+    def wall_ns(self, t_us):
+        """The wall-clock time at which the fake's clock reads t_us."""
+        return time.time_ns() + int((t_us - self.now_us()) * 1000 / (1.0 + self.drift))
+
+    def _wait_until_us(self, t_us):
+        seconds = self._t0 + (t_us - self.clock_offset_us) / (1e6 * (1.0 + self.drift)) - time.monotonic()
         if self._abort.wait(max(0.0, seconds)):
             raise Abort
 
-    def _wait_until_us(self, t_us):
-        self._wait(self._t0 + (t_us - self.clock_offset_us) / (1e6 * (1.0 + self.drift)) - time.monotonic())
-
-    def _pos_now(self):
+    def _pos_at(self, t_us):
         if self._motion is None:
             return self.pos
         start, target, t_start, speed = self._motion
-        done = int(speed * (time.monotonic() - t_start))
+        done = int(speed * max(0.0, t_us - t_start) * 1e-6)
         if done >= abs(target - start):
             return target
         return start + (done if target > start else -done)
 
-    def _move(self, target, speed):
-        """Turn to target at a constant speed (no ramps here); Abort leaves it where it got to."""
+    def _pos_now(self):
+        return self._pos_at(self.now_us())
+
+    def _move(self, target, speed, t_start):
+        """Turn to target from t_start at a constant speed (no ramps here). Returns when it
+        gets there, on the fake's clock; the job waits for that and then calls _arrive."""
         with self.lock:
-            start = self.pos = self._pos_now()
-            self.target, self._motion = target, (start, target, time.monotonic(), speed)
-        try:
-            self._wait(abs(target - start) / speed)
-            arrived = True
-        except Abort:
-            arrived = False
-            raise
-        finally:
-            with self.lock:
-                self.pos = target if arrived else self._pos_now()
-                self.target, self._motion = self.pos, None
+            start = self.pos = self._pos_at(t_start)
+            self.target, self._motion = target, (start, target, t_start, speed)
+        return t_start + abs(target - start) / speed * 1e6
+
+    def _arrive(self):
+        """The motor is at its target (call with self.lock held). Raises Abort if the job was ended."""
+        if self._abort.is_set():
+            raise Abort
+        self.pos, self._motion = self.target, None
 
     # --- jobs: what runs between a command's reply and the event that ends it --------------
 
@@ -129,11 +138,15 @@ class FakeMirror:
         self._job.start()
 
     def _end_job(self):
-        """Abort the running job and wait for it. Never call with self.lock held: the job needs it."""
+        """Abort the running job, wait for it, and stop the motor where it got to. Never call
+        with self.lock held: the job needs it."""
         self._abort.set()
         if self._job is not None:
             self._job.join(timeout=2.0)
             self._job = None
+        with self.lock:
+            self.pos = self.target = self._pos_now()
+            self._motion = None
 
     def _halt(self, why):
         """End the running job as the firmware does, with the events it sends for that."""
@@ -147,51 +160,63 @@ class FakeMirror:
         return was
 
     def _home(self):
-        self._wait(self.home_time)
+        done = self.now_us() + self.home_time * 1e6
+        self._wait_until_us(done)
         with self.lock:
             if self._abort.is_set():
                 raise Abort
             self.state = "idle"
             if not self.hall:
-                return self._ev("HOME_FAILED", reason="not_found", pos=self.pos, t=self.now_us())
+                return self._ev("HOME_FAILED", reason="not_found", pos=self.pos, t=round(done))
             # the hall window's middle is home_pos (-711); HOME then parks at 0, the 45 deg rest
             shift, self.pos, self.target, self.homed = -self.pos, 0, 0, True
-            self._ev("HOMED", pos=0, t=self.now_us(), width=131, shift=shift)
+            self._ev("HOMED", pos=0, t=round(done), width=131, shift=shift)
 
     def _go(self, target):
-        self._move(target, self.vmax)
-        self._wait(self.settle_us * 1e-6)
+        done = self._move(target, self.vmax, self.now_us()) + self.settle_us
+        self._wait_until_us(done)
         with self.lock:
-            if self._abort.is_set():
-                raise Abort
+            self._arrive()
             self.state = "idle"
-            self._ev("MOVED", pos=self.pos, t=self.now_us())
+            self._ev("MOVED", pos=self.pos, t=round(done))
 
     def _scan(self, start, step, lines, period, t0, settle_us):
-        self.line, self.lines = 0, lines
+        with self.lock:
+            self.line, self.lines = 0, lines
+        ready = self.now_us()
         if self.pos != start:
-            self._move(start, self.vmax)
-            self._wait(settle_us * 1e-6)
+            ready = self._move(start, self.vmax, ready) + settle_us
+            self._wait_until_us(ready)
+            with self.lock:
+                self._arrive()
         # ticks that come before the mirror has arrived and settled are skipped, whole periods
-        first = t0 + max(0, math.ceil((self.now_us() - t0) / period)) * period
+        first = t0 + max(0, math.ceil((ready - t0) / period)) * period
         for n in range(lines):
             tick = first + n * period
-            self._wait_until_us(tick)
+            ready = tick   # line 0: already there
             if n:
-                self._move(start + n * step, self.vstart)
-                self._wait(settle_us * 1e-6)
+                self._wait_until_us(tick)
+                ready = self._move(start + n * step, self.vstart, tick) + settle_us
+            # it reports the line once settled, or at the next tick if it is still moving then
+            settled = ready < tick + period
+            sent = ready if settled else tick + period
+            self._wait_until_us(sent)
             with self.lock:
-                if self._abort.is_set():
+                if settled:
+                    self._arrive()
+                elif self._abort.is_set():
                     raise Abort
-                ready = self.now_us()
                 self.line = n + 1
-                self.line_times.append((self.scans, n, time.time_ns()))
-                self._ev("LINE", n=n, t=round(tick), pos=self.pos, ready=ready if ready < tick + period else -1)
+                self.line_times.append((self.scans, n, self.wall_ns(ready if settled else tick)))
+                self._ev("LINE", n=n, t=round(tick), pos=self._pos_at(sent), ready=round(ready) if settled else -1)
+        done = first + lines * period   # the tick after the last line
+        self._wait_until_us(done)
         with self.lock:
             if self._abort.is_set():
                 raise Abort
+            self.pos = self._pos_at(done)
             self.state = "idle"
-            self._ev("SCAN_DONE", lines=lines, t=round(first + lines * period), pos=self.pos, aborted=0)
+            self._ev("SCAN_DONE", lines=lines, t=round(done), pos=self.pos, aborted=0)
 
     # --- commands -------------------------------------------------------------------------
 
@@ -324,7 +349,8 @@ class FakeMirror:
         self._send(" ".join(["ERR", verb, "code=" + code] + (["id=" + cid] if cid else []) + ["msg=" + msg]))
 
     def _ev(self, name, **fields):
-        self._send(" ".join(["EV", name] + ["%s=%s" % (k, _fmt(v)) for k, v in fields.items()]))
+        if name not in self.drop:
+            self._send(" ".join(["EV", name] + ["%s=%s" % (k, _fmt(v)) for k, v in fields.items()]))
 
     def _writer(self):
         while self.running:
@@ -334,7 +360,7 @@ class FakeMirror:
                 continue
             time.sleep(self.rng.uniform(*self.latency) * 1e-3)
             try:
-                os.write(self.master, (text + "\n").encode())
+                os.write(self.master, text if isinstance(text, bytes) else (text + "\n").encode())
             except OSError:
                 return
 
