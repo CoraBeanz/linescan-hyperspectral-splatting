@@ -19,7 +19,8 @@
   <a href="#optiland-model"><b>Optiland model</b></a> ·
   <a href="#reconstruction"><b>Reconstruction</b></a> ·
   <a href="#roadmap"><b>Roadmap</b></a> ·
-  <a href="docs/parts_list_and_design.md"><b>Parts list</b></a>
+  <a href="docs/parts_list_and_design.md"><b>Parts list</b></a> ·
+  <a href="cad/"><b>CAD</b></a>
 </p>
 
 ## How it works
@@ -116,6 +117,7 @@ Splatting through a non-pinhole camera has precedent in satellite imagery ([RPC-
 ## Roadmap
 
 - [x] First-order optical design and Optiland model (configs A, B, C)
+- [x] [FreeCAD model](cad/) of the arm and scanner head, with printable housing, optics carriers and wrist mount
 - [ ] **Bench spectrometer:** slit, field lens, collimator, grating and camera aimed at neon and CFL lamps; fit the wavelength map and the smile/keystone warp
 - [ ] **Line imager:** add the objective, focus it on a printed target, measure the line on a knife edge
 - [ ] **Scanner:** add the mirror and stepper, scan a color card, assemble the datacube on the Jetson (first CUDA kernel: warp + bin)
@@ -143,6 +145,10 @@ optics/
 ├── spectrograph_model.py      Optiland model of the spectrograph, configs A–C
 ├── readme_figures.py          traces the model and renders the Optiland figures
 └── model_output/              results.txt and ray layouts
+cad/
+├── so101_hsi_rig.FCStd        FreeCAD assembly: SO-101 arm and scanner head
+├── build_rig.py               builds it, checks clearances and servo load, exports
+└── stl/, step/, renders/      printable parts, the head as STEP, images
 ```
 
 ## Background reading
@@ -156,4 +162,5 @@ optics/
 ## Credits
 
 - SO-101 photo: [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100) (`media/SO101_Follower.webp`), used unmodified under the Apache License 2.0; a copy of the license is in [`docs/img/SO-ARM100_LICENSE.txt`](docs/img/SO-ARM100_LICENSE.txt). The SO-101 is designed by The Robot Studio in collaboration with Hugging Face.
+- SO-101 URDF and meshes in the CAD model: [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100) (`Simulation/SO101`), Apache License 2.0.
 - Ray tracing: [Optiland](https://github.com/HarrisonKramer/optiland) (MIT).
