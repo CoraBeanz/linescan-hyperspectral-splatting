@@ -12,7 +12,7 @@
 //
 // Splitting the pose this way matters for training: a line on its own says
 // almost nothing about where it was across the slit, but one 6-DoF arm pose
-// and one mirror offset per sweep are well constrained by all of its lines.
+// per sweep is pinned down by all of its lines together.
 //
 // Units: metres and radians. Poses map local coordinates into the parent
 // frame: p_parent = R * p_local + t.

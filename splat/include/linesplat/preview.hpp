@@ -17,6 +17,13 @@ enum class PreviewMode { kTrueColor, kColorInfrared };
 void write_spectral_png(const std::string& path, const float* spectra, int rows, int cols,
                         const std::vector<double>& wavelengths, PreviewMode mode, float gain = 1.0f);
 
+struct Dataset;
+
+// One true color image per sweep, PREFIX_sweep_XX.png, with the panels side by
+// side and white gaps between them. Each panel is [lines, width, bands] like
+// Dataset::lines, and shows the sweep's lines stacked in the order taken.
+void write_sweep_pngs(const std::string& prefix, const Dataset& d, const std::vector<const float*>& panels);
+
 // A regular pinhole image is a stack of line cameras, one per row, that share
 // a pose and differ only in where their "slit" sits. Row r gets
 // v_slit = r + 0.5 - height / 2, and the blur is one pixel's box.
