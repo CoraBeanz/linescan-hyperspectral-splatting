@@ -1,0 +1,19 @@
+# One sweep looking straight down at the table, 26 cm in front of the base: the first thing to
+# try on the real arm. Joints from `make_plan --target 0.26 0 -0.0024 --tilts 0`.
+#
+#   ros2 run so101_scan_sweep scan_sweep --plan $(ros2 pkg prefix so101_scan_sweep)/share/so101_scan_sweep/plans/one_view.yaml
+name: one_view
+output_dir: ~/so101_scan/scans
+home_mirror: true          # home the mirror first if it hasn't been since power-up
+move:
+  max_joint_speed_deg: 20  # slow while trying things out
+  min_move_s: 1.0
+  settle_s: 1.0
+sweep:
+  start_angle_deg: -6.0    # mirror angle of the first line (0 = the 45 deg rest)
+  steps_per_line: 2        # 2 microsteps = 0.1125 deg of mirror, 0.225 deg of view, ~0.6 mm at 15 cm
+  n_lines: 107             # 12 deg of mirror, 24 deg of view: the line sweeps about 64 mm
+  line_period_s: 0.0333    # one camera frame per line at 30 fps
+viewpoints:
+  - name: down
+    joints_deg: {shoulder_pan: 0.0, shoulder_lift: -8.3, elbow_flex: 60.5, wrist_flex: -52.2, wrist_roll: -87.2}

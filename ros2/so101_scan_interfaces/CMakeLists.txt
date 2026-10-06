@@ -11,6 +11,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MirrorState.msg"
   "msg/ScanLinePose.msg"
   "srv/StartSweep.srv"
+  "srv/MoveMirror.srv"
   DEPENDENCIES std_msgs geometry_msgs
 )
 
