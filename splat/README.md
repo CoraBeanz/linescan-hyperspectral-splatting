@@ -109,7 +109,10 @@ head's +X (shaft) axis.
 
 Splitting the pose this way is what makes training possible. A single line says
 almost nothing about where it sat across the slit, but all 214 lines of a sweep
-pin down one 6-DoF head pose and one mirror offset between them.
+pin down one 6-DoF head pose between them. An error in the mirror's homing needs
+no parameter of its own: it moves a sweep's lines almost exactly as a small
+motion of the head would (a 0.05° offset matches a rigid head correction to
+about a micron), so the head pose absorbs it.
 
 ### Drawing a Gaussian on a line
 
@@ -174,7 +177,10 @@ Some choices, briefly:
 The tests run both renderers on the same lines and require all but 0.1% of
 values to agree to 10⁻⁴ (float rounding can tip a splat across a cutoff).
 On a 4-core cloud CPU the reference renders the default dataset (1712 lines ×
-256 pixels × 46 bands) in 0.12 s; GPU timings will come from TheRig and the Nano.
+256 pixels × 46 bands) in 0.12 s. On TheRig (RTX 4070 SUPER, CUDA 13.4) the
+CUDA renderer does it in 2.8 ms of GPU work, or 9.3 ms counting the copy of the
+80 MB result back to the CPU, against 40 ms for the reference on the machine's
+28-thread i7-14700KF. The Nano's numbers will follow.
 
 ## Dataset format
 
@@ -257,7 +263,9 @@ cmake -S splat -B build/splat -DCMAKE_BUILD_TYPE=Release \
 cmake --build build/splat -j4
 ```
 
-On **Windows** with Visual Studio 2022 and the CUDA toolkit:
+On **Windows** with Visual Studio 2022 or newer and the CUDA toolkit, from an
+x64 Native Tools Command Prompt (which puts Visual Studio's own CMake on the
+PATH). This is tested with Visual Studio 2026 and CUDA 13.4:
 
 ```bat
 cmake -S splat -B build\splat
@@ -315,8 +323,8 @@ tests/                    one file per topic; test_cuda skips without a GPU
    Gaussian gradients with `float` atomics (sm_53 has no `double` atomicAdd).
 3. **Optimizer and densification**: Adam, then split, clone and prune adapted
    to lines, where a Gaussian only gets gradient from the lines that cut it.
-4. **Pose refinement**: one SE(3) correction per sweep plus a mirror offset,
-   trained with the Gaussians. Success means recovering the synthetic errors
-   above to well under a pixel.
+4. **Pose refinement**: one SE(3) correction per sweep (which also absorbs
+   a mirror homing offset), trained with the Gaussians. Success means
+   recovering the synthetic errors above to well under a pixel.
 5. **Real data**: a converter from the ROS 2 scan logs to this format, using
    the wavelength map and warp from the calibration work.
