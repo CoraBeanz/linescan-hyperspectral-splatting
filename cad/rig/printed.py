@@ -23,7 +23,7 @@ how to lay it on the print bed; build_rig.py exports STLs from these.
 
 import FreeCAD as App
 
-from .expr import E, Frame, tan
+from .expr import E, Frame, emax, tan
 from .params import MOTOR, MOTORS
 from .vendor import Part, container
 
@@ -196,7 +196,11 @@ def rotor_frame(P):
 
 
 def rotor(doc, parent, P):
-    """Clamp hub on the shaft, a pad the mirror is glued to, and a magnet tab."""
+    """Clamp hub on the shaft, a pad the mirror is glued to, and a magnet tab.
+
+    The pad and tab end at pad_x1, so the magnet stays at the hall sensor for
+    any mirror from 20 to 25 mm long. Notches in the pad's edges mark where the
+    ends of a mirror_l mirror go when it is centred on the optical axis."""
     xi = P.x_in
     cont = container(doc, parent, "HSI_rotor", "Mirror clamp (printed)", rotor_frame(P))
     b = Part(doc, cont, "rotor").m("printed_accent")
@@ -204,8 +208,8 @@ def rotor(doc, parent, P):
     x1 = x0 + P.hub_len                               # at or past the shaft end
     back = P.mirror_e - P.mirror_t                    # mirror back = pad face (local y)
     hub = b.box("hub", x0, -8.5, -5, x1 - x0, back + 8.5, 10)
-    pad = b.box("pad", x0, back - 2, -8.5, P.mirror_l / 2 - x0, 2, 17)
-    tab = b.box("tab", P.mirror_l / 2 - 3, -P.mag_r - 3, -3.5, 3, back - 2 + P.mag_r + 3, 7)
+    pad = b.box("pad", x0, back - 2, -8.5, P.pad_x1 - x0, 2, 17)
+    tab = b.box("tab", P.pad_x1 - 3, -P.mag_r - 3, -3.5, 3, back - 2 + P.mag_r + 3, 7)
     solid = b.fuse("body", [hub, pad, tab])
     xm = x0 + P.pinch_dx
     cuts = [
@@ -214,9 +218,11 @@ def rotor(doc, parent, P):
         b.cyl("pinch", "z", (xm, -5.5, -6), P.m3_clear / 2, 12),
         b.cyl("pinch_head", "z", (xm, -5.5, 3), P.m3_head / 2, 3),
         b.prism("pinch_nut", "z", (xm, -5.5, -5.1), 6, 3.33, 2.6),
-        b.cyl("magnet_pocket", "x", (P.mirror_l / 2 - P.mag_t - 0.2, -P.mag_r, 0), P.mag_d / 2 + 0.1,
+        b.cyl("magnet_pocket", "x", (P.pad_x1 - P.mag_t - 0.2, -P.mag_r, 0), P.mag_d / 2 + 0.1,
               P.mag_t + 0.3),
     ]
+    for i, (sx, sz) in enumerate(((-1, -1), (-1, 1), (1, -1), (1, 1))):
+        cuts.append(b.box("mark%d" % i, sx * P.mirror_l / 2 - 0.3, back - 2.1, sz * 8.5 - 0.6, 0.6, 2.2, 1.2))
     final = b.cut("Mirror_clamp", solid, cuts)
     final.Label = "Mirror clamp"
     return _print("mirror_clamp", "Mirror clamp", cont, final, App.Rotation(App.Vector(1, 0, 0), -90),
@@ -311,10 +317,10 @@ def slit_block(doc, parent, P):
         # blades lie flush in a recess on the front face, edges meeting on the axis
         b.box("blade_recess", -P.blade_l / 2 - 0.3, P.y_axis - P.blade_w - 0.4, z0 - 0.1,
               P.blade_l + 0.6, 2 * P.blade_w + 0.8, rec + 0.1),
-        # field lens drops in from the front, flat face up against the blades,
-        # convex side seated on the edge of the 10 mm aperture
-        b.cyl("lens_pocket", "z", (0, P.y_axis, z0 + rec - 0.01), P.fl_d / 2 + 0.15, 3.3),
-        b.cyl("aperture", "z", (0, P.y_axis, z0 - 0.1), 5.0, P.slit_t + 0.2),
+        # field lens drops in from the front, convex side seated on the edge of
+        # the aperture and flat face toward the blades
+        b.cyl("lens_pocket", "z", (0, P.y_axis, z0 + rec - 0.01), P.fl_d / 2 + 0.15, P.fl_seat + 0.01),
+        b.cyl("aperture", "z", (0, P.y_axis, z0 - 0.1), P.fl_ap_r, P.slit_t + 0.2),
     ]
     for i, s in enumerate((-1, 1)):
         cuts.append(b.cyl("holder_screw%d" % i, "z", (s * P.h12_pitch / 2, P.y_axis, z0 + P.slit_t - 4),
@@ -342,18 +348,22 @@ def grat_plate(doc, parent, P):
 
 
 def filter_cap(doc, parent, P):
-    """Push-on cap: 4 mm stop, then the 17 mm long-pass disc, then a sleeve on the lens."""
+    """Push-on cap: 4 mm stop, then the long-pass disc, then a sleeve on the lens.
+
+    The seat takes the largest disc in tolerance. The lens barrel stops on the
+    step behind it, 0.05 mm short of a disc of nominal thickness."""
     cont = container(doc, parent, "HSI_filter_cap", "Filter cap and stop (printed)")
     b = Part(doc, cont, "fcap")
     zf = P.obj_back - P.obj_len                       # objective front face
     front = 1.2
     z0 = zf - P.filt_t - front
     sleeve = 5.0
-    r_out = P.filt_d / 2 + 0.2 + 1.2
+    r_seat = (P.filt_d + P.filt_tol) / 2 + 0.2
+    r_out = emax(r_seat, P.obj_od / 2 + 0.15) + 1.2
     body = b.cyl("body", "z", (0, P.y_axis, z0), r_out, front + P.filt_t + sleeve)
     cuts = [
         b.cyl("stop", "z", (0, P.y_axis, z0 - 0.1), P.pupil_d / 2, front + 0.2),
-        b.cyl("filter_seat", "z", (0, P.y_axis, zf - P.filt_t - 0.05), P.filt_d / 2 + 0.2, P.filt_t + 0.06),
+        b.cyl("filter_seat", "z", (0, P.y_axis, zf - P.filt_t - 0.05), r_seat, P.filt_t + 0.06),
         b.cyl("sleeve", "z", (0, P.y_axis, zf), P.obj_od / 2 + 0.15, sleeve + 0.1),
     ]
     final = b.cut("Filter_cap", body, cuts)
