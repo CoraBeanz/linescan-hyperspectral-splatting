@@ -15,12 +15,12 @@
 <p align="center">
   <a href="#how-it-works"><b>How it works</b></a> ·
   <a href="#the-rig"><b>The rig</b></a> ·
+  <a href="#cad-model"><b>CAD model</b></a> ·
   <a href="#optical-path"><b>Optical path</b></a> ·
   <a href="#optiland-model"><b>Optiland model</b></a> ·
   <a href="#reconstruction"><b>Reconstruction</b></a> ·
   <a href="#roadmap"><b>Roadmap</b></a> ·
-  <a href="docs/parts_list_and_design.md"><b>Parts list</b></a> ·
-  <a href="cad/"><b>CAD</b></a>
+  <a href="docs/parts_list_and_design.md"><b>Parts list</b></a>
 </p>
 
 ## How it works
@@ -58,6 +58,25 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
   </td>
   </tr>
 </table>
+
+## CAD model
+
+<p align="center">
+  <img src="cad/renders/rig.png" width="100%" alt="Render of the FreeCAD model: the SO-101 arm, folded, holds the black scanner head out over a table, and a faint red fan of light from the scan window draws a line on the table.">
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="cad/renders/head.png" width="100%" alt="The scanner head from below: the housing with its scan window and hood, the pose camera board, the NEMA 8 stepper on the lid and the round wrist puck."></td>
+    <td width="50%"><img src="cad/renders/head_open.png" width="100%" alt="The head with the lid and stepper hidden and the parts labelled: IMX219 board, camera lens, grating, collimator, slit and field lens, objective with its 4 mm stop, scan mirror on its clamp, and the wrist puck."></td>
+  </tr>
+  <tr>
+    <td><sub>The head from below: scan window and hood, pose camera, NEMA 8 stepper, wrist puck.</sub></td>
+    <td><sub>Lid and stepper hidden to show the optical train.</sub></td>
+  </tr>
+</table>
+
+The whole rig is a parametric [FreeCAD model](cad/). One script builds the SO-101 from its URDF, reads the optical spacings from the Optiland model, and wraps the optics in a printable PETG housing that slides onto a puck on the wrist-roll servo. It checks the parts for clashes, the mirror's full turn and the wrist's clearance, and works out the servo load: the 188 g head needs 75% of the shoulder servo's stall torque with the arm stretched out level, and 18% in the folded scanning pose above. The STLs and assembly steps are in [`cad/`](cad/).
 
 ## Optical path
 
