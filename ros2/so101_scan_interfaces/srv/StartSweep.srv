@@ -1,0 +1,12 @@
+# Sweep the scan mirror over n_lines lines and publish a ScanLine on /scan_mirror/line at each.
+# Returns as soon as the sweep is accepted; the ScanLine with last = true marks the end.
+float64 start_angle    # rad, same convention as ScanLine.angle; rounded to a whole microstep
+int32 steps_per_line   # microsteps between lines; the sign sets the direction
+uint32 n_lines
+float64 line_period    # s from one line to the next (the mirror dwells for one camera frame)
+---
+bool accepted
+string message         # why not, when rejected (not homed, busy, out of range)
+uint32 sweep_id
+float64 start_angle    # the angle actually used, after rounding
+float64 rad_per_step   # mirror rad per microstep
