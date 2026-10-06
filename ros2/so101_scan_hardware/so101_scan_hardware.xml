@@ -1,0 +1,7 @@
+<library path="so101_scan_hardware">
+  <class name="so101_scan_hardware/FeetechStsSystem"
+         type="so101_scan_hardware::FeetechStsSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>Feetech STS3215 servos of the SO-101 arm on one serial bus (sync read / sync write).</description>
+  </class>
+</library>
