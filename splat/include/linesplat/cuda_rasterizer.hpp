@@ -31,7 +31,8 @@ struct CudaRenderStats {
   int batches = 0;
   long long visible_pairs = 0;  // (line, Gaussian) pairs that reach a pixel
   long long tile_entries = 0;   // sorted (line, tile, depth) keys
-  double ms = 0.0;              // wall time, copies included
+  double gpu_ms = 0.0;          // GPU time of the passes, without the copies
+  double ms = 0.0;              // wall time of the whole call, copies included
 };
 
 // True if a CUDA device can be used; otherwise *why (if given) says why not.
@@ -49,6 +50,8 @@ class CudaRasterizer {
   void set_scene(const GaussianScene& scene);
   // Renders the scene's features on every camera (all the same width).
   LineImage render(const std::vector<LineCamera>& cams, CudaRenderStats* stats = nullptr);
+  // The same into *out, reusing its memory when it already has the right size.
+  void render(const std::vector<LineCamera>& cams, LineImage* out, CudaRenderStats* stats = nullptr);
 
   // Cap on lines x Gaussians per batch. It sets the scratch memory: about
   // 12 bytes per pair, so the default 2^24 needs about 200 MB.
