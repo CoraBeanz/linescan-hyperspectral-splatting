@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hsical"
+version = "0.1.0"
+description = "Calibration kit for the line-scan hyperspectral spectrograph"
+requires-python = ">=3.8"
+dependencies = ["numpy>=1.20", "scipy>=1.7"]
+
+[project.optional-dependencies]
+report = ["matplotlib>=3.3"]
+fast = ["opencv-python-headless>=4.5"]
+test = ["pytest>=7", "matplotlib>=3.3"]
+
+[tool.setuptools]
+packages = ["hsical"]
+
+[tool.setuptools.package-data]
+hsical = ["data/*.csv", "data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

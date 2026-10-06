@@ -133,11 +133,13 @@ Published hyperspectral splatting, such as [HyperGS](https://openaccess.thecvf.c
 
 Splatting through a non-pinhole camera has precedent in satellite imagery ([RPC-GS](https://arxiv.org/abs/2606.06690)), and close-range pushbroom cameras have been calibrated for plant phenotyping ([Behmann et al. 2015](https://doi.org/10.1016/j.isprsjprs.2015.05.010)). This project puts the two together on hobby hardware.
 
+The line-camera renderer, and a synthetic scan with known poses to develop it against, are in [`splat/`](splat/).
+
 ## Roadmap
 
 - [x] First-order optical design and Optiland model (configs A, B, C)
 - [x] [FreeCAD model](cad/) of the arm and scanner head, with printable housing, optics carriers and wrist mount
-- [ ] **Bench spectrometer:** slit, field lens, collimator, grating and camera aimed at neon and CFL lamps; fit the wavelength map and the smile/keystone warp
+- [ ] **Bench spectrometer:** slit, field lens, collimator, grating and camera aimed at neon and CFL lamps; fit the wavelength map and the smile/keystone warp with the [calibration kit](calibration/)
 - [ ] **Line imager:** add the objective, focus it on a printed target, measure the line on a knife edge
 - [ ] **Scanner:** add the mirror and stepper, scan a color card, assemble the datacube on the Jetson (first CUDA kernel: warp + bin)
 - [ ] **3D:** arm viewpoints, AprilTag poses and the line-camera splat renderer
