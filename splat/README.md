@@ -182,7 +182,9 @@ from where the forward pass stopped, the warp summing each splat's gradients
 so that it costs one atomic add per value), and the projection backwards (one
 thread per visible pair, into the Gaussian and the line's camera). The
 trainer copies the scene up and the gradients down every step and keeps Adam
-on the CPU, which is simple and costs a few MB of copies per step.
+on the CPU, which is simple and costs a few MB of copies per step. On TheRig
+the GPU's gradients agree with the CPU reference's to about 10⁻⁶ (relative),
+and a training step takes 3 to 5 ms.
 
 The tests run both renderers on the same lines and require all but 0.1% of
 values to agree to 10⁻⁴ (float rounding can tip a splat across a cutoff).
@@ -224,7 +226,7 @@ Some choices, briefly:
   moves the lines the same way.
 - **No sweep is held fixed.** Pinning one sweep at its recorded pose, the
   usual way to stop the whole reconstruction from drifting, stalls at 1.4 px
-  on the 16-sweep scan below (against 0.46 px): that sweep's error is baked
+  on the 16-sweep scan below (against 0.47 px): that sweep's error is baked
   in, and every Gaussian has to move to match it, which gradient steps do
   badly. With every sweep free, the scene stays where the recorded poses put
   it on average and only their disagreements get corrected.
@@ -237,15 +239,18 @@ it).
 
 | Dataset | Sweeps | Pose error: recorded → trained | Gaussians | Time, 4-core CPU |
 |---|---|---|---|---|
-| `small` (128 px, 24 bands) | 6 | 5.5 → 1.08 px | 9,994 | 48 s |
-| `small --sweeps 16` | 16 | 5.2 → 0.46 px | 12,453 | 57 s |
-| `default` (256 px, 46 bands) | 8 | 10.6 → 2.0 px | 11,233 | 120 s |
-| `default --sweeps 16` | 16 | 10.9 → 0.96 px | 12,924 | 139 s |
+| `small` (128 px, 24 bands) | 6 | 5.5 → 1.09 px | 9,994 | 43 s |
+| `small --sweeps 16` | 16 | 5.2 → 0.47 px | 12,452 | 54 s |
+| `default` (256 px, 46 bands) | 8 | 10.6 → 2.0 px | 11,205 | 101 s |
+| `default --sweeps 16` | 16 | 10.9 → 0.97 px | 12,938 | 108 s |
 
 A pixel covers 0.33 mm of the board at 128 px and 0.16 mm at 256 px, so both
 16-sweep runs line the sweeps up to about 0.15 mm. Every run renders the
 measured lines to about their noise (RMSE 0.015 to 0.019, where the true scene
-at the true poses scores 0.016).
+at the true poses scores 0.016). Runs differ by about 0.01 px from one to the
+next, since threads add up the gradients in a different order each time. On
+TheRig the 16-sweep runs reach the same pose errors in 10 s (`small`) and
+16 s (`default`) on the GPU, and the `small` one in 24 s on the CPU.
 
 <img src="docs/trained_rgb.png" width="100%" alt="Three views of the scene from the overview camera: the true scene, a splat trained from 16 sweeps that matches it closely, and one trained from 8 sweeps, where the ball smears into the board and the checker border doubles.">
 
@@ -409,7 +414,7 @@ tests/                    one file per topic; test_cuda skips without a GPU
 
 ## Next steps
 
-1. **Time training on the Nano**, and on TheRig's GPU against its CPU.
+1. **Time training on the Nano**, where TheRig's GPU takes 3 to 5 ms a step.
 2. **Real data**: a converter from the ROS 2 scan logs to this format, using
    the wavelength map and warp from the calibration work.
 3. **Fewer features than bands**: a learned spectral basis (K of 8 to 12
