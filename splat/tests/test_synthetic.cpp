@@ -89,3 +89,25 @@ TEST(hidden_word_shows_only_in_the_nir) {
   const auto w = true_color(paper.data(), wl);
   CHECK(w[0] > 0.8 && w[1] > 0.8 && w[2] > 0.8);
 }
+
+TEST(color_weights_give_the_same_colors) {
+  // The previews color every pixel with per-band weights; they must match
+  // coloring the whole spectrum, on the dataset's grid and an uneven one.
+  const std::vector<std::vector<double>> grids = {wavelength_grid(500, 950, 46), {420, 505, 590, 640, 700, 860}};
+  const SpectrumColorFn fns[2] = {true_color, color_infrared};
+  Rng rng(5);
+  for (const auto& wl : grids)
+    for (SpectrumColorFn fn : fns) {
+      const auto w = color_weights(fn, wl);
+      for (int trial = 0; trial < 20; ++trial) {
+        std::vector<float> s(wl.size());
+        for (float& v : s) v = float(rng.uniform(0, 1));
+        const auto direct = fn(s.data(), wl);
+        for (int k = 0; k < 3; ++k) {
+          double sum = 0;
+          for (size_t b = 0; b < wl.size(); ++b) sum += double(w[b][size_t(k)]) * s[b];
+          CHECK_NEAR(sum, direct[size_t(k)], 1e-5);
+        }
+      }
+    }
+}

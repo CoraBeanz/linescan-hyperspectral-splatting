@@ -13,10 +13,14 @@ namespace linesplat {
 void write_spectral_png(const std::string& path, const float* spectra, int rows, int cols,
                         const std::vector<double>& wl, PreviewMode mode, float gain) {
   const size_t B = wl.size();
+  const auto w = color_weights(mode == PreviewMode::kTrueColor ? true_color : color_infrared, wl);
   std::vector<uint8_t> rgb(size_t(rows) * cols * 3);
   for (size_t i = 0; i < size_t(rows) * cols; ++i) {
-    const auto c = mode == PreviewMode::kTrueColor ? true_color(spectra + i * B, wl) : color_infrared(spectra + i * B, wl);
-    for (int k = 0; k < 3; ++k) rgb[3 * i + k] = to_srgb8(gain * c[size_t(k)]);
+    const float* s = spectra + i * B;
+    float c[3] = {0.0f, 0.0f, 0.0f};
+    for (size_t b = 0; b < B; ++b)
+      for (int k = 0; k < 3; ++k) c[k] += w[b][size_t(k)] * s[b];
+    for (int k = 0; k < 3; ++k) rgb[3 * i + k] = to_srgb8(gain * c[k]);
   }
   write_png_rgb(path, cols, rows, rgb);
 }

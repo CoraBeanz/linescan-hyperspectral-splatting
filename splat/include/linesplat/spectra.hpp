@@ -42,6 +42,12 @@ std::vector<float> material_spectrum(Material m, const std::vector<double>& wave
 std::array<float, 3> true_color(const float* spectrum, const std::vector<double>& wavelengths_nm);
 std::array<float, 3> color_infrared(const float* spectrum, const std::vector<double>& wavelengths_nm);
 
+// Both colors are linear in the spectrum, so for many spectra on one grid it
+// is far quicker to color each band on its own once and take weighted sums:
+// color[k] = sum over b of weights[b][k] * spectrum[b].
+using SpectrumColorFn = std::array<float, 3> (*)(const float*, const std::vector<double>&);
+std::vector<std::array<float, 3>> color_weights(SpectrumColorFn color, const std::vector<double>& wavelengths_nm);
+
 // Linear [0, 1] -> 8-bit sRGB.
 uint8_t to_srgb8(float linear);
 
