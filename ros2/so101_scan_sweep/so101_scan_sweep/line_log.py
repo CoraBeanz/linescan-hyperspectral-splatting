@@ -15,7 +15,7 @@ import numpy as np
 
 from so101_scan_sweep.plan import ARM_JOINTS
 
-CSV_COLUMNS = (["viewpoint", "sweep_id", "index", "stamp_ns", "mirror_angle"]
+CSV_COLUMNS = (["viewpoint", "sweep_id", "index", "stamp_ns", "hold_until_ns", "settled", "mirror_angle"]
                + ["head_" + k for k in ("x", "y", "z", "qx", "qy", "qz", "qw")]
                + ["cam_" + k for k in ("x", "y", "z", "qx", "qy", "qz", "qw")]
                + ARM_JOINTS)
@@ -126,9 +126,10 @@ class LinesCsv:
         self.writer.writerow(CSV_COLUMNS)
         self.rows = 0
 
-    def write(self, viewpoint, sweep_id, index, stamp_ns, mirror_angle, head, camera, joints):
+    def write(self, viewpoint, sweep_id, index, stamp_ns, hold_until_ns, settled, mirror_angle, head, camera,
+              joints):
         self.writer.writerow(
-            [viewpoint, sweep_id, index, stamp_ns, "%.9f" % mirror_angle]
+            [viewpoint, sweep_id, index, stamp_ns, hold_until_ns, int(settled), "%.9f" % mirror_angle]
             + ["%.9f" % v for v in pose_fields(head) + pose_fields(camera)]
             + ["%.9f" % joints[j] for j in ARM_JOINTS])
         self.rows += 1

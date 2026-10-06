@@ -1,4 +1,5 @@
-"""scan_mirror_bridge against the simulated ESP32: homing, sweeps, line stamps and refusals."""
+"""scan_mirror_bridge against the simulated ESP32: homing, sweeps, line stamps, refusals and
+the ESP32 restarting."""
 
 import math
 import os
@@ -84,65 +85,112 @@ def sweep_request(start, steps, n, period):
     return StartSweep.Request(start_angle=start, steps_per_line=steps, n_lines=n, line_period=period)
 
 
-def test_needs_homing_first(ros):
+def home(client):
+    res = client.call("home", Trigger.Request())
+    assert res.success, res.message
+    client.wait_for(lambda: client.state.homed and client.state.state == "idle")
+
+
+def test_needs_homing_first(ros, fake):
     client, _ = ros
+    client.wait_for(lambda: client.state.state == "disabled")   # as the ESP32 starts: motor off
     res = client.call("start_sweep", sweep_request(0.0, 2, 5, 0.02))
     assert not res.accepted and "not homed" in res.message
     assert not client.call("move", MoveMirror.Request(angle=0.1)).success
-    assert client.call("home", Trigger.Request()).success
-    client.wait_for(lambda: client.state.homed)
-    assert client.state.angle == pytest.approx(-0.698132)
+    home(client)
+    assert client.state.angle == pytest.approx(0.0)              # HOME parks at the 45 deg rest
+    verbs = [line.split()[0] for line in fake.received]
+    assert verbs.index("ENABLE") < verbs.index("HOME")           # the motor is powered first
+
+
+def test_homing_failure_is_reported(ros, fake):
+    client, _ = ros
+    fake.hall = False
+    res = client.call("home", Trigger.Request())
+    assert not res.success and "not_found" in res.message and "magnet" in res.message
+
+
+def ns(stamp):
+    return rclpy.time.Time.from_msg(stamp).nanoseconds
+
+
+def check_sweep(client, fake, res, n, period):
+    """The lines of one sweep: all there, at the right angles, stamped when the fake settled."""
+    client.wait_for(lambda: any(m.sweep_id == res.sweep_id and m.last for m in client.lines))
+    lines = [m for m in client.lines if m.sweep_id == res.sweep_id]
+    assert [m.index for m in lines] == list(range(n))
+    for m in lines:
+        assert m.angle == pytest.approx(res.start_angle + 2 * m.index * RAD_PER_STEP, abs=1e-9)
+        assert m.step == round(m.angle / RAD_PER_STEP) and m.settled
+        # the mirror holds still from the stamp until the next line is due
+        assert 0 < ns(m.hold_until) - ns(m.header.stamp) <= period * 1e9 + 1e6
+    assert [m.last for m in lines] == [False] * (n - 1) + [True]
+    # each stamp is the ROS time the fake reported the line ready, from its drifting, offset clock
+    ready = {i: wall for scan, i, wall in fake.line_times if scan == fake.scans}
+    errors_ms = [abs(ns(m.header.stamp) - ready[m.index]) * 1e-6 for m in lines]
+    assert max(errors_ms) < 3.0, errors_ms
+    return lines
 
 
 def test_sweep_lines_angles_and_stamps(ros, fake):
-    client, bridge = ros
-    assert client.call("home", Trigger.Request()).success
+    client, _ = ros
+    home(client)
     start = -0.05
     res = client.call("start_sweep", sweep_request(start, 2, 25, 0.02))
     assert res.accepted, res.message
     assert res.rad_per_step == pytest.approx(RAD_PER_STEP)
     assert abs(res.start_angle - start) <= RAD_PER_STEP / 2
-    client.wait_for(lambda: client.lines and client.lines[-1].last)
-    lines = [m for m in client.lines if m.sweep_id == res.sweep_id]
-    assert [m.index for m in lines] == list(range(25))
-    for m in lines:
-        assert m.angle == pytest.approx(res.start_angle + 2 * m.index * RAD_PER_STEP, abs=1e-9)
-        assert m.step == bridge.angle_to_step(m.angle)
-    assert [m.last for m in lines] == [False] * 24 + [True]
-    # each stamp is the ROS time the fake sent the line, from its drifting, offset clock
-    sent = {i: wall for sid, i, wall in fake.line_times if sid == res.sweep_id}
-    errors_ms = [abs(rclpy.time.Time.from_msg(m.header.stamp).nanoseconds - sent[m.index]) * 1e-6 for m in lines]
-    assert max(errors_ms) < 3.0, errors_ms
-    # and the mirror joint followed the sweep
+    lines = check_sweep(client, fake, res, 25, 0.02)
+    # the mirror joint followed the sweep
     mirror = [j.position[0] for j in client.joints if j.name == ["scan_mirror_joint"]]
     assert any(abs(a - lines[-1].angle) < 1e-9 for a in mirror)
+    client.wait_for(lambda: client.state.sweep_id == res.sweep_id and not client.state.busy)
 
 
 def test_refuses_out_of_range_and_bad_requests(ros):
     client, _ = ros
-    assert client.call("home", Trigger.Request()).success
+    home(client)
     assert not client.call("start_sweep", sweep_request(0.7, 10, 50, 0.02)).accepted  # ends past 0.8 rad
     assert not client.call("start_sweep", sweep_request(0.0, 2, 0, 0.02)).accepted
+    assert not client.call("start_sweep", sweep_request(0.0, 2, 5, 0.0005)).accepted  # under 1 ms a line
     assert not client.call("move", MoveMirror.Request(angle=1.5)).success
+    res = client.call("start_sweep", sweep_request(0.0, 1, 100, 0.02))
+    assert res.accepted
+    second = client.call("start_sweep", sweep_request(0.0, 1, 5, 0.02))
+    assert not second.accepted and "still running" in second.message
 
 
 def test_move_rounds_to_a_step(ros, fake):
     client, _ = ros
-    assert client.call("home", Trigger.Request()).success
+    home(client)
     res = client.call("move", MoveMirror.Request(angle=0.1))
     assert res.success, res.message
     assert abs(res.angle - 0.1) <= RAD_PER_STEP / 2
-    assert fake.step == round((res.angle + 0.698132) / RAD_PER_STEP)
+    assert fake.pos == round(res.angle / RAD_PER_STEP)
 
 
 def test_stop_ends_a_sweep(ros):
     client, _ = ros
-    assert client.call("home", Trigger.Request()).success
+    home(client)
     res = client.call("start_sweep", sweep_request(0.0, 1, 500, 0.02))
     assert res.accepted
     client.wait_for(lambda: len(client.lines) >= 5)
-    assert client.call("stop", Trigger.Request()).success
-    client.wait_for(lambda: not client.state.busy)
+    stop = client.call("stop", Trigger.Request())
+    assert stop.success and "stopped at" in stop.message
+    client.wait_for(lambda: client.state.sweep_id == res.sweep_id and not client.state.busy)
     n = len(client.lines)
     time.sleep(0.2)
     assert len(client.lines) == n < 500
+
+
+def test_esp32_restart_needs_homing_again(ros, fake):
+    client, bridge = ros
+    home(client)
+    fake.reboot()       # its clock starts again from zero
+    client.wait_for(lambda: not client.state.homed and client.state.state == "disabled")
+    assert not client.call("start_sweep", sweep_request(0.0, 2, 5, 0.02)).accepted
+    client.wait_for(lambda: bridge.clock_sync.ready)
+    home(client)
+    res = client.call("start_sweep", sweep_request(0.0, 2, 10, 0.02))
+    assert res.accepted, res.message
+    check_sweep(client, fake, res, 10, 0.02)    # stamps are right on the restarted clock

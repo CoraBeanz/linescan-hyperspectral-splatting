@@ -1,9 +1,11 @@
-# Sweep the scan mirror over n_lines lines and publish a ScanLine on /scan_mirror/line at each.
-# Returns as soon as the sweep is accepted; the ScanLine with last = true marks the end.
+# Step the scan mirror through n_lines lines, holding still on each for about a camera frame,
+# and publish a ScanLine on /scan_mirror/line for each. Returns as soon as the ESP32 accepts the
+# sweep. The ScanLine with last = true marks the end; a sweep cut short (~/stop, a driver fault)
+# shows up as MirrorState with this sweep_id and busy = false.
 float64 start_angle    # rad, same convention as ScanLine.angle; rounded to a whole microstep
 int32 steps_per_line   # microsteps between lines; the sign sets the direction
 uint32 n_lines
-float64 line_period    # s from one line to the next (the mirror dwells for one camera frame)
+float64 line_period    # s from one line to the next, at least 0.001
 ---
 bool accepted
 string message         # why not, when rejected (not homed, busy, out of range)

@@ -1,16 +1,11 @@
-# scan_mirror_bridge: how ESP32 microsteps become mirror angles, and where it may go.
-# Angles in rad; 0 is the mirror's 45 deg rest, + turns the view from the head's +Y toward +Z.
+# scan_mirror_bridge. Angles in rad; 0 is the mirror's 45 deg rest, + turns the view from the
+# head's +Y toward +Z. Microsteps per turn come from the ESP32 (its INFO reply), and the rest of
+# the mirror's settings live in the firmware (CFG, SAVE): the hall sensor's angle (home_pos),
+# which way the motor turns (dir_inv), speeds, currents and the settle time.
 scan_mirror:
   ros__parameters:
     port: /dev/scan_mirror
-    baud: 115200
-    # NEMA 8 (1.8 deg) at 1/32 microstepping on the TMC2209
-    microsteps_per_rev: 6400
-    # +1 if a positive step turns the mirror toward + angles; flip to -1 if a sweep runs backwards
-    direction: 1
-    # mirror angle where the hall sensor triggers (step 0), from the CAD (mirror_home, -40 deg);
-    # measure it once the head is built and put the real value here
-    home_angle: -0.698132
+    baud: 921600
     # the bridge refuses moves and sweeps outside these
     min_angle: -0.8
     max_angle: 0.8

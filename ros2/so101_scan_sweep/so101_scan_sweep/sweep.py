@@ -9,8 +9,9 @@ scan line the mirror reports works out the head and line-camera poses at the lin
 run writes a folder:
 
     <output_dir>/<name>_<YYYYmmdd-HHMMSS>/
-      lines.csv    one row per line: viewpoint, sweep_id, index, stamp_ns, mirror_angle, the head
-                   and line-camera poses in base_link (m, quaternion x y z w), the arm joints (rad)
+      lines.csv    one row per line: viewpoint, sweep_id, index, stamp_ns (the mirror settled),
+                   hold_until_ns (it moved on), settled, mirror_angle, the head and line-camera
+                   poses in base_link (m, quaternion x y z w), the arm joints (rad)
       scan.json    the run: the plan, per-viewpoint counts and timing, frames and units
       robot.urdf   the URDF the poses came from
 
@@ -65,7 +66,8 @@ class SweepLog:
     def __init__(self, viewpoint, name, n_lines):
         self.viewpoint, self.name, self.n_lines = viewpoint, name, n_lines
         self.stamps, self.joints, self.gaps_ns, self.ends = [], [], [], []
-        self.done = threading.Event()
+        self.unsettled = 0
+        self.done = threading.Event()   # its last line is logged, or the mirror stopped early
 
 
 def to_pose(t):
@@ -116,6 +118,9 @@ class ScanSweep(Node):
 
     def on_mirror_state(self, msg):
         self.mirror_state = msg
+        log = self.sweeps.get(msg.sweep_id)
+        if log is not None and not msg.busy:
+            log.done.set()  # ended without a last line: stopped, a driver fault, or the ESP32 restarted
 
     def on_line(self, msg):
         with self.lock:
@@ -155,9 +160,12 @@ class ScanSweep(Node):
         log.joints.append([joints[j] for j in ARM_JOINTS])
         log.gaps_ns.append(gap)
         log.ends.append(self.poser.line_ends(camera))
+        log.unsettled += not msg.settled
+        hold_until = rclpy.time.Time.from_msg(msg.hold_until).nanoseconds
         with self.lock:
             if self.csv:
-                self.csv.write(log.viewpoint, msg.sweep_id, msg.index, stamp, msg.angle, head, camera, joints)
+                self.csv.write(log.viewpoint, msg.sweep_id, msg.index, stamp, hold_until, msg.settled, msg.angle,
+                               head, camera, joints)
         out = ScanLinePose()
         out.header.stamp = msg.header.stamp
         out.header.frame_id = self.poser.base
@@ -269,7 +277,7 @@ class ScanSweep(Node):
         if not plan.home_mirror:
             raise ScanError("the mirror is not homed and the plan has home_mirror: false")
         self.get_logger().info("homing the scan mirror")
-        res = self.call(self.home_client, Trigger.Request(), 30.0, "/scan_mirror/home")
+        res = self.call(self.home_client, Trigger.Request(), 90.0, "/scan_mirror/home")
         if not res.success:
             raise ScanError("homing failed: %s" % res.message)
 
@@ -305,7 +313,8 @@ class ScanSweep(Node):
             "line_camera_axes": "z: the view through the mirror; x: along the slit, in pixel order; y = z cross x",
             "scene_distance_m": self.poser.scene_distance, "scan_line_half_length_m": self.poser.half_line}
         info["units"] = {"position": "m", "angle": "rad", "quaternion": "x y z w",
-                         "stamp_ns": "ROS time in ns, as in the ScanLine header"}
+                         "stamp_ns": "ROS time in ns at which the mirror settled on the line",
+                         "hold_until_ns": "ROS time in ns at which the mirror moved on to the next line"}
         try:
             self.ensure_homed(plan)
             for i, vp in enumerate(plan.viewpoints):
@@ -352,7 +361,7 @@ class ScanSweep(Node):
 
 def summarize(res, log):
     out = {"sweep_id": res.sweep_id, "start_angle": res.start_angle, "rad_per_step": res.rad_per_step,
-           "lines_expected": log.n_lines, "lines_logged": len(log.stamps)}
+           "lines_expected": log.n_lines, "lines_logged": len(log.stamps), "lines_unsettled": log.unsettled}
     if len(log.stamps) > 1:
         periods = np.diff(np.array(log.stamps, dtype=np.int64)) * 1e-9
         out["line_period_mean_s"] = float(periods.mean())
