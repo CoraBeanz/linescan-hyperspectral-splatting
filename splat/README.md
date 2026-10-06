@@ -7,7 +7,7 @@ and the arm moves the head between sweeps. So the training data is thousands of
 one-row images, each with its own pose, and the splat has to be rendered
 through a camera that has a single row of pixels.
 
-Milestone 1 is here:
+What's here:
 
 - a **line-camera renderer** for hyperspectral Gaussians: a CPU reference (in
   `float` or `double`) and a CUDA rasterizer that matches it, written for the
@@ -15,10 +15,11 @@ Milestone 1 is here:
 - a **synthetic pushbroom dataset**: a known scene with realistic spectra, scanned
   through the head's mirror geometry from `cad/`, with the kind of pose errors
   the arm will have, plus the ground truth to score against
-- tools to make and inspect datasets, and unit tests that pin the math down
-
-Training (the backward pass, the optimizer and pose refinement) comes next; see
-[Next steps](#next-steps).
+- a **trainer** that fits the Gaussians to the lines and corrects each sweep's
+  head pose at the same time, with the backward pass on the CPU or the GPU
+  ([Training](#training))
+- tools to make and inspect datasets and to train, and unit tests that pin the
+  math down
 
 <table>
   <tr>
@@ -174,6 +175,15 @@ Some choices, briefly:
   and warp intrinsics use the `_sync` forms. The host code is C++17 that gcc 7
   builds (so no `std::filesystem`).
 
+For training, `mse_backward()` runs the same passes, then three more: the
+loss per pixel (bands, error and dL/dfeatures), the raster pass backwards (one
+warp per (line, tile) again, each lane walking its pixel's list back to front
+from where the forward pass stopped, the warp summing each splat's gradients
+so that it costs one atomic add per value), and the projection backwards (one
+thread per visible pair, into the Gaussian and the line's camera). The
+trainer copies the scene up and the gradients down every step and keeps Adam
+on the CPU, which is simple and costs a few MB of copies per step.
+
 The tests run both renderers on the same lines and require all but 0.1% of
 values to agree to 10⁻⁴ (float rounding can tip a splat across a cutoff).
 On a 4-core cloud CPU the reference renders the default dataset (1712 lines ×
@@ -181,6 +191,81 @@ On a 4-core cloud CPU the reference renders the default dataset (1712 lines ×
 CUDA renderer does it in 2.8 ms of GPU work, or 9.3 ms counting the copy of the
 80 MB result back to the CPU, against 40 ms for the reference on the machine's
 28-thread i7-14700KF. The Nano's numbers will follow.
+
+## Training
+
+`splat_train` fits a splat to a dataset's lines and refines the sweep poses
+at the same time. Each step takes 128 random lines (every line gets a turn
+before any repeats), renders them, compares them with the measured lines
+(mean squared error over every pixel and band), backpropagates, and takes an
+Adam step on the Gaussians and on one pose correction per sweep. The backward
+pass is 3DGS's, per pixel and back to front (`backward_cpu.hpp` spells it
+out); the tests check every gradient, the pose ones included, against finite
+differences in `double`, and the GPU's against the CPU's.
+
+Some choices, briefly:
+
+- **Start on the board.** 3DGS starts from a structure-from-motion point
+  cloud, which a line scanner doesn't have. Instead every recorded pixel ray
+  is cut with the board's plane (z = 0), and each 1 mm cell the rays land in
+  gets a Gaussian with the mean spectrum of their pixels. The ball and the box
+  grow out of the board through densification.
+- **Densify per line.** 3DGS clones or splits Gaussians whose screen-space
+  gradient stays large, averaged per image. Here a Gaussian only gets gradient
+  from the lines that cut it, so the average is per (line, Gaussian) pair,
+  with the centre measured in line widths so that the threshold doesn't depend
+  on the camera's resolution. Small Gaussians are cloned, ones over 1 mm split
+  in two, and nearly transparent or oversized ones are pruned.
+- **One pose correction per sweep.** A line on its own says almost nothing
+  about where it was across the slit, but a sweep's one or two hundred lines
+  share one arm pose. Each line camera's pose gradient is carried back to a
+  6-DoF correction of its sweep's head pose, made in the camera's frame. A
+  mirror homing error needs no parameter of its own, since a small head motion
+  moves the lines the same way.
+- **No sweep is held fixed.** Pinning one sweep at its recorded pose, the
+  usual way to stop the whole reconstruction from drifting, stalls at 1.4 px
+  on the 16-sweep scan below (against 0.46 px): that sweep's error is baked
+  in, and every Gaussian has to move to match it, which gradient steps do
+  badly. With every sweep free, the scene stays where the recorded poses put
+  it on average and only their disagreements get corrected.
+
+Results after the default 3000 steps, starting from the recorded poses. The
+pose error is how far apart the trained and the true line cameras put points
+on the board, in pixels, after the best rigid alignment of the two (moving
+everything together changes nothing in the data, so no trainer can recover
+it).
+
+| Dataset | Sweeps | Pose error: recorded → trained | Gaussians | Time, 4-core CPU |
+|---|---|---|---|---|
+| `small` (128 px, 24 bands) | 6 | 5.5 → 1.08 px | 9,994 | 48 s |
+| `small --sweeps 16` | 16 | 5.2 → 0.46 px | 12,453 | 57 s |
+| `default` (256 px, 46 bands) | 8 | 10.6 → 2.0 px | 11,233 | 120 s |
+| `default --sweeps 16` | 16 | 10.9 → 0.96 px | 12,924 | 139 s |
+
+A pixel covers 0.33 mm of the board at 128 px and 0.16 mm at 256 px, so both
+16-sweep runs line the sweeps up to about 0.15 mm. Every run renders the
+measured lines to about their noise (RMSE 0.015 to 0.019, where the true scene
+at the true poses scores 0.016).
+
+<img src="docs/trained_rgb.png" width="100%" alt="Three views of the scene from the overview camera: the true scene, a splat trained from 16 sweeps that matches it closely, and one trained from 8 sweeps, where the ball smears into the board and the checker border doubles.">
+
+The true scene (left) and splats trained on the default dataset's lines: from
+16 sweeps (middle) and from the default 8 (right). Only what the scans saw
+comes back, so the table frays at the edges.
+
+What this says for the rig:
+
+- **Scan many sweeps from all around.** With 6 or 8 sweeps the ball and the
+  box are seen from too few directions: the trainer paints them onto the
+  board, and each sweep's pose bends to fit its own view. With 16 sweeps the
+  pose error is half or less.
+- **Some error is the geometry's, not the trainer's.** Holding the true scene
+  fixed and refining only the poses stops at about 0.3 px (at 128 px), even
+  with noise-free lines and perfect mirror angles. Turning a sweep slightly
+  about the board while shifting it to keep the board in place barely changes
+  what a narrow fan sees of a flat board, so the loss is nearly flat in that
+  direction. A target with textured relief instead of a flat board should
+  pin it down better (not yet tried).
 
 ## Dataset format
 
@@ -276,14 +361,18 @@ build\splat\Release\splat_tests.exe
 ## Tools
 
 Run them from the build directory, so the datasets stay out of git (`build/`
-is ignored). Either tool prints its flags when run with no arguments.
+is ignored). Each tool prints its flags when run with no arguments.
 
 ```bash
 cd build/splat
 
 # Make a dataset: on the GPU if there is one, --preset tiny|small|default|full,
-# --no-errors for perfect poses
+# --sweeps 16 for more views, --no-errors for perfect poses (--errors 0.5 for half)
 ./splat_synth synth --preset small
+
+# Train a splat and refine the sweep poses (on the GPU if there is one, --cpu
+# to force the CPU); for synthetic data it reports the pose error before and after
+./splat_train synth synth/train
 
 # CPU vs GPU on every line, with timings
 ./splat_render compare synth
@@ -305,26 +394,26 @@ include/linesplat/
 ├── scene.hpp             GaussianScene: shapes, opacities, spectral features, basis
 ├── scan_model.hpp        poses, the scan mirror, the CAD head, intrinsics from the optics
 ├── render_cpu.hpp        reference renderer, float or double
-├── cuda_rasterizer.hpp   the CUDA renderer (src/cuda/rasterizer.cu)
+├── cuda_rasterizer.hpp   the CUDA renderer and backward pass (src/cuda/rasterizer.cu)
+├── gradients.hpp         backward of the projection and the Gaussian parameters, host and device
+├── backward_cpu.hpp      reference backward pass: lines -> loss -> scene and camera gradients
+├── trainer.hpp           Adam, densification, per-sweep poses, the pose error metric
 ├── dataset.hpp           the dataset format above
 ├── synthetic.hpp         the synthetic scene and scan
 ├── spectra.hpp           material spectra, true color (CIE 1931) and CIR
 └── preview.hpp, png.hpp, npy.hpp, rng.hpp, util.hpp
 src/                      a .cpp per header, and cuda/rasterizer.cu
-tools/                    splat_synth, splat_render
+tools/                    splat_synth, splat_render, splat_train
 tests/                    one file per topic; test_cuda skips without a GPU
 ```
 
 ## Next steps
 
-1. **Backward pass on the CPU** in `double`, checked against finite
-   differences, so the CUDA gradients have something exact to match.
-2. **CUDA backward pass**: composite back to front per pixel and accumulate
-   Gaussian gradients with `float` atomics (sm_53 has no `double` atomicAdd).
-3. **Optimizer and densification**: Adam, then split, clone and prune adapted
-   to lines, where a Gaussian only gets gradient from the lines that cut it.
-4. **Pose refinement**: one SE(3) correction per sweep (which also absorbs
-   a mirror homing offset), trained with the Gaussians. Success means
-   recovering the synthetic errors above to well under a pixel.
-5. **Real data**: a converter from the ROS 2 scan logs to this format, using
+1. **Time training on the Nano**, and on TheRig's GPU against its CPU.
+2. **Real data**: a converter from the ROS 2 scan logs to this format, using
    the wavelength map and warp from the calibration work.
+3. **Fewer features than bands**: a learned spectral basis (K of 8 to 12
+   instead of 46), which cuts memory and time on the Nano. The basis gradient
+   isn't written yet.
+4. **Keep training on the GPU** (Adam and densification there) if copying the
+   scene every step turns out to matter on the Nano.
