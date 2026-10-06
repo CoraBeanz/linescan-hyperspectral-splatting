@@ -90,6 +90,12 @@ TEST(gpu_batches_give_the_same_answer) {
   CHECK(st.batches == 29);
   CHECK(one.values == many.values);
   CHECK(one.contributors == many.contributors);
+  // Rendering into a used image overwrites all of it, whatever it held.
+  LineImage reused = gpu.render(lsfix::cast_all<float>(lsfix::sweep_cameras(200, 64, 300.0, 0.05)));
+  for (float& v : reused.values) v = -1.0f;
+  gpu.render(cams, &reused);
+  CHECK(reused.values == one.values);
+  CHECK(reused.transmittance == one.transmittance);
 }
 
 TEST(gpu_matches_cpu_on_the_synthetic_scan) {
@@ -107,8 +113,8 @@ TEST(gpu_matches_cpu_on_the_synthetic_scan) {
   gpu.set_scene(scene);
   CudaRenderStats st;
   const LineImage g = gpu.render(cams, &st);
-  std::printf("       %d lines, %lld visible pairs, %lld tile entries, %.1f ms\n", int(cams.size()),
-              st.visible_pairs, st.tile_entries, st.ms);
+  std::printf("       %d lines, %lld visible pairs, %lld tile entries, %.1f ms on the GPU\n", int(cams.size()),
+              st.visible_pairs, st.tile_entries, st.gpu_ms);
   check_close(g, render_lines_cpu<float>(scene, cams));
 }
 

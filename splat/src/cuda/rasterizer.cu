@@ -88,6 +88,11 @@ struct TilesOf {
 struct IsVisible {
   __host__ __device__ uint32_t operator()(uint32_t r) const { return r ? 1u : 0u; }
 };
+// thrust::plus is deprecated in CUDA 13 and cuda::std::plus doesn't exist in
+// CUDA 10.2, so add with our own functor.
+struct AddU32 {
+  __host__ __device__ uint32_t operator()(uint32_t a, uint32_t b) const { return a + b; }
+};
 
 // Per Gaussian: (mean, opacity), (cov xx, xy, xz, yy), (cov yz, zz, max scale, 0).
 __global__ void prepare_kernel(int n, const float* __restrict__ means, const float* __restrict__ log_scales,
@@ -174,7 +179,7 @@ __global__ void ranges_kernel(uint32_t n, const unsigned long long* __restrict__
 // Pass 5: one warp per (line, tile), C feature channels per launch row.
 template <int C>
 __global__ void __launch_bounds__(kTile* kWarpsPerBlock)
-    raster_kernel(int n_cells, int n_tiles, int width, int kp, const uint2* __restrict__ ranges,
+    raster_kernel(int n_cells, int n_tiles, int width, int k, int kp, const uint2* __restrict__ ranges,
                   const uint32_t* __restrict__ values, const float4* __restrict__ splats,
                   const int* __restrict__ splat_gid, const float* __restrict__ features,
                   const float* __restrict__ background, float* __restrict__ out, float* __restrict__ out_trans,
@@ -237,9 +242,12 @@ __global__ void __launch_bounds__(kTile* kWarpsPerBlock)
   }
   if (!inside) return;
   const size_t px = size_t(line) * width + p;
-  float* o = out + px * kp + chunk * C;
+  // The output has the scene's k channels, not the padded kp.
+  float* o = out + px * k + chunk * C;
+  const int n_out = k - chunk * C;
 #pragma unroll
-  for (int c = 0; c < C; ++c) o[c] = acc[c] + trans * background[chunk * C + c];
+  for (int c = 0; c < C; ++c)
+    if (c < n_out) o[c] = acc[c] + trans * background[chunk * C + c];
   if (chunk == 0) {
     out_trans[px] = trans;
     out_contrib[px] = int(last);
@@ -319,10 +327,45 @@ void CudaRasterizer::set_scene(const GaussianScene& scene) {
 }
 
 LineImage CudaRasterizer::render(const std::vector<LineCamera>& cams, CudaRenderStats* stats) {
+  LineImage img;
+  render(cams, &img, stats);
+  return img;
+}
+
+namespace {
+
+// CUDA events that time the GPU work of a render, batch by batch.
+class GpuTimer {
+ public:
+  GpuTimer() {
+    LS_CUDA_CHECK(cudaEventCreate(&start_));
+    LS_CUDA_CHECK(cudaEventCreate(&stop_));
+  }
+  ~GpuTimer() {
+    cudaEventDestroy(start_);
+    cudaEventDestroy(stop_);
+  }
+  void start() { LS_CUDA_CHECK(cudaEventRecord(start_)); }
+  void stop() {
+    LS_CUDA_CHECK(cudaEventRecord(stop_));
+    LS_CUDA_CHECK(cudaEventSynchronize(stop_));
+    float ms = 0.0f;
+    LS_CUDA_CHECK(cudaEventElapsedTime(&ms, start_, stop_));
+    total_ms += ms;
+  }
+  double total_ms = 0.0;
+
+ private:
+  cudaEvent_t start_, stop_;
+};
+
+}  // namespace
+
+void CudaRasterizer::render(const std::vector<LineCamera>& cams, LineImage* out, CudaRenderStats* stats) {
   Impl& m = *impl_;
   if (!m.has_scene) throw std::runtime_error("CudaRasterizer::render: call set_scene first");
   Timer timer;
-  LineImage img;
+  LineImage& img = *out;
   img.lines = int(cams.size());
   img.width = cams.empty() ? 0 : cams[0].width;
   img.channels = m.k;
@@ -330,14 +373,17 @@ LineImage CudaRasterizer::render(const std::vector<LineCamera>& cams, CudaRender
     if (c.width != img.width) throw std::runtime_error("CudaRasterizer::render: all cameras need the same width");
   if (img.width > 0xffff) throw std::runtime_error("CudaRasterizer::render: lines are limited to 65535 pixels");
   const int L = img.lines, W = img.width, K = m.k, n = m.n;
-  img.values.assign(size_t(L) * W * K, 0.0f);
-  img.transmittance.assign(size_t(L) * W, 1.0f);
-  img.contributors.assign(size_t(L) * W, 0);
+  // Every value is overwritten below, so a reused image of the right size
+  // isn't cleared first (clearing 80 MB costs more than rendering it).
+  img.values.resize(size_t(L) * W * K);
+  img.transmittance.resize(size_t(L) * W);
+  img.contributors.resize(size_t(L) * W);
   CudaRenderStats st;
   if (L == 0 || W == 0) {
     if (stats) *stats = st;
-    return img;
+    return;
   }
+  GpuTimer gpu;
 
   const int n_tiles = (W + kTile - 1) / kTile;
   // Lines per batch: bounded by the pair budget, the grid's y limit, and
@@ -345,11 +391,11 @@ LineImage CudaRasterizer::render(const std::vector<LineCamera>& cams, CudaRender
   long long batch = std::max(1LL, max_pairs_per_batch / std::max(1, n));
   batch = std::min<long long>(batch, 65535);
   batch = std::min<long long>(batch, std::max(1LL, (1LL << 31) / (std::max(1LL, (long long)n) * n_tiles)));
-  std::vector<float> host_out;
 
   for (int l0 = 0; l0 < L; l0 += int(batch)) {
     const int lb = int(std::min<long long>(batch, L - l0));
     m.cams.upload(&cams[size_t(l0)], size_t(lb));
+    gpu.start();
     const size_t pairs = size_t(lb) * n;
     const size_t n_cells = size_t(lb) * n_tiles;
     uint32_t n_entries = 0, n_vis = 0;
@@ -362,9 +408,9 @@ LineImage CudaRasterizer::render(const std::vector<LineCamera>& cams, CudaRender
       count_kernel<<<grid, kProjectBlock>>>(n, m.geom.get(), m.cams.get(), m.packed.get());
       LS_CUDA_CHECK(cudaGetLastError());
       thrust::transform_exclusive_scan(thrust::device, m.packed.get(), m.packed.get() + pairs, m.tile_off.get(),
-                                       TilesOf(), 0u, thrust::plus<uint32_t>());
+                                       TilesOf(), 0u, AddU32());
       thrust::transform_exclusive_scan(thrust::device, m.packed.get(), m.packed.get() + pairs, m.vis_off.get(),
-                                       IsVisible(), 0u, thrust::plus<uint32_t>());
+                                       IsVisible(), 0u, AddU32());
       uint32_t last_packed = 0, last_tile = 0, last_vis = 0;
       LS_CUDA_CHECK(cudaMemcpy(&last_packed, m.packed.get() + pairs - 1, 4, cudaMemcpyDeviceToHost));
       LS_CUDA_CHECK(cudaMemcpy(&last_tile, m.tile_off.get() + pairs - 1, 4, cudaMemcpyDeviceToHost));
@@ -392,28 +438,26 @@ LineImage CudaRasterizer::render(const std::vector<LineCamera>& cams, CudaRender
     }
 
     const size_t px = size_t(lb) * W;
-    m.out.reserve(px * m.kp);
+    m.out.reserve(px * K);
     m.trans.reserve(px);
     m.contrib.reserve(px);
     const dim3 rgrid(blocks_for(n_cells, kWarpsPerBlock), unsigned(m.kp / m.chunk));
     const dim3 rblock(kTile, kWarpsPerBlock);
     if (m.chunk == 8) {
-      raster_kernel<8><<<rgrid, rblock>>>(int(n_cells), n_tiles, W, m.kp, m.ranges.get(), m.values.get(),
+      raster_kernel<8><<<rgrid, rblock>>>(int(n_cells), n_tiles, W, K, m.kp, m.ranges.get(), m.values.get(),
                                           m.splats.get(), m.splat_gid.get(), m.features.get(), m.background.get(),
                                           m.out.get(), m.trans.get(), m.contrib.get());
     } else {
-      raster_kernel<16><<<rgrid, rblock>>>(int(n_cells), n_tiles, W, m.kp, m.ranges.get(), m.values.get(),
+      raster_kernel<16><<<rgrid, rblock>>>(int(n_cells), n_tiles, W, K, m.kp, m.ranges.get(), m.values.get(),
                                            m.splats.get(), m.splat_gid.get(), m.features.get(), m.background.get(),
                                            m.out.get(), m.trans.get(), m.contrib.get());
     }
     LS_CUDA_CHECK(cudaGetLastError());
+    gpu.stop();
 
-    host_out.resize(px * m.kp);
-    m.out.download(host_out.data(), host_out.size());
+    m.out.download(&img.values[size_t(l0) * W * K], px * K);
     m.trans.download(&img.transmittance[size_t(l0) * W], px);
     m.contrib.download(&img.contributors[size_t(l0) * W], px);
-    for (size_t i = 0; i < px; ++i)
-      std::copy(&host_out[i * m.kp], &host_out[i * m.kp] + K, &img.values[(size_t(l0) * W + i) * K]);
 
     st.batches += 1;
     st.visible_pairs += n_vis;
@@ -421,8 +465,8 @@ LineImage CudaRasterizer::render(const std::vector<LineCamera>& cams, CudaRender
   }
   LS_CUDA_CHECK(cudaDeviceSynchronize());
   st.ms = timer.ms();
+  st.gpu_ms = gpu.total_ms;
   if (stats) *stats = st;
-  return img;
 }
 
 }  // namespace linesplat

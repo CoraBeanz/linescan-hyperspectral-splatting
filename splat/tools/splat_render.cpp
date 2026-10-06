@@ -76,13 +76,14 @@ int cmd_compare(const Dataset& d, const GaussianScene& scene) {
   }
   CudaRasterizer gpu;
   gpu.set_scene(scene);
-  gpu.render(cams);  // warm up
-  CudaRenderStats st;
-  double best = 1e30;
   LineImage g;
+  gpu.render(cams, &g);  // warm up, and size the image once
+  CudaRenderStats st;
+  double best = 1e30, best_gpu = 1e30;
   for (int rep = 0; rep < 5; ++rep) {
-    g = gpu.render(cams, &st);
+    gpu.render(cams, &g, &st);
     best = std::min(best, st.ms);
+    best_gpu = std::min(best_gpu, st.gpu_ms);
   }
   double worst = 0, mean = 0;
   size_t over = 0;
@@ -93,10 +94,12 @@ int cmd_compare(const Dataset& d, const GaussianScene& scene) {
     over += e > 1e-4;
   }
   mean /= double(g.values.size());
-  std::printf("GPU  %s: %.2f ms (best of 5), %d batches, %lld visible pairs, %lld tile entries\n",
-              cuda_device_name().c_str(), best, st.batches, st.visible_pairs, st.tile_entries);
-  std::printf("diff max %.2e, mean %.2e, %.4f%% of values over 1e-4, speedup %.0fx\n", worst, mean,
-              100.0 * over / g.values.size(), cpu_ms / best);
+  std::printf("GPU  %s: %.2f ms on the GPU, %.2f ms with the copy back (best of 5)\n", cuda_device_name().c_str(),
+              best_gpu, best);
+  std::printf("     %d batches, %lld visible pairs, %lld tile entries\n", st.batches, st.visible_pairs,
+              st.tile_entries);
+  std::printf("diff max %.2e, mean %.2e, %.4f%% of values over 1e-4; GPU work %.0fx faster than the CPU\n", worst,
+              mean, 100.0 * over / g.values.size(), cpu_ms / best_gpu);
   return (worst < 0.05 && over < g.values.size() / 1000) ? 0 : 1;
 #else
   std::printf("GPU  not built (no CUDA compiler at configure time)\n");
