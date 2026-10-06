@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>so101_scan_description</name>
+  <version>0.1.0</version>
+  <description>
+    URDF of the SO-101 follower arm with the hyperspectral line-scan head on its wrist: the
+    arm from TheRobotStudio's URDF, the head, scan mirror and reflected line camera from the
+    FreeCAD model in cad/, and the ros2_control block for the STS3215 bus.
+  </description>
+  <maintainer email="vincentryanbaker@gmail.com">CoraBeanz</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <!-- display.launch.py also uses rviz2 and joint_state_publisher_gui, from a desktop install;
+       they are left out here so the Jetson's headless image stays small -->
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-yaml</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
