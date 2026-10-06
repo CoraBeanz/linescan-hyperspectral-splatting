@@ -4,7 +4,6 @@
 #   ros2 run so101_scan_sweep make_plan --target 0.26 0 -0.0024 --tilts 0 25 --azimuths 0 90 180 270 --name ring
 # slit_heading_deg says which way the slit runs across the table (base_link compass angle).
 name: ring
-output_dir: ~/so101_scan/scans
 target_m: [0.26, 0.0, -0.0024]
 move: {max_joint_speed_deg: 30.0, min_move_s: 1.0, settle_s: 0.5}
 sweep: {start_angle_deg: -6.0, steps_per_line: 2, n_lines: 107, line_period_s: 0.0333}

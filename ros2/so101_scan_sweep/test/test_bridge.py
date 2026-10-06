@@ -114,7 +114,8 @@ def test_sweep_lines_angles_and_stamps(ros, fake):
     errors_ms = [abs(rclpy.time.Time.from_msg(m.header.stamp).nanoseconds - sent[m.index]) * 1e-6 for m in lines]
     assert max(errors_ms) < 3.0, errors_ms
     # and the mirror joint followed the sweep
-    assert any(abs(j.position[0] - lines[-1].angle) < 1e-9 for j in client.joints if j.name == ["scan_mirror_joint"])
+    mirror = [j.position[0] for j in client.joints if j.name == ["scan_mirror_joint"]]
+    assert any(abs(a - lines[-1].angle) < 1e-9 for a in mirror)
 
 
 def test_refuses_out_of_range_and_bad_requests(ros):

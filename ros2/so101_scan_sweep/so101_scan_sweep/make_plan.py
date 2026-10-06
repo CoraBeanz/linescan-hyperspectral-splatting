@@ -49,7 +49,8 @@ def view_direction(tilt, azimuth):
 
 def lowest_point(robot, q):
     """Lowest z of the head's collision box and the arm's link origins, in base_link."""
-    zs = [robot.fk(name, q)[2, 3] for name in ("upper_arm_link", "lower_arm_link", "wrist_link", "wrist_roll_link")]
+    links = ("upper_arm_link", "lower_arm_link", "wrist_link", "wrist_roll_link")
+    zs = [robot.fk(name, q)[2, 3] for name in links]
     head = robot.fk("scan_head_link", q)
     col = robot.root.find("link[@name='scan_head_link']/collision")
     size = np.array([float(v) for v in col.find("geometry/box").get("size").split()])
@@ -101,8 +102,7 @@ def make_plan(robot, target, tilts, azimuths, name, clearance=0.01, sweep=None, 
                 "name": label,
                 "joints_deg": {j: round(math.degrees(q[j]), 2) for j in ARM_JOINTS},
                 "slit_heading_deg": round(slit_direction(robot, q), 1)})
-    plan = {"name": name, "output_dir": DEFAULTS["output_dir"],
-            "target_m": [float(v) for v in target],
+    plan = {"name": name, "target_m": [float(v) for v in target],
             "move": dict(DEFAULTS["move"]), "sweep": dict(sweep or DEFAULTS["sweep"]), "viewpoints": views}
     return plan
 
@@ -124,7 +124,9 @@ def main(argv=None):
         return 1
     text = yaml.safe_dump(plan, sort_keys=False, default_flow_style=None)
     if args.out:
-        with open(os.path.expanduser(args.out), "w") as f:
+        path = os.path.expanduser(args.out)
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "w") as f:
             f.write(text)
         print("wrote %d viewpoints to %s" % (len(plan["viewpoints"]), args.out), file=sys.stderr)
     else:

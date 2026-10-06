@@ -4,7 +4,8 @@ A plan is a YAML file written by hand or by `make_plan`; plans/ has examples. An
 degrees, since that is what people write; everything is converted to radians on loading.
 
     name: one_view
-    output_dir: ~/so101_scan/scans     # a new folder <name>_<date>-<time> per run
+    output_dir: ~/so101_scan/scans     # optional; a new folder <name>_<date>-<time> per run,
+                                       # in $SO101_SCAN_DATA/scans by default
     move:
       max_joint_speed_deg: 30          # the joint that moves furthest sets each move's duration
       min_move_s: 1.0                  # no move quicker than this
@@ -92,8 +93,8 @@ def from_dict(data):
     vps = d.get("viewpoints") or []
     if not vps:
         raise PlanError("the plan has no viewpoints")
-    plan = Plan(name=str(d["name"]), output_dir=os.path.expanduser(str(d["output_dir"])),
-                home_mirror=bool(d["home_mirror"]),
+    out = os.path.expanduser(os.path.expandvars(str(d["output_dir"])))
+    plan = Plan(name=str(d["name"]), output_dir=out, home_mirror=bool(d["home_mirror"]),
                 max_joint_speed=math.radians(float(d["move"]["max_joint_speed_deg"])),
                 min_move_time=float(d["move"]["min_move_s"]), settle_time=float(d["move"]["settle_s"]),
                 source=d)
