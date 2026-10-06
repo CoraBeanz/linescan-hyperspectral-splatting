@@ -107,6 +107,10 @@ void test_parse_numbers() {
   TEST_ASSERT_FALSE(sm::parseQ16("1.1234567", &q));
   TEST_ASSERT_FALSE(sm::parseQ16(".", &q));
   TEST_ASSERT_FALSE(sm::parseQ16("12a", &q));
+  TEST_ASSERT_TRUE(sm::parseQ16("140000000000000", &q));
+  TEST_ASSERT_EQUAL_UINT64(140000000000000ull * 65536, q);
+  TEST_ASSERT_FALSE(sm::parseQ16("140000000000001", &q));
+  TEST_ASSERT_FALSE(sm::parseQ16("281474976743989", &q));  // * 65536 would wrap to 33333 us
 }
 
 void test_linebuf_formatting() {

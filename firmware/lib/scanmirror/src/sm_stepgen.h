@@ -28,14 +28,18 @@ class Stepgen {
  public:
   // Go to target, replanning from the current speed and direction. If the
   // target is behind, or closer than it takes to brake, it passes the target
-  // while slowing down and comes back.
+  // while slowing down and comes back. A move that replaces one still under
+  // way brakes at least as hard as that one would have, so braking never
+  // carries the mirror past the old target either (see brake_a_).
   void moveTo(int32_t target, const Profile& p);
   // Run at constant speed v in direction dir until stop(); from rest only.
+  // v is capped at the profile's start speed, which the motor can stop from
+  // at once: if the next step would pass `limit`, it stops dead on it.
   // phase preloads the accumulator (2^31 rounds the position to the nearest
   // step of the ideal straight line).
-  void runVelocity(int8_t dir, uint32_t v, uint32_t phase, const Profile& p);
+  void runVelocity(int8_t dir, uint32_t v, uint32_t phase, int32_t limit, const Profile& p);
   void setVelocity(uint32_t v);
-  // Slow down at the profile's acceleration and stop.
+  // Brake to a stop (see brake_a_).
   void stop();
   // Stop at once, without slowing down.
   void halt();
@@ -60,10 +64,18 @@ class Stepgen {
   bool brake();
 
   Profile prof_ = {1, 1, 1};
+  // Slowing down uses the hardest acceleration, and stops from the highest
+  // start speed, of any profile since the mirror was last at rest. Each move
+  // keeps its braking distance short of its own target, so a replacement
+  // that brakes no gentler never runs past an earlier target (each of which
+  // the controller checked against the soft limits).
+  uint32_t brake_a_ = 1;
+  uint32_t brake_vs_ = 1;
   Mode mode_ = kIdle;
   int8_t dir_ = 1;
   int32_t pos_ = 0;
   int32_t target_ = 0;
+  int32_t limit_ = 0;   // velocity mode: last position it may step to
   uint32_t v_ = 0;      // current speed
   uint32_t v_cmd_ = 0;  // set point in velocity mode
   uint32_t acc_ = 0;    // phase accumulator

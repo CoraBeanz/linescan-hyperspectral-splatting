@@ -23,6 +23,7 @@ struct ScanParams {
   uint64_t period_q16;  // line period, Q16 microseconds
   uint32_t settle_us;   // stare: last step to "ready"
   uint32_t sweep_v;     // sweep: |step| / period as Q32 microsteps per tick
+  int32_t sweep_limit;  // sweep: the scan ends (aborted) rather than step past this
   Profile slew;         // move to `start` before line 0
   Profile line;         // stare: moves between lines; sweep: start speed
 };
