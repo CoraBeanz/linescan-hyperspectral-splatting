@@ -123,6 +123,17 @@ std::array<float, 3> color_infrared(const float* spectrum, const std::vector<dou
           float(band_mean(spectrum, wl, 520.0, 580.0))};
 }
 
+std::vector<std::array<float, 3>> color_weights(SpectrumColorFn color, const std::vector<double>& wl) {
+  std::vector<float> unit(wl.size(), 0.0f);
+  std::vector<std::array<float, 3>> w(wl.size());
+  for (size_t b = 0; b < wl.size(); ++b) {
+    unit[b] = 1.0f;
+    w[b] = color(unit.data(), wl);
+    unit[b] = 0.0f;
+  }
+  return w;
+}
+
 uint8_t to_srgb8(float x) {
   x = std::min(std::max(x, 0.0f), 1.0f);
   const float s = x <= 0.0031308f ? 12.92f * x : 1.055f * std::pow(x, 1.0f / 2.4f) - 0.055f;
