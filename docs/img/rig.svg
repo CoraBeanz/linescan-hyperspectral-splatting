@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="784" viewBox="0 0 1280 784" role="img" aria-labelledby="t d">
+  <title id="t">The rig: SO-101 arm with the scanner head</title>
+  <desc id="d">Side view of the setup. An SO-101 arm holds the scanner head above a potted plant on an AprilTag board. A scan mirror on the head sweeps a line of light across the plant, an RGB camera on the head sees the tags, halogen lamps light the scene, and a Jetson Nano and an ESP32 sit on the table. A faded second arm pose shows the next viewpoint. An inset shows the head's internals.</desc>
+  <style>
+    text { font-family: ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    .h1 { font-size: 30px; font-weight: 800; fill: #f1f5ff; }
+    .sub { font-size: 17px; fill: #a3acc9; }
+    .lt { font-size: 18px; font-weight: 700; fill: #e6e9f2; }
+    .ls { font-size: 15.5px; fill: #8b93b0; }
+    .num { font-size: 14px; font-weight: 800; fill: #7dd3fc; }
+    .small { font-size: 14px; fill: #8b93b0; font-style: italic; }
+  </style>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101a3a"/><stop offset="0.55" stop-color="#0a1024"/><stop offset="1" stop-color="#060914"/>
+    </linearGradient>
+    <pattern id="holes" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="14" cy="14" r="1.7" fill="#1d2955"/></pattern>
+    <radialGradient id="fade" cx="0.5" cy="0.6" r="0.75"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <mask id="holesMask"><rect width="1280" height="784" fill="url(#fade)"/></mask>
+    <linearGradient id="spectrum" x1="0" x2="1"><stop offset="0.000" stop-color="#00f5a0"/><stop offset="0.060" stop-color="#5cff3a"/><stop offset="0.120" stop-color="#c8ff00"/><stop offset="0.160" stop-color="#ffe600"/><stop offset="0.200" stop-color="#ffa600"/><stop offset="0.260" stop-color="#ff5e00"/><stop offset="0.320" stop-color="#ff2a1f"/><stop offset="0.400" stop-color="#e8173a"/><stop offset="0.600" stop-color="#d41a55"/><stop offset="0.800" stop-color="#a61a6e"/><stop offset="1.000" stop-color="#7a1c80"/></linearGradient>
+    <linearGradient id="armGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2b3a63"/><stop offset="1" stop-color="#18213f"/></linearGradient>
+    <linearGradient id="sheet" gradientUnits="userSpaceOnUse" x1="612" y1="382" x2="742" y2="600">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.5"/><stop offset="1" stop-color="#fff" stop-opacity="0.06"/>
+    </linearGradient>
+    <radialGradient id="lampGlow" cx="1052" cy="372" r="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fbbf24" stop-opacity="0.28"/><stop offset="1" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="tableFace" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#141c38"/><stop offset="1" stop-color="#141c38" stop-opacity="0"/></linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <clipPath id="plantClip"><path d="M724 588 Q685.2 528.8 623.1 562.8 Q661.9 622 724 588Z"/><path d="M736 580 Q794.8 611 828.3 553.5 Q769.5 522.6 736 580Z"/><path d="M726 552 Q731.1 487.1 666.9 476.4 Q661.8 541.3 726 552Z"/><path d="M734 546 Q798.4 529.2 789.9 463.1 Q725.5 479.9 734 546Z"/><path d="M730 526 Q761.9 485.3 725.9 448.1 Q694 488.8 730 526Z"/><path d="M690 592 L770 592 L758 648 L702 648Z"/><rect x="727" y="520" width="6" height="90"/></clipPath>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#e6e9f2"/></marker>
+  </defs>
+
+  <rect width="1280" height="784" rx="26" fill="url(#bg)"/>
+  <rect width="1280" height="784" rx="26" fill="url(#holes)" mask="url(#holesMask)"/>
+
+  <text x="48" y="68" class="h1">The rig</text>
+  <text x="48" y="100" class="sub">The arm carries the scanner to a viewpoint and holds still.</text>
+  <text x="48" y="124" class="sub">A mirror then sweeps the slit across the object, one line per frame.</text>
+
+  <!-- lamp light -->
+  <path d="M1052 372 L640 470 L700 652 L1000 652Z" fill="url(#lampGlow)"/>
+
+  <!-- table -->
+  <rect x="36" y="652" width="1208" height="12" rx="3" fill="#18213f" stroke="#2c3966"/>
+  <rect x="36" y="664" width="1208" height="60" fill="url(#tableFace)"/>
+
+  <!-- AprilTag board -->
+  <path d="M520 652 L900 652 L930 626 L550 626Z" fill="#141c38" stroke="#34436f"/>
+  <g transform="translate(548 630) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(588 630) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(832 630) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(872 630) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g>
+  <g transform="translate(538 641) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(578 641) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(822 641) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(862 641) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g>
+
+  <!-- RGB pose camera view -->
+  <path d="M571.8 290.6 L548 632 M571.8 290.6 L900 638" stroke="#7dd3fc" stroke-opacity="0.45" stroke-width="1.3" stroke-dasharray="5 5" fill="none"/>
+
+  <!-- plant -->
+  <path d="M730 646 C728 616 732 576 730 526" fill="none" stroke="#2f8a57" stroke-width="5" stroke-linecap="round"/><path d="M724 588 Q685.2 528.8 623.1 562.8 Q661.9 622 724 588Z" fill="#1d6b40" stroke="#2f8a57" stroke-width="1.2"/><line x1="724" y1="588" x2="623.1" y2="562.8" stroke="#3aa56a" stroke-width="1.4" stroke-opacity="0.8"/><path d="M736 580 Q794.8 611 828.3 553.5 Q769.5 522.6 736 580Z" fill="#1d6b40" stroke="#2f8a57" stroke-width="1.2"/><line x1="736" y1="580" x2="828.3" y2="553.5" stroke="#3aa56a" stroke-width="1.4" stroke-opacity="0.8"/><path d="M726 552 Q731.1 487.1 666.9 476.4 Q661.8 541.3 726 552Z" fill="#1d6b40" stroke="#2f8a57" stroke-width="1.2"/><line x1="726" y1="552" x2="666.9" y2="476.4" stroke="#3aa56a" stroke-width="1.4" stroke-opacity="0.8"/><path d="M734 546 Q798.4 529.2 789.9 463.1 Q725.5 479.9 734 546Z" fill="#1d6b40" stroke="#2f8a57" stroke-width="1.2"/><line x1="734" y1="546" x2="789.9" y2="463.1" stroke="#3aa56a" stroke-width="1.4" stroke-opacity="0.8"/><path d="M730 526 Q761.9 485.3 725.9 448.1 Q694 488.8 730 526Z" fill="#1d6b40" stroke="#2f8a57" stroke-width="1.2"/><line x1="730" y1="526" x2="725.9" y2="448.1" stroke="#3aa56a" stroke-width="1.4" stroke-opacity="0.8"/><path d="M696 600 L764 600 L758 648 L702 648Z" fill="#7d4430" stroke="#9a5a3f"/><rect x="690" y="592" width="80" height="12" rx="3" fill="#8f4f37" stroke="#a8644a"/>
+
+  <!-- next viewpoint: a faded head -->
+  <g opacity="0.35" transform="translate(676 318) rotate(78) translate(-136 0)">
+    <rect x="26" y="-21" width="80" height="42" rx="8" fill="none" stroke="#c9d3f5" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <rect x="106" y="-15" width="20" height="30" rx="3" fill="none" stroke="#c9d3f5" stroke-dasharray="4 3"/>
+  </g>
+  <path d="M564 286 Q578 222 626 206" fill="none" stroke="#e6e9f2" stroke-opacity="0.6" stroke-width="1.4" stroke-dasharray="4 4" marker-end="url(#ah)"/>
+  <text x="656" y="168" class="small" text-anchor="middle">next viewpoint</text>
+
+  <!-- light sheet + scan line -->
+  <polygon points="612,382 742,470 742,650" fill="url(#sheet)">
+    <animate attributeName="points" values="612,382 662,470 662,650;612,382 806,470 806,650;612,382 806,470 806,650;612,382 806,470 806,650;612,382 662,470 662,650" keyTimes="0;0.7;0.85;0.92;1" dur="7s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="1;1;1;0;0" keyTimes="0;0.7;0.85;0.92;1" dur="7s" repeatCount="indefinite"/>
+  </polygon>
+  <g>
+    <line x1="742" y1="470" x2="742" y2="650" stroke="#fff" stroke-opacity="0.15" stroke-width="2"/>
+    <g clip-path="url(#plantClip)" filter="url(#glow)"><rect x="740" y="470" width="4" height="180" fill="#fff"/></g>
+    <animateTransform attributeName="transform" type="translate" values="-80 0;64 0;64 0;64 0;-80 0" keyTimes="0;0.7;0.85;0.92;1" dur="7s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="1;1;1;0;0" keyTimes="0;0.7;0.85;0.92;1" dur="7s" repeatCount="indefinite"/>
+  </g>
+  <path d="M664 412 A60 60 0 0 1 704 474" fill="none" stroke="#e6e9f2" stroke-width="1.6" marker-start="url(#ah)" marker-end="url(#ah)"/>
+
+  <!-- arm base, electronics -->
+  <rect x="248" y="640" width="114" height="12" rx="4" fill="#1a2340" stroke="#34436f"/>
+  <rect x="262" y="592" width="86" height="50" rx="10" fill="url(#armGrad)" stroke="#3c4c7c"/>
+  <rect x="276" y="554" width="58" height="40" rx="8" fill="#151d38" stroke="#3c4c7c"/>
+  <g  stroke-linecap="round" stroke-linejoin="round">
+<line x1="305" y1="552" x2="316.3" y2="352.3" stroke="#3c4c7c" stroke-width="36"/>
+<line x1="305" y1="552" x2="316.3" y2="352.3" stroke="url(#armGrad)" stroke-width="33"/>
+<line x1="316.3" y1="352.3" x2="507.8" y2="294.6" stroke="#3c4c7c" stroke-width="31"/>
+<line x1="316.3" y1="352.3" x2="507.8" y2="294.6" stroke="url(#armGrad)" stroke-width="28"/>
+<circle cx="305" cy="552" r="21" fill="#121a33" stroke="#4b5f95" stroke-width="2"/><circle cx="305" cy="552" r="8.8" fill="#2b3a63"/>
+<circle cx="316.3" cy="352.3" r="21" fill="#121a33" stroke="#4b5f95" stroke-width="2"/><circle cx="316.3" cy="352.3" r="8.8" fill="#2b3a63"/>
+<circle cx="507.8" cy="294.6" r="18" fill="#121a33" stroke="#4b5f95" stroke-width="2"/><circle cx="507.8" cy="294.6" r="7.6" fill="#2b3a63"/>
+<g transform="translate(507.8 294.6) rotate(40)">
+      <rect x="12" y="-17" width="16" height="34" rx="4" fill="#151d38" stroke="#3c4c7c"/>
+      <rect x="26" y="-21" width="80" height="42" rx="8" fill="url(#armGrad)" stroke="#4b5f95" stroke-width="1.5"/>
+      <rect x="34" y="-10" width="64" height="20" rx="4" fill="#0a0f22" stroke="#2c3966"/>
+      <line x1="38" y1="0" x2="92" y2="0" stroke="#e2e8f0" stroke-opacity="0.5" stroke-width="1.2"/>
+      <ellipse cx="45" cy="0" rx="2" ry="7" fill="none" stroke="#7dd3fc" stroke-width="1.4"/>
+      <line x1="57" y1="-7" x2="57" y2="-1.5" stroke="#e2e8f0" stroke-width="1.6"/><line x1="57" y1="1.5" x2="57" y2="7" stroke="#e2e8f0" stroke-width="1.6"/>
+      <ellipse cx="71" cy="0" rx="2" ry="7" fill="none" stroke="#7dd3fc" stroke-width="1.4"/>
+      <rect x="81" y="-7" width="2.5" height="14" fill="#c4b5fd"/>
+      <path d="M84 0 L95 -6 L95 6Z" fill="url(#spectrum)" opacity="0.9"/>
+      <rect x="40" y="-34" width="30" height="14" rx="3" fill="#151d38" stroke="#4b5f95"/>
+      <circle cx="72" cy="-27" r="5" fill="#0a0f22" stroke="#7dd3fc" stroke-width="1.4"/>
+      <rect x="106" y="-15" width="20" height="30" rx="3" fill="#121a33" stroke="#4b5f95"/>
+      <line x1="122" y1="-14" x2="136" y2="12" stroke="#e2e8f0" stroke-width="3.2"/>
+    </g>
+</g>
+
+  <!-- ESP32 + driver -->
+  <rect x="400" y="634" width="70" height="18" rx="3" fill="#123b2a" stroke="#2f8a57"/>
+  <rect x="412" y="628" width="24" height="8" rx="2" fill="#94a3b8"/>
+  <rect x="444" y="626" width="18" height="10" rx="2" fill="#7c3aed" fill-opacity="0.8"/>
+
+  <!-- Jetson Nano -->
+  <rect x="1000" y="612" width="124" height="40" rx="5" fill="#123b2a" stroke="#2f8a57"/>
+  <rect x="1030" y="586" width="64" height="28" rx="3" fill="#2b3550" stroke="#4b5f95"/>
+  <line x1="1034" y1="588" x2="1034" y2="612" stroke="#4b5f95"/><line x1="1040" y1="588" x2="1040" y2="612" stroke="#4b5f95"/><line x1="1046" y1="588" x2="1046" y2="612" stroke="#4b5f95"/><line x1="1052" y1="588" x2="1052" y2="612" stroke="#4b5f95"/><line x1="1058" y1="588" x2="1058" y2="612" stroke="#4b5f95"/><line x1="1064" y1="588" x2="1064" y2="612" stroke="#4b5f95"/><line x1="1070" y1="588" x2="1070" y2="612" stroke="#4b5f95"/><line x1="1076" y1="588" x2="1076" y2="612" stroke="#4b5f95"/><line x1="1082" y1="588" x2="1082" y2="612" stroke="#4b5f95"/><line x1="1088" y1="588" x2="1088" y2="612" stroke="#4b5f95"/>
+
+  <!-- halogen lamp -->
+  <line x1="1150" y1="652" x2="1150" y2="372" stroke="#4b5f95" stroke-width="5"/>
+  <rect x="1126" y="644" width="48" height="8" rx="3" fill="#1a2340" stroke="#34436f"/>
+  <g transform="translate(1084 368) rotate(18)">
+    <path d="M-34 -18 L18 -24 L18 24 L-34 18Z" fill="#232c4a" stroke="#4b5f95"/>
+    <ellipse cx="-34" cy="0" rx="6" ry="18" fill="#fde68a"/>
+  </g>
+  <line x1="1150" y1="378" x2="1100" y2="372" stroke="#4b5f95" stroke-width="4"/>
+
+  <!-- labels -->
+  <g><circle cx="73" cy="294" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="73" y="299" text-anchor="middle" class="num">1</text><text x="96" y="300" text-anchor="start" class="lt">SO-101 follower arm</text><text x="96" y="323" text-anchor="start" class="ls">LeRobot, six STS3215 servos.</text><text x="96" y="343" text-anchor="start" class="ls">Moves to a viewpoint,</text><text x="96" y="363" text-anchor="start" class="ls">then holds still.</text></g>
+  <path d="M250 352 L296 400" fill="none" stroke="#8b93b0" stroke-width="1.2" stroke-opacity="0.8"/><circle cx="296" cy="400" r="3" fill="#8b93b0"/>
+  <g><circle cx="73" cy="514" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="73" y="519" text-anchor="middle" class="num">5</text><text x="96" y="520" text-anchor="start" class="lt">ESP32 + TMC2209</text><text x="96" y="543" text-anchor="start" class="ls">micro-ROS node that</text><text x="96" y="563" text-anchor="start" class="ls">steps the mirror.</text></g>
+  <path d="M220 560 L398 640" fill="none" stroke="#8b93b0" stroke-width="1.2" stroke-opacity="0.8"/><circle cx="398" cy="640" r="3" fill="#8b93b0"/>
+  <g><circle cx="483" cy="706" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="483" y="711" text-anchor="middle" class="num">2</text><text x="506" y="712" text-anchor="start" class="lt">AprilTag board</text><text x="506" y="735" text-anchor="start" class="ls">Pose of every viewpoint.</text></g>
+  <path d="M500 690 L556 638" fill="none" stroke="#8b93b0" stroke-width="1.2" stroke-opacity="0.8"/><circle cx="556" cy="638" r="3" fill="#8b93b0"/>
+  <g><circle cx="913" cy="706" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="913" y="711" text-anchor="middle" class="num">4</text><text x="936" y="712" text-anchor="start" class="lt">Jetson Nano</text><text x="936" y="735" text-anchor="start" class="ls">Capture, calibration warp</text><text x="936" y="755" text-anchor="start" class="ls">and the CUDA splat renderer.</text></g>
+  <path d="M930 690 L1004 644" fill="none" stroke="#8b93b0" stroke-width="1.2" stroke-opacity="0.8"/><circle cx="1004" cy="644" r="3" fill="#8b93b0"/>
+  <g><circle cx="1125" cy="468" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="1125" y="473" text-anchor="middle" class="num">3</text><text x="1102" y="474" text-anchor="end" class="lt">Halogen lamps</text><text x="1102" y="497" text-anchor="end" class="ls">Fixed, NIR-rich light.</text></g>
+  <text x="540" y="458" class="small" text-anchor="end">mirror sweep:</text>
+  <text x="540" y="476" class="small" text-anchor="end">~150 lines per viewpoint</text>
+  <rect x="812" y="34" width="432" height="268" rx="16" fill="#0e1631" fill-opacity="0.96" stroke="#2c3b6e"/>
+  <text x="832" y="64" class="lt">Scanner head, close up</text>
+  <rect x="924" y="118" width="282" height="68" rx="10" fill="#18213f" stroke="#4b5f95" stroke-width="1.5"/>
+  <rect x="932" y="128" width="266" height="48" rx="6" fill="#070b18" stroke="#2c3966"/>
+  <rect x="1082" y="94" width="54" height="24" rx="5" fill="#121a33" stroke="#4b5f95"/>
+  <circle cx="1136" cy="106" r="8" fill="#0a0f22" stroke="#7dd3fc" stroke-width="1.6"/>
+  <text x="1224" y="64" class="ls" text-anchor="end">RGB pose camera</text>
+  <path d="M1152 72 L1142 98" stroke="#8b93b0" stroke-width="1.1"/>
+  <rect x="836" y="126" width="52" height="52" rx="6" fill="#121a33" stroke="#4b5f95"/>
+  <circle cx="862" cy="152" r="7" fill="#2b3a63" stroke="#4b5f95"/>
+  <line x1="890" y1="174" x2="924" y2="140" stroke="#e2e8f0" stroke-width="4" stroke-linecap="round"/>
+  <path d="M900 290 L900 164 L936 156" fill="none" stroke="#fff" stroke-opacity="0.75" stroke-width="1.6"/>
+  <path d="M912 290 L912 152 L936 148" fill="none" stroke="#fff" stroke-opacity="0.45" stroke-width="1.2"/>
+  <text x="892" y="284" class="small" text-anchor="end">from the</text>
+  <text x="892" y="300" class="small" text-anchor="end">object</text>
+  <text x="832" y="92" class="ls">scan mirror on a</text>
+  <text x="832" y="110" class="ls">0.9° NEMA17</text>
+  <line x1="936" y1="152" x2="1118" y2="152" stroke="#fff" stroke-opacity="0.7" stroke-width="1.4"/>
+  <rect x="942" y="136" width="4" height="32" fill="#f6c46b" fill-opacity="0.85"/>
+  <ellipse cx="968" cy="152" rx="4" ry="16" fill="#7dd3fc" fill-opacity="0.18" stroke="#7dd3fc" stroke-width="1.5"/>
+  <line x1="1012" y1="134" x2="1012" y2="150" stroke="#e2e8f0" stroke-width="2.4"/><line x1="1012" y1="154" x2="1012" y2="170" stroke="#e2e8f0" stroke-width="2.4"/>
+  <ellipse cx="1020" cy="152" rx="3" ry="12" fill="none" stroke="#34d399" stroke-width="1.5"/>
+  <ellipse cx="1068" cy="152" rx="4" ry="18" fill="#7dd3fc" fill-opacity="0.18" stroke="#7dd3fc" stroke-width="1.5"/>
+  <rect x="1116" y="134" width="4" height="36" fill="#c4b5fd" fill-opacity="0.8"/>
+  <path d="M1120 152 L1174 130 L1174 146Z" fill="url(#spectrum)" fill-opacity="0.85"/>
+  <g transform="translate(1152 140) rotate(-22)"><ellipse cx="0" cy="0" rx="4" ry="14" fill="#7dd3fc" fill-opacity="0.18" stroke="#7dd3fc" stroke-width="1.5"/></g>
+  <g transform="translate(1178 138) rotate(-22)"><rect x="-3" y="-15" width="6" height="30" fill="#34d399"/></g>
+  <path d="M936 196 L936 204 L1198 204 L1198 196" fill="none" stroke="#8b93b0" stroke-width="1.1"/>
+  <text x="1067" y="226" class="ls" text-anchor="middle">spectrograph: filter, objective, slit,</text>
+  <text x="1067" y="245" class="ls" text-anchor="middle">collimator, grating, 12 mm lens + IMX219</text>
+</svg>
