@@ -26,7 +26,9 @@ struct Profile {
 // with the interrupt locked out (see MirrorCore).
 class Stepgen {
  public:
-  // Go to target, replanning from the current speed and direction.
+  // Go to target, replanning from the current speed and direction. If the
+  // target is behind, or closer than it takes to brake, it passes the target
+  // while slowing down and comes back.
   void moveTo(int32_t target, const Profile& p);
   // Run at constant speed v in direction dir until stop(); from rest only.
   // phase preloads the accumulator (2^31 rounds the position to the nearest

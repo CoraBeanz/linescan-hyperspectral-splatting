@@ -2,6 +2,12 @@
 
 namespace sm {
 
+namespace {
+// A move stops dead on its target only if braking to the start speed would
+// take fewer steps than this.
+constexpr uint32_t kStopDeadSteps = 4;
+}  // namespace
+
 void Stepgen::setProfile(const Profile& p) {
   prof_ = p;
   if (prof_.v_max == 0) prof_.v_max = 1;
@@ -125,7 +131,11 @@ int8_t SM_ISR Stepgen::tick() {
   if (acc_ >= before) return 0;  // no carry, no step
 
   pos_ += dir_;
-  if (mode_ == kPosition && pos_ == target_) {
+  // A ramp reaches its target near the start speed (braking from there would
+  // take under 3 steps). Only a target moved closer than the braking distance
+  // mid-move is reached faster: then carry on, slow down at the profile's rate
+  // and come back to it, rather than stop dead from speed and lose steps.
+  if (mode_ == kPosition && pos_ == target_ && !needDecel(kStopDeadSteps)) {
     v_ = 0;
     acc_ = 0;
     mode_ = kIdle;
