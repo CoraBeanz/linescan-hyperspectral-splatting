@@ -100,9 +100,12 @@ target_link_libraries(linesplat INTERFACE linesplat_core)
 if(LINESPLAT_HAVE_CUDA)
   add_library(linesplat_cuda STATIC src/cuda/rasterizer.cu)
   target_link_libraries(linesplat_cuda PUBLIC linesplat_core CUDA::cudart_static)
+  # With MSVC as the host compiler, CUDA 13's Thrust headers stop with an
+  # #error unless cl.exe uses its standard-conforming preprocessor.
   target_compile_options(linesplat_cuda PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>
-    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-Xcompiler=-Wall>)
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-Xcompiler=-Wall>
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>>:-Xcompiler=/Zc:preprocessor>)
   # Silence CUDA 12's "C++14 is deprecated in Thrust" notes when checking the
   # Jetson's dialect on a newer toolkit.
   target_compile_definitions(linesplat_cuda PRIVATE
