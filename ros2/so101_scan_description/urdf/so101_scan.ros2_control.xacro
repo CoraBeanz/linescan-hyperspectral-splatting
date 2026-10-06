@@ -37,7 +37,8 @@
   </xacro:macro>
 
   <!-- calibration_file: YAML from `ros2 run so101_scan_hardware sts_calibrate`; not needed with mock hardware.
-       torque: false keeps the motors off and only reads, so the arm can be moved by hand. -->
+       torque: false switches the motors off and only reads, so the arm can be moved by hand (hold it:
+       it goes limp). -->
   <xacro:macro name="so101_scan_ros2_control" params="use_mock_hardware port calibration_file torque">
     <xacro:property name="mock" value="${use_mock_hardware in (True, 'true', 'True', '1')}"/>
     <xacro:if value="${not mock and not calibration_file}">
@@ -56,7 +57,8 @@
           <param name="baud_rate">1000000</param>
           <param name="timeout_ms">10</param>
           <param name="torque">${'true' if torque in (True, 'true', 'True', '1') else 'false'}</param>
-          <param name="disable_torque_on_deactivate">true</param>
+          <!-- false: stopping the launch leaves the servos holding the arm instead of dropping it -->
+          <param name="disable_torque_on_deactivate">false</param>
           <!-- the servos' own acceleration limit; 254 is the fastest, as LeRobot sets it -->
           <param name="acceleration">254</param>
           <!-- the driver never moves a joint faster than this, whatever a controller asks -->

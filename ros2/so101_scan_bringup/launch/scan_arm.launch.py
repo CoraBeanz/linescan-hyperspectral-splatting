@@ -4,6 +4,7 @@
     ros2 launch so101_scan_bringup scan_arm.launch.py use_mock_hardware:=true mirror:=fake
 
     # the real arm with its motors off, to check the calibration by moving it by hand
+    # (they switch off as it starts, so hold the arm)
     ros2 launch so101_scan_bringup scan_arm.launch.py torque:=false mirror:=fake
 
     # the real arm and the real mirror
@@ -17,6 +18,9 @@ What starts:
   scan_mirror_bridge      talks to the mirror ESP32; publishes the mirror angle and scan lines
   fake_scan_mirror        with mirror:=fake, a simulated ESP32 on a pseudo-terminal
   foxglove_bridge, rviz2  optional viewers
+
+Stopping the launch leaves the servos holding the arm where it is; torque:=false or
+switching off the servo supply lets it go.
 
 Arguments: see DeclareLaunchArgument below, or `ros2 launch so101_scan_bringup
 scan_arm.launch.py --show-args`.
@@ -107,7 +111,8 @@ def generate_launch_description():
         DeclareLaunchArgument("calibration_file", default_value=os.path.join(DATA_DIR, "calibration.yaml"),
                               description="from sts_calibrate; $SO101_SCAN_DATA is ~/so101_scan by default"),
         DeclareLaunchArgument("torque", default_value="true",
-                              description="false: motors off, positions only read; move the arm by hand"),
+                              description="false: motors switched off (hold the arm), positions only read; "
+                                          "move the arm by hand"),
         DeclareLaunchArgument("mirror", default_value="esp32", description="esp32 or fake"),
         DeclareLaunchArgument("mirror_port", default_value="/dev/scan_mirror",
                               description="the mirror ESP32's USB serial port"),

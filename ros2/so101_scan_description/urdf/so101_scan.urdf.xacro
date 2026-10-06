@@ -6,7 +6,7 @@
        use_mock_hardware  ros2_control's mock hardware instead of the servos (default false)
        port               servo bus adapter (default /dev/so101, see ros2/udev)
        calibration_file   YAML from sts_calibrate; required unless use_mock_hardware
-       torque             false: motors stay off, positions are only read (default true)
+       torque             false: motors switched off, positions are only read (default true)
 
      Check it with:
        xacro so101_scan.urdf.xacro use_mock_hardware:=true > /tmp/so101_scan.urdf && check_urdf /tmp/so101_scan.urdf -->
