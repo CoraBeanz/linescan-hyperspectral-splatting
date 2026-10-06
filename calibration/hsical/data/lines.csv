@@ -1,0 +1,132 @@
+# Calibration lamp lines, wavelengths in air (nm).
+# source:  cfl = compact fluorescent bulb (mercury, argon fill gas, europium and terbium phosphors)
+#          neon = neon glow lamp (an outlet tester's indicator or an NE-2)
+# rel:     rough relative brightness within one lamp, before the instrument's response.
+#          Real lamps vary (2x is normal); the code only uses rel to predict which lines
+#          blend at this resolution and how far a blend's centre can move.
+# quality: A = atomic line, NIST value good to better than 0.01 nm
+#          B = phosphor peak, good to about 0.3 nm
+#          C = phosphor band, good to about 1 nm (helps find the pattern, never fitted)
+# width:   intrinsic width (FWHM, nm) for phosphor bands; atomic lines are ~0.
+# Atomic wavelengths: NIST Atomic Spectra Database (Hg I, Ar I, Ne I). Phosphor peaks:
+# Y2O3:Eu3+ red and Tb3+ green phosphors, as seen in tri-phosphor fluorescent lamps.
+source,species,nm,rel,quality,width,note
+cfl,Hg I,404.6563,0.50,A,0,blocked by the GG-495 (shows in 2nd order at 809.3 without it)
+cfl,Hg I,407.7837,0.05,A,0,blocked by the GG-495
+cfl,Hg I,435.8328,0.80,A,0,blocked by the GG-495 (shows in 2nd order at 871.7 without it)
+cfl,Hg I,491.6068,0.02,A,0,on the GG-495 edge
+cfl,Hg I,546.0735,1.00,A,0,the green mercury line; Tb3+ phosphor sits 2-4 nm to its blue side
+cfl,Hg I,576.9598,0.20,A,0,yellow doublet
+cfl,Hg I,579.0663,0.22,A,0,yellow doublet
+cfl,Hg I,1013.975,0.10,A,0,deep in the silicon falloff
+cfl,Ar I,696.5431,0.004,A,0,
+cfl,Ar I,706.7218,0.004,A,0,
+cfl,Ar I,714.7042,0.0006,A,0,
+cfl,Ar I,727.2936,0.0015,A,0,
+cfl,Ar I,738.3980,0.004,A,0,
+cfl,Ar I,750.3869,0.008,A,0,
+cfl,Ar I,751.4652,0.006,A,0,
+cfl,Ar I,763.5106,0.012,A,0,
+cfl,Ar I,772.3761,0.005,A,0,
+cfl,Ar I,772.4207,0.002,A,0,
+cfl,Ar I,794.8176,0.006,A,0,
+cfl,Ar I,800.6157,0.005,A,0,
+cfl,Ar I,801.4786,0.006,A,0,
+cfl,Ar I,810.3693,0.006,A,0,
+cfl,Ar I,811.5311,0.015,A,0,
+cfl,Ar I,826.4522,0.004,A,0,
+cfl,Ar I,840.8210,0.004,A,0,
+cfl,Ar I,842.4648,0.006,A,0,
+cfl,Ar I,852.1442,0.004,A,0,
+cfl,Ar I,866.7944,0.001,A,0,
+cfl,Ar I,912.2967,0.010,A,0,
+cfl,Ar I,922.4499,0.004,A,0,
+cfl,Ar I,965.7786,0.006,A,0,
+cfl,Tb3+,487.7,0.25,C,3.0,blocked by the GG-495
+cfl,Tb3+,542.4,0.45,C,2.5,green phosphor; blends with Hg 546.07
+cfl,Tb3+,548.5,0.12,C,3.0,
+cfl,Tb3+,584.5,0.08,C,3.0,
+cfl,Tb3+,620.5,0.05,C,3.0,
+cfl,Eu3+,587.6,0.08,C,1.5,
+cfl,Eu3+,593.4,0.10,C,2.0,
+cfl,Eu3+,599.7,0.06,C,2.0,
+cfl,Eu3+,611.4,0.85,B,1.5,the main red phosphor peak
+cfl,Eu3+,626.0,0.10,C,2.0,
+cfl,Eu3+,631.1,0.06,C,2.0,
+cfl,Eu3+,650.8,0.04,C,2.5,
+cfl,Eu3+,687.7,0.03,C,2.0,
+cfl,Eu3+,693.7,0.02,C,2.0,
+cfl,Eu3+,707.0,0.04,C,2.0,
+cfl,Eu3+,709.9,0.04,C,2.0,
+cfl,Eu3+,712.3,0.03,C,2.0,
+neon,Ne I,533.0778,0.025,A,0,
+neon,Ne I,534.1094,0.02,A,0,
+neon,Ne I,540.0562,0.06,A,0,the green neon line
+neon,Ne I,576.4419,0.03,A,0,
+neon,Ne I,582.0156,0.03,A,0,
+neon,Ne I,585.2488,0.50,A,0,
+neon,Ne I,588.1895,0.25,A,0,
+neon,Ne I,594.4834,0.35,A,0,
+neon,Ne I,597.5534,0.12,A,0,
+neon,Ne I,602.9997,0.25,A,0,
+neon,Ne I,607.4338,0.35,A,0,
+neon,Ne I,609.6163,0.45,A,0,
+neon,Ne I,612.8450,0.12,A,0,
+neon,Ne I,614.3063,0.60,A,0,
+neon,Ne I,616.3594,0.35,A,0,
+neon,Ne I,621.7281,0.30,A,0,
+neon,Ne I,626.6495,0.45,A,0,
+neon,Ne I,630.4789,0.25,A,0,
+neon,Ne I,633.4428,0.60,A,0,
+neon,Ne I,638.2992,0.70,A,0,
+neon,Ne I,640.2248,1.00,A,0,the brightest red neon line
+neon,Ne I,650.6528,0.55,A,0,
+neon,Ne I,653.2882,0.25,A,0,
+neon,Ne I,659.8953,0.40,A,0,
+neon,Ne I,667.8276,0.35,A,0,
+neon,Ne I,671.7043,0.30,A,0,
+neon,Ne I,692.9467,0.40,A,0,
+neon,Ne I,703.2413,0.50,A,0,
+neon,Ne I,717.3938,0.15,A,0,
+neon,Ne I,724.5167,0.35,A,0,
+neon,Ne I,743.8899,0.10,A,0,
+neon,Ne I,747.2440,0.04,A,0,
+neon,Ne I,748.8871,0.10,A,0,
+neon,Ne I,753.5774,0.10,A,0,
+neon,Ne I,754.4044,0.05,A,0,
+neon,Ne I,794.3181,0.01,A,0,
+neon,Ne I,808.2458,0.02,A,0,
+neon,Ne I,811.8549,0.03,A,0,
+neon,Ne I,813.6406,0.04,A,0,
+neon,Ne I,825.9379,0.01,A,0,
+neon,Ne I,826.6077,0.02,A,0,
+neon,Ne I,830.0326,0.04,A,0,
+neon,Ne I,836.5747,0.015,A,0,
+neon,Ne I,837.7608,0.06,A,0,
+neon,Ne I,841.8427,0.02,A,0,
+neon,Ne I,846.3358,0.01,A,0,
+neon,Ne I,848.4444,0.015,A,0,
+neon,Ne I,849.5360,0.05,A,0,
+neon,Ne I,854.4696,0.015,A,0,
+neon,Ne I,857.1352,0.01,A,0,
+neon,Ne I,859.1259,0.025,A,0,
+neon,Ne I,863.4647,0.025,A,0,
+neon,Ne I,865.4383,0.05,A,0,
+neon,Ne I,868.1921,0.01,A,0,
+neon,Ne I,870.4111,0.01,A,0,
+neon,Ne I,877.1656,0.015,A,0,
+neon,Ne I,878.0621,0.05,A,0,
+neon,Ne I,878.3753,0.03,A,0,
+neon,Ne I,885.3867,0.04,A,0,
+neon,Ne I,886.5755,0.015,A,0,
+neon,Ne I,891.9501,0.01,A,0,
+neon,Ne I,914.8672,0.01,A,0,
+neon,Ne I,920.1759,0.015,A,0,
+neon,Ne I,922.0060,0.015,A,0,
+neon,Ne I,930.0853,0.01,A,0,
+neon,Ne I,932.6507,0.015,A,0,
+neon,Ne I,942.5379,0.01,A,0,
+neon,Ne I,948.6680,0.01,A,0,
+neon,Ne I,953.4163,0.01,A,0,
+neon,Ne I,954.7405,0.005,A,0,
+neon,Ne I,966.5420,0.008,A,0,
