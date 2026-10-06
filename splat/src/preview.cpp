@@ -1,7 +1,10 @@
 #include "linesplat/preview.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 
+#include "linesplat/dataset.hpp"
 #include "linesplat/png.hpp"
 #include "linesplat/spectra.hpp"
 
@@ -16,6 +19,24 @@ void write_spectral_png(const std::string& path, const float* spectra, int rows,
     for (int k = 0; k < 3; ++k) rgb[3 * i + k] = to_srgb8(gain * c[size_t(k)]);
   }
   write_png_rgb(path, cols, rows, rgb);
+}
+
+void write_sweep_pngs(const std::string& prefix, const Dataset& d, const std::vector<const float*>& panels) {
+  const int W = d.width(), B = d.num_bands(), gap = 4, P = int(panels.size());
+  const int cols = P * W + (P - 1) * gap;
+  for (int s = 0; s < d.num_sweeps(); ++s) {
+    std::vector<int> rows;
+    for (int l = 0; l < d.num_lines(); ++l)
+      if (d.line_sweep[size_t(l)] == s) rows.push_back(l);
+    std::vector<float> img(rows.size() * size_t(cols) * B, 1.0f);  // white between panels
+    for (size_t r = 0; r < rows.size(); ++r)
+      for (int p = 0; p < P; ++p)
+        std::copy_n(panels[size_t(p)] + size_t(rows[r]) * W * B, size_t(W) * B,
+                    &img[(r * cols + size_t(p) * (W + gap)) * B]);
+    char name[32];
+    std::snprintf(name, sizeof name, "_sweep_%02d.png", s);
+    write_spectral_png(prefix + name, img.data(), int(rows.size()), cols, d.wavelengths_nm, PreviewMode::kTrueColor);
+  }
 }
 
 std::vector<LineCamera> pinhole_rows(const Pose& camera_in_world, int width, int height, double f) {

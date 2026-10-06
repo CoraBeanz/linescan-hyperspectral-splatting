@@ -2,7 +2,10 @@
 //
 //   splat_synth OUT_DIR [--preset tiny|small|default|full] [--width N]
 //               [--bands N] [--sweeps N] [--microsteps N] [--slit-samples N]
-//               [--spacing MM] [--seed N] [--no-errors] [--cpu]
+//               [--spacing MM] [--seed N] [--errors SCALE] [--no-errors] [--cpu]
+//
+// --errors scales every pose and mirror error (1 is the default; 0 is the
+// same as --no-errors).
 //
 // Renders on the GPU when one is available (unless --cpu).
 #include <cmath>
@@ -26,7 +29,7 @@ void usage() {
   std::fprintf(stderr,
                "usage: splat_synth OUT_DIR [--preset tiny|small|default|full] [--width N] [--bands N]\n"
                "                   [--sweeps N] [--microsteps N] [--slit-samples N] [--spacing MM]\n"
-               "                   [--seed N] [--no-errors] [--cpu]\n");
+               "                   [--seed N] [--errors SCALE] [--no-errors] [--cpu]\n");
   std::exit(2);
 }
 
@@ -65,9 +68,12 @@ int main(int argc, char** argv) {
     else if (a == "--slit-samples") o.slit_samples = std::atoi(next());
     else if (a == "--spacing") o.spacing = std::atof(next()) * 1e-3;
     else if (a == "--seed") o.seed = std::strtoull(next(), nullptr, 10);
-    else if (a == "--no-errors") {
-      o.head_trans_sigma = o.head_rot_sigma_deg = 0.0;
-      o.mirror_offset_sigma_deg = o.mirror_jitter_sigma_deg = 0.0;
+    else if (a == "--errors" || a == "--no-errors") {
+      const double k = a == "--errors" ? std::atof(next()) : 0.0;
+      o.head_trans_sigma *= k;
+      o.head_rot_sigma_deg *= k;
+      o.mirror_offset_sigma_deg *= k;
+      o.mirror_jitter_sigma_deg *= k;
     } else if (a == "--cpu") use_cpu = true;
     else usage();
   }

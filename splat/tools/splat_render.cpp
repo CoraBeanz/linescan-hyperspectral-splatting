@@ -107,27 +107,6 @@ int cmd_compare(const Dataset& d, const GaussianScene& scene) {
 #endif
 }
 
-// One true color image per sweep with the panels side by side, each the
-// sweep's lines stacked in the order they were taken.
-void write_sweep_pngs(const std::string& prefix, const Dataset& d, const std::vector<const float*>& panels) {
-  const int W = d.width(), B = d.num_bands(), gap = 4, P = int(panels.size());
-  const int cols = P * W + (P - 1) * gap;
-  for (int s = 0; s < d.num_sweeps(); ++s) {
-    std::vector<int> rows;
-    for (int l = 0; l < d.num_lines(); ++l)
-      if (d.line_sweep[size_t(l)] == s) rows.push_back(l);
-    std::vector<float> img(rows.size() * size_t(cols) * B, 1.0f);  // white between panels
-    for (size_t r = 0; r < rows.size(); ++r)
-      for (int p = 0; p < P; ++p)
-        std::copy_n(panels[size_t(p)] + size_t(rows[r]) * W * B, size_t(W) * B,
-                    &img[(r * cols + size_t(p) * (W + gap)) * B]);
-    char name[32];
-    std::snprintf(name, sizeof name, "_sweep_%02d.png", s);
-    write_spectral_png(prefix + name, img.data(), int(rows.size()), cols, d.wavelengths_nm, PreviewMode::kTrueColor);
-  }
-  std::printf("wrote %s_sweep_XX.png for %d sweeps\n", prefix.c_str(), d.num_sweeps());
-}
-
 int cmd_residual(const std::string& dir, const Dataset& d, const GaussianScene& scene, const std::string& png) {
   std::string device;
   const LineImage rec = features_to_bands(scene, render_any(scene, d.cameras(), &device));
@@ -150,7 +129,10 @@ int cmd_residual(const std::string& dir, const Dataset& d, const GaussianScene& 
       std::printf("RMSE vs noise-free lines, true poses:   %.4f\n", rmse(tru.values, npy_load_f32(clean)));
     panels.push_back(tru.values.data());
   }
-  if (!png.empty()) write_sweep_pngs(png, d, panels);
+  if (!png.empty()) {
+    write_sweep_pngs(png, d, panels);
+    std::printf("wrote %s_sweep_XX.png for %d sweeps\n", png.c_str(), d.num_sweeps());
+  }
   return 0;
 }
 
