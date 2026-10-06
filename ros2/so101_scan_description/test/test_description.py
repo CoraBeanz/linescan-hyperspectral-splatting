@@ -203,7 +203,11 @@ def test_line_camera_is_the_objective_seen_in_the_mirror(robot, theta):
 
 def test_scan_line_is_in_front_of_the_window(robot):
     p = head_params()
+    st = json.loads(BUILD_REPORT.read_text())["stations_mm"]
     cam = robot.fk("line_camera_optical_frame", {}, base="scan_head_link")
     line = robot.fk("scan_line_frame", {}, base="scan_head_link")
-    np.testing.assert_allclose(cam[:3, 3] * 1e3, [0, -19.0, 28.41], atol=0.05)
+    # at rest the mirror folds the axis by 90 deg: the objective appears level with the mirror
+    # station, as far toward -Y as it really sits above the mirror
+    seen = [0, p["objective_y"] * 1e3 - (st["z_obj"] - st["z_mirror"]), st["z_mirror"]]
+    np.testing.assert_allclose(cam[:3, 3] * 1e3, seen, atol=0.05)
     np.testing.assert_allclose(line[:3, 3], cam[:3, 3] + [0, p["scene_distance"], 0], atol=1e-6)

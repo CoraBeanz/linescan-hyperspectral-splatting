@@ -15,4 +15,4 @@ sweep:
   line_period_s: 0.0333    # one camera frame per line at 30 fps
 viewpoints:
   - name: down
-    joints_deg: {shoulder_pan: 0.0, shoulder_lift: -8.3, elbow_flex: 60.5, wrist_flex: -52.2, wrist_roll: -87.2}
+    joints_deg: {shoulder_pan: 0.0, shoulder_lift: -9.0, elbow_flex: 60.8, wrist_flex: -51.8, wrist_roll: -87.2}
