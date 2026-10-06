@@ -149,7 +149,7 @@ def inset():
         f'<text x="{IX + 80}" y="{IY + IH - 18}" class="small" text-anchor="end">from the</text>',
         f'<text x="{IX + 80}" y="{IY + IH - 2}" class="small" text-anchor="end">object</text>',
         f'<text x="{IX + 20}" y="{IY + 58}" class="ls">scan mirror on a</text>',
-        f'<text x="{IX + 20}" y="{IY + 76}" class="ls">0.9° NEMA17</text>',
+        f'<text x="{IX + 20}" y="{IY + 76}" class="ls">NEMA 8 stepper</text>',
         # train inside the housing
         f'<line x1="{IX + 124}" y1="{yA}" x2="{xs["gr"]}" y2="{yA}" stroke="#fff" stroke-opacity="0.7" stroke-width="1.4"/>',
         f'<rect x="{xs["lp"] - 2}" y="{yA - 16}" width="4" height="32" fill="#f6c46b" fill-opacity="0.85"/>',

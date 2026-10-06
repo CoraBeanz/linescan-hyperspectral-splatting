@@ -9,7 +9,7 @@ Parts:
               slots for the optic carriers, camera end wall with the board
               standoffs, pose-camera standoffs, hall-sensor pocket
   lid         closes the open -X side and carries the stepper
-  rotor       mirror clamp on the 5 mm motor shaft, with the home magnet
+  rotor       mirror clamp on the motor shaft, with the home magnet
   puck        bolts to the wrist-roll horn; dovetail rail the head slides on
   bench_puck  the same rail on a plate with a 1/4"-20 nut, for bench tests
   obj_plate   carries the objective's M12 holder

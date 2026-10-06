@@ -18,7 +18,7 @@ import os
 
 from .optics_link import read_layout
 
-# Scan stepper options; pick one with RIG_MOTOR (default 17HM08). The housing
+# Scan stepper options; pick one with RIG_MOTOR (default 8HS11). The housing
 # is the same for both: two long M3 bolts from the +X face clamp the lid on,
 # threading into the 17HM08's lower holes, or into nuts on the lid for the
 # NEMA 8. Rows: alias, value, what, source.
@@ -69,7 +69,7 @@ MOTORS = {
         ],
     },
 }
-MOTOR = os.environ.get("RIG_MOTOR", "17HM08")
+MOTOR = os.environ.get("RIG_MOTOR", "8HS11")
 if MOTOR not in MOTORS:
     raise ValueError("RIG_MOTOR must be one of %s, not %r" % (", ".join(MOTORS), MOTOR))
 

@@ -29,7 +29,7 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
 
 | 1 · Pick a viewpoint | 2 · Sweep the slit | 3 · Train the splat |
 |---|---|---|
-| The SO-101 arm carries the scanner head to a pose and holds still. An RGB camera on the head reads an AprilTag board to get that pose. | A 0.9° stepper turns the scan mirror one step per frame. Each frame is one line of the object by its spectrum, and about 150 lines cover a 63 × 42 mm patch. | Every scan line is a training sample. A C++/CUDA renderer draws the splat through a line-camera model at that line's pose and compares it with the measured line. |
+| The SO-101 arm carries the scanner head to a pose and holds still. An RGB camera on the head reads an AprilTag board to get that pose. | A NEMA 8 stepper turns the scan mirror one microstep per frame. Each frame is one line of the object by its spectrum, and about 150 lines cover a 63 × 42 mm patch. | Every scan line is a training sample. A C++/CUDA renderer draws the splat through a line-camera model at that line's pose and compares it with the measured line. |
 
 ## The rig
 
@@ -47,7 +47,7 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
 
 **Arm.** An [SO-101](https://huggingface.co/docs/lerobot/so101) follower from [LeRobot](https://github.com/huggingface/lerobot), with six STS3215 servos. It only sets the viewpoint, then holds still while the mirror scans.
 
-**Scanner head.** The spectrograph below, plus a first-surface scan mirror on a 0.9° NEMA17 stepper. A TMC2209 driver runs it from an ESP32 on micro-ROS.
+**Scanner head.** The spectrograph below, plus a first-surface scan mirror on a 60 g NEMA 8 stepper. A TMC2209 driver runs it at 1/32 microstepping from an ESP32 on micro-ROS.
 
 **Pose.** An RGB camera on the head sees an AprilTag board under the object.
 
