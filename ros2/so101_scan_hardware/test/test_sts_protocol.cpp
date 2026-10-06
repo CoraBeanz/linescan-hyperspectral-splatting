@@ -88,7 +88,10 @@ TEST(Units, TicksAndRadians)
   EXPECT_NEAR(FeetechStsSystem::ticks_to_rad(j, 1000), M_PI / 2 * 1000 / 1024, 1e-12);
   EXPECT_EQ(FeetechStsSystem::rad_to_ticks(j, 0.0), 2000);
   EXPECT_EQ(FeetechStsSystem::rad_to_ticks(j, FeetechStsSystem::ticks_to_rad(j, 1234)), 1234);
-  // commands past the calibrated range stop at its ends
-  EXPECT_EQ(FeetechStsSystem::rad_to_ticks(j, 10.0), 1000);
-  EXPECT_EQ(FeetechStsSystem::rad_to_ticks(j, -10.0), 3000);
+  // goals stay within the register's range; the calibrated range is limits(), in rad
+  EXPECT_EQ(FeetechStsSystem::rad_to_ticks(j, 10.0), 0);
+  EXPECT_EQ(FeetechStsSystem::rad_to_ticks(j, -10.0), 4095);
+  const auto [lo, hi] = FeetechStsSystem::limits(j);  // sign -1: max_ticks is the lower end
+  EXPECT_NEAR(lo, FeetechStsSystem::ticks_to_rad(j, 3000), 1e-12);
+  EXPECT_NEAR(hi, FeetechStsSystem::ticks_to_rad(j, 1000), 1e-12);
 }

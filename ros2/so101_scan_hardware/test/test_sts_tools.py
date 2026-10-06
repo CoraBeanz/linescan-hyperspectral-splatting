@@ -135,6 +135,40 @@ def test_homing_offset_centres_zero(client, fake):
     assert client.positions([2])[2] == 2048
 
 
+def test_asks_before_the_motors_go_off(client, fake):
+    client.set_torque([1, 2, 3, 4, 5], True)   # the driver leaves the arm held when it stops
+    seen = []
+
+    def prompt(text=""):   # looks at the fake itself: the tool's own thread may be using the bus
+        time.sleep(0.15)
+        seen.append((text, fake.servos[2].regs[Reg.TORQUE_ENABLE]))
+        return ""
+
+    calibrate.calibrate(client, ["shoulder_lift"], sts.SO101_IDS, sign_check=False, prompt=prompt)
+    assert "goes limp" in seen[0][0] and seen[0][1] == 1   # asked while the motor still held the arm
+    assert seen[1][1] == 0 and client.read_u8(2, Reg.TORQUE_ENABLE) == 0
+
+
+def test_stopped_run_puts_the_homing_offsets_back(fake, tmp_path, monkeypatch, capsys):
+    fake.servos[2].set_position(300)
+    answers = iter(["", KeyboardInterrupt])   # Ctrl-C at the range step, after the offset was written
+
+    def ask(_text=""):
+        time.sleep(0.15)
+        answer = next(answers)
+        if answer is KeyboardInterrupt:
+            assert fake.servos[2].offset() != 0
+            raise KeyboardInterrupt
+        return answer
+
+    monkeypatch.setattr(calibrate, "ask", ask)
+    out = tmp_path / "cal.yaml"
+    assert calibrate.main(["--port", fake.path, "--out", str(out), "--joints", "shoulder_lift",
+                           "--write-homing-offset", "--no-sign-check"]) == 1
+    assert fake.servos[2].offset() == 0 and not out.exists()
+    assert "put back the homing offsets" in capsys.readouterr().out
+
+
 def test_from_lerobot(tmp_path):
     data = {n: {"id": i, "drive_mode": 0, "homing_offset": 0, "range_min": 1000, "range_max": 3000}
             for n, i in sts.SO101_IDS.items()}

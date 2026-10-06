@@ -49,8 +49,14 @@ double FeetechStsSystem::ticks_to_rad(const Joint & j, double ticks)
 int FeetechStsSystem::rad_to_ticks(const Joint & j, double rad)
 {
   const double ticks = j.zero_ticks + j.sign * rad / kRadPerTick;
-  const double clamped = std::clamp(ticks, static_cast<double>(j.min_ticks), static_cast<double>(j.max_ticks));
-  return static_cast<int>(std::lround(clamped));
+  return static_cast<int>(std::lround(std::clamp(ticks, 0.0, sts::kTicksPerTurn - 1.0)));
+}
+
+std::pair<double, double> FeetechStsSystem::limits(const Joint & j)
+{
+  const double a = ticks_to_rad(j, j.min_ticks);
+  const double b = ticks_to_rad(j, j.max_ticks);
+  return {std::min(a, b), std::max(a, b)};
 }
 
 CallbackReturn FeetechStsSystem::on_init(const hardware_interface::HardwareInfo & info)
@@ -64,7 +70,7 @@ CallbackReturn FeetechStsSystem::on_init(const hardware_interface::HardwareInfo 
     baud_rate_ = std::stoi(param(hw, "baud_rate", "1000000"));
     timeout_ms_ = std::stoi(param(hw, "timeout_ms", "10"));
     torque_ = to_bool(param(hw, "torque", "true"));
-    disable_torque_on_deactivate_ = to_bool(param(hw, "disable_torque_on_deactivate", "true"));
+    disable_torque_on_deactivate_ = to_bool(param(hw, "disable_torque_on_deactivate", "false"));
     acceleration_ = std::stoi(param(hw, "acceleration", "254"));
     max_velocity_ = std::stod(param(hw, "max_velocity", "2.0"));
     max_missed_reads_ = std::stoi(param(hw, "max_missed_reads", "10"));
@@ -267,7 +273,8 @@ bool FeetechStsSystem::read_all(bool update_commands)
     }
     const uint8_t * d = it->second.data();
     j.missed = 0;
-    j.position = ticks_to_rad(j, sts::le16(d));
+    j.ticks = sts::le16(d);
+    j.position = ticks_to_rad(j, j.ticks);
     j.velocity = j.sign * sts::decode_signed(sts::le16(d + 2), 15) * kRadPerTick;
     j.load = j.sign * sts::decode_signed(sts::le16(d + 4), 10) / 1000.0;
     j.voltage = d[6] / 10.0;
@@ -300,14 +307,33 @@ CallbackReturn FeetechStsSystem::on_activate(const rclcpp_lifecycle::State &)
       j.command = j.position;
     }
     if (!torque_) {
-      RCLCPP_WARN(logger_, "Torque stays off (torque:=false): reading positions only, the arm can be moved by hand");
+      // The servos may still be holding from the last run, which leaves them on.
+      set_torque(false);
+      RCLCPP_WARN(logger_, "Torque off (torque:=false): the arm is limp and can be moved by hand; positions are only read");
       return CallbackReturn::SUCCESS;
     }
-    // Hold where the arm is now, then switch the motors on.
+    // A joint well outside its calibrated range means the calibration doesn't fit the arm, and
+    // driving it back into range could swing the arm hard: leave the motors as they are.
+    std::string outside;
+    for (const auto & j : joints_) {
+      if (j.ticks < j.min_ticks - kRangeSlackTicks || j.ticks > j.max_ticks + kRangeSlackTicks) {
+        outside += " " + j.name + " at " + std::to_string(j.ticks) + " ticks (range " +
+          std::to_string(j.min_ticks) + ".." + std::to_string(j.max_ticks) + ")";
+      }
+    }
+    if (!outside.empty()) {
+      RCLCPP_ERROR(
+        logger_, "Not switching the motors on, outside the calibrated range:%s. If the calibration is old, run "
+        "sts_calibrate again; otherwise launch with torque:=false and move the joint into its range by hand.",
+        outside.c_str());
+      return CallbackReturn::FAILURE;
+    }
+    // Hold exactly where the arm is now, then switch the motors on. A joint a little past its
+    // range is brought back into it by write(), at max_velocity.
     std::vector<std::pair<uint8_t, std::vector<uint8_t>>> accel, goal;
     for (const auto & j : joints_) {
       accel.push_back({j.id, {static_cast<uint8_t>(std::clamp(acceleration_, 0, 254))}});
-      goal.push_back({j.id, sts::to_le16(static_cast<uint16_t>(rad_to_ticks(j, j.position)))});
+      goal.push_back({j.id, sts::to_le16(static_cast<uint16_t>(j.ticks))});
     }
     bus_.sync_write(sts::reg::kAcceleration, 1, accel);
     bus_.sync_write(sts::reg::kGoalPosition, 2, goal);
@@ -326,6 +352,8 @@ CallbackReturn FeetechStsSystem::on_deactivate(const rclcpp_lifecycle::State &)
     if (torque_enabled_ && disable_torque_on_deactivate_) {
       set_torque(false);
       RCLCPP_INFO(logger_, "Torque off");
+    } else if (torque_enabled_) {
+      RCLCPP_INFO(logger_, "The servos keep holding the arm; torque:=false or cutting their power lets it go");
     }
   } catch (const std::exception & e) {
     RCLCPP_ERROR(logger_, "%s", e.what());
@@ -355,9 +383,9 @@ CallbackReturn FeetechStsSystem::on_shutdown(const rclcpp_lifecycle::State &)
 
 CallbackReturn FeetechStsSystem::on_error(const rclcpp_lifecycle::State &)
 {
-  // The servos keep holding their last goal: dropping the arm is worse than
+  // The servos keep their last goal and torque: dropping the arm is worse than
   // leaving it where it is.
-  RCLCPP_ERROR(logger_, "Lost the servo bus; the servos hold their last goal until power is cut");
+  RCLCPP_ERROR(logger_, "Stopped after an error; the servos keep their last goal until their power is cut");
   bus_.close();
   return CallbackReturn::SUCCESS;
 }
@@ -384,13 +412,15 @@ hardware_interface::return_type FeetechStsSystem::write(const rclcpp::Time &, co
   if (!torque_enabled_) {
     return hardware_interface::return_type::OK;
   }
-  // A controller can ask for a jump; the arm only gets max_velocity of it per cycle.
+  // A controller can ask for a jump, or for more than the calibrated range: the arm only
+  // gets max_velocity of it per cycle, and only within the range.
   const double dt = std::clamp(period.seconds(), 0.001, 0.1);
   const double max_step = max_velocity_ * dt;
   std::vector<std::pair<uint8_t, std::vector<uint8_t>>> goal;
   for (auto & j : joints_) {
     if (std::isfinite(j.command)) {
-      j.sent += std::clamp(j.command - j.sent, -max_step, max_step);
+      const auto [lo, hi] = limits(j);
+      j.sent += std::clamp(std::clamp(j.command, lo, hi) - j.sent, -max_step, max_step);
     }
     goal.push_back({j.id, sts::to_le16(static_cast<uint16_t>(rad_to_ticks(j, j.sent)))});
   }

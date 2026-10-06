@@ -2,7 +2,8 @@
 
     ros2 run so101_scan_hardware sts_calibrate --port /dev/so101
 
-Torque goes off, then the tool asks you to:
+It switches the motors off (asking you to hold the arm first if they are on),
+then asks you to:
 
   1. put the arm in its zero pose (the URDF's): base turned straight ahead,
      upper arm straight up, forearm level and pointing forward, wrist straight
@@ -20,10 +21,12 @@ It writes a YAML file the launch files read (default
 
 joint angle [rad] = sign * (ticks - zero_ticks) * 2 pi / 4096.
 
-Nothing is written to the servos unless you ask (--write-homing-offset), so a
-LeRobot calibration on the same arm keeps working. --joints redoes some joints
-and keeps the rest of the file. --from-lerobot converts a LeRobot calibration
-file instead of moving the arm.
+The servos' homing offsets stay as they are unless you ask (--write-homing-offset),
+so a LeRobot calibration on the same arm keeps working; if a run with it is
+stopped or fails, the old offsets are put back. The only other thing it writes
+to a servo is position mode, for one that isn't in it (the driver needs it).
+--joints redoes some joints and keeps the rest of the file. --from-lerobot
+converts a LeRobot calibration file instead of moving the arm.
 """
 
 import argparse
@@ -78,7 +81,9 @@ def save(path, joints, source):
             j = joints[name]
             lines.append("  %s: {id: %d, zero_ticks: %d, sign: %d, min_ticks: %d, max_ticks: %d}" % (
                 name, j["id"], j["zero_ticks"], j["sign"], j["min_ticks"], j["max_ticks"]))
-    path.write_text("\n".join(lines) + "\n")
+    tmp = path.with_name(path.name + ".tmp")   # a failed write leaves the old file whole
+    tmp.write_text("\n".join(lines) + "\n")
+    os.replace(tmp, path)
     return path
 
 
@@ -100,7 +105,7 @@ def ask(prompt):
     return input(prompt)
 
 
-def wait_with_readout(bus, ids, show, prompt=ask):
+def wait_with_readout(bus, ids, show, prompt=None):
     """Poll the servos until Enter, printing a live line; returns the min/max ticks seen."""
     lo, hi = {}, {}
     done = threading.Event()
@@ -118,23 +123,43 @@ def wait_with_readout(bus, ids, show, prompt=ask):
 
     t = threading.Thread(target=poll, daemon=True)
     t.start()
-    prompt("")
-    done.set()
-    t.join()
+    try:
+        (prompt or ask)("")
+    finally:   # Ctrl-C too: the bus is needed again to put things back
+        done.set()
+        t.join()
     print()
     return lo, hi
 
 
-def calibrate(bus, names, ids, write_offset=False, sign_check=True, prompt=ask):
-    """Interactive part. Returns {joint: {id, zero_ticks, sign, min_ticks, max_ticks}}."""
+def torque_off(bus, names, ids, prompt):
+    """Switch the motors off, first asking to hold the arm if any of them is holding it up."""
+    holding = [n for n in names if bus.read_u8(ids[n], Reg.TORQUE_ENABLE) != 0]
+    if holding:
+        prompt("The motors are holding the arm (%s). They go off next and the arm goes limp:\n"
+               "  hold it, then press Enter. " % ", ".join(holding))
+    bus.set_torque([ids[n] for n in names], False)
+    print("Torque is off; the arm is limp, so hold it.\n")
+
+
+def put_back_offsets(bus, old):
+    """Write back the homing offsets a stopped run changed; returns the ids it couldn't."""
+    return [i for i, offset in old.items() if not bus.write_eeprom(i, Reg.HOMING_OFFSET, offset)]
+
+
+def calibrate(bus, names, ids, write_offset=False, sign_check=True, prompt=None, old_offsets=None):
+    """Interactive part. Returns {joint: {id, zero_ticks, sign, min_ticks, max_ticks}}. Each
+    homing offset it changes goes into old_offsets first ({servo id: the old register bytes}),
+    so the caller can put them back if the run doesn't finish."""
+    prompt = prompt or ask
+    old_offsets = {} if old_offsets is None else old_offsets
     joint_ids = [ids[n] for n in names]
     for n in names:
         mode = bus.read_u8(ids[n], Reg.OPERATING_MODE)
         if mode not in (0, None):
             print("  %s: switching servo %d to position mode" % (n, ids[n]))
             bus.write_eeprom(ids[n], Reg.OPERATING_MODE, bytes([0]))
-    bus.set_torque(joint_ids, False)
-    print("Torque is off; the arm is limp, so hold it.\n")
+    torque_off(bus, names, ids, prompt)
 
     prompt("1/3  Put the arm in its zero pose:\n  %s\n  then press Enter. " % ZERO_POSE)
     zero = bus.positions(joint_ids)
@@ -144,8 +169,12 @@ def calibrate(bus, names, ids, write_offset=False, sign_check=True, prompt=ask):
     if write_offset:
         for n in names:
             i = ids[n]
-            raw = zero[i] + sts.decode_signed(bus.read_u16(i, Reg.HOMING_OFFSET), 11)
+            old = bus.read_u16(i, Reg.HOMING_OFFSET)
+            if old is None:
+                raise RuntimeError("can't read %s's homing offset" % n)
+            raw = zero[i] + sts.decode_signed(old, 11)
             offset = raw - 2048
+            old_offsets.setdefault(i, sts.to_le16(old))
             bus.write_eeprom(i, Reg.HOMING_OFFSET, sts.to_le16(sts.encode_signed(offset, 11)))
         time.sleep(0.05)
         zero = bus.positions(joint_ids)
@@ -206,20 +235,34 @@ def main(argv=None):
 
     names = args.joints or JOINTS
     keep = load(args.out) if args.joints else {}
+    old_offsets = {}   # servo id -> its homing offset before this run, for each one changed
     bus = sts.Bus(args.port, args.baud)
     try:
         found = [n for n in names if bus.ping(sts.SO101_IDS[n])]
         if len(found) < len(names):
             print("no answer from %s on %s" % (", ".join(set(names) - set(found)), args.port))
             return 1
-        joints = calibrate(bus, names, sts.SO101_IDS, args.write_homing_offset, not args.no_sign_check)
-    except KeyboardInterrupt:
-        print("\nstopped; nothing written")
-        return 1
+        joints = calibrate(bus, names, sts.SO101_IDS, args.write_homing_offset, not args.no_sign_check,
+                           old_offsets=old_offsets)
+        keep.update(joints)
+        path = save(args.out, keep, "sts_calibrate")
+    except BaseException as e:   # Ctrl-C, a servo that stopped answering, a file that can't be written
+        print("\nstopped; %s is unchanged" % args.out)
+        if old_offsets:
+            try:
+                failed = put_back_offsets(bus, old_offsets)
+            except Exception:   # the bus itself is gone
+                failed = list(old_offsets)
+            if failed:
+                print("couldn't put back the homing offsets of servos %s, so %s no longer fits them: "
+                      "run sts_calibrate again" % (", ".join(map(str, failed)), args.out))
+            else:
+                print("put back the homing offsets this run had changed")
+        if isinstance(e, KeyboardInterrupt):
+            return 1
+        raise
     finally:
         bus.close()
-    keep.update(joints)
-    path = save(args.out, keep, "sts_calibrate")
     print("\nwrote %s" % path)
     for n in JOINTS:
         if n in keep:

@@ -9,10 +9,15 @@
 //
 // with zero_ticks, sign and the tick limits per joint from the calibration
 // file (see so101_scan_hardware/calibrate.py), passed in as URDF parameters.
+//
+// Activating switches the motors on holding the pose the arm is in. Deactivating
+// and shutting down leave them holding (disable_torque_on_deactivate: false), so
+// stopping the launch doesn't drop the arm; torque:=false switches them off.
 #pragma once
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "hardware_interface/handle.hpp"
@@ -57,6 +62,7 @@ public:
     int max_ticks = 4095;
 
     // state
+    int ticks = 0;             // Present_Position as read
     double position = 0.0;     // rad
     double velocity = 0.0;     // rad/s
     double load = 0.0;         // fraction of the servo's maximum torque, signed
@@ -68,9 +74,14 @@ public:
     int missed = 0;            // consecutive reads without an answer
   };
 
-  // Unit conversions, public so the tests can check them.
+  // Unit conversions, public so the tests can check them. rad_to_ticks keeps to the
+  // register's 0..4095; limits() is the calibrated range in rad, lower end first.
   static double ticks_to_rad(const Joint & j, double ticks);
   static int rad_to_ticks(const Joint & j, double rad);
+  static std::pair<double, double> limits(const Joint & j);
+
+  // How far outside its calibrated range a joint may be for activation to go ahead (~5 deg).
+  static constexpr int kRangeSlackTicks = 57;
 
 private:
   bool read_all(bool update_commands);
@@ -86,7 +97,7 @@ private:
   int baud_rate_ = 1000000;
   int timeout_ms_ = 10;
   bool torque_ = true;
-  bool disable_torque_on_deactivate_ = true;
+  bool disable_torque_on_deactivate_ = false;
   int acceleration_ = 254;
   double max_velocity_ = 2.0;
   int max_missed_reads_ = 10;

@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -23,7 +24,10 @@
 #endif
 
 using hardware_interface::CallbackReturn;
+using hardware_interface::return_type;
 using so101_scan_hardware::FeetechStsSystem;
+using so101_scan_hardware::StsBus;
+namespace reg = so101_scan_hardware::sts::reg;
 using namespace std::chrono_literals;
 
 namespace
@@ -59,16 +63,42 @@ std::string urdf(const std::string & port, const std::string & extra_joint = "",
          "<param name='return_delay_time'>0</param></hardware>" + joints + "</ros2_control></robot>";
 }
 
+constexpr double kRadPerTick = 2 * M_PI / 4096;
+
+double state(const std::vector<hardware_interface::StateInterface> & ifs, const std::string & name)
+{
+  for (const auto & s : ifs) {
+    if (s.get_name() == name) {
+      return s.get_value();
+    }
+  }
+  ADD_FAILURE() << "no state interface " << name;
+  return NAN;
+}
+
 class FakeBusTest : public ::testing::Test
 {
 protected:
-  void SetUp() override
+  // Starts the fake bus with five servos; ticks are start positions from id 1 on (default 2048).
+  void start_bus(const std::vector<int> & ticks = {})
   {
     link_ = "/tmp/so101_test_bus_" + std::to_string(getpid());
+    unlink(link_.c_str());  // a stale link would look like the new bus has started
+    std::vector<std::string> args = {PYTHON_EXECUTABLE, "-m", "so101_scan_hardware.fake_bus", "--link", link_};
+    if (!ticks.empty()) {
+      args.push_back("--ticks");
+      for (int t : ticks) {
+        args.push_back(std::to_string(t));
+      }
+    }
+    std::vector<char *> argv;
+    for (auto & a : args) {
+      argv.push_back(a.data());
+    }
+    argv.push_back(nullptr);
     pid_ = fork();
     if (pid_ == 0) {
-      execlp(PYTHON_EXECUTABLE, PYTHON_EXECUTABLE, "-m", "so101_scan_hardware.fake_bus", "--link", link_.c_str(),
-        static_cast<char *>(nullptr));
+      execvp(argv[0], argv.data());
       _exit(127);
     }
     for (int i = 0; i < 100; ++i) {
@@ -79,6 +109,14 @@ protected:
       std::this_thread::sleep_for(50ms);
     }
     FAIL() << "the fake bus didn't start";
+  }
+
+  // A second connection to the bus, for looking at the servos once the driver has closed its own.
+  std::unique_ptr<StsBus> probe()
+  {
+    auto bus = std::make_unique<StsBus>();
+    bus->open(link_, 1000000, 50);
+    return bus;
   }
 
   void TearDown() override
@@ -107,6 +145,7 @@ protected:
 
 TEST_F(FakeBusTest, HoldsThenFollowsCommands)
 {
+  start_bus();
   auto infos = hardware_interface::parse_control_resources_from_urdf(urdf(link_));
   ASSERT_EQ(infos.size(), 1u);
   FeetechStsSystem hw;
@@ -119,15 +158,7 @@ TEST_F(FakeBusTest, HoldsThenFollowsCommands)
   ASSERT_EQ(hw.on_configure(kUnconfigured), CallbackReturn::SUCCESS);
   ASSERT_EQ(hw.on_activate(kInactive), CallbackReturn::SUCCESS);
 
-  auto value = [&](const std::string & name) -> double {
-      for (auto & s : state_ifs) {
-        if (s.get_name() == name) {
-          return s.get_value();
-        }
-      }
-      ADD_FAILURE() << "no state interface " << name;
-      return NAN;
-    };
+  auto value = [&](const std::string & name) {return state(state_ifs, name);};
   // fake servos start in the middle (2048 ticks) = joint zero
   EXPECT_NEAR(value("shoulder_lift/position"), 0.0, 1e-9);
   EXPECT_NEAR(value("shoulder_lift/voltage"), 7.4, 1e-9);
@@ -145,14 +176,17 @@ TEST_F(FakeBusTest, HoldsThenFollowsCommands)
   // past the calibrated range: stops at max_ticks (3000 = +1.46 rad)
   command_ifs[1].set_value(3.0);
   run(hw, 1.5);
-  EXPECT_NEAR(value("shoulder_lift/position"), (3000 - 2048) * 2 * M_PI / 4096, 0.01);
+  EXPECT_NEAR(value("shoulder_lift/position"), (3000 - 2048) * kRadPerTick, 0.01);
 
   ASSERT_EQ(hw.on_deactivate(kActive), CallbackReturn::SUCCESS);
   ASSERT_EQ(hw.on_cleanup(kInactive), CallbackReturn::SUCCESS);
+  // stopping leaves the servos holding the arm rather than dropping it
+  EXPECT_EQ(probe()->read_u8(2, reg::kTorqueEnable).value_or(9), 1);
 }
 
 TEST_F(FakeBusTest, RateLimitsJumps)
 {
+  start_bus();
   auto infos = hardware_interface::parse_control_resources_from_urdf(urdf(link_));
   FeetechStsSystem hw;
   ASSERT_EQ(hw.on_init(infos[0]), CallbackReturn::SUCCESS);
@@ -162,12 +196,7 @@ TEST_F(FakeBusTest, RateLimitsJumps)
   ASSERT_EQ(hw.on_activate(kInactive), CallbackReturn::SUCCESS);
   command_ifs[0].set_value(1.2);
   run(hw, 0.2);  // 20 cycles at max_velocity 3 rad/s -> at most 0.6 rad sent
-  double pan = NAN;
-  for (auto & s : state_ifs) {
-    if (s.get_name() == "shoulder_pan/position") {
-      pan = s.get_value();
-    }
-  }
+  const double pan = state(state_ifs, "shoulder_pan/position");
   EXPECT_LT(pan, 0.65);
   EXPECT_GT(pan, 0.2);
   ASSERT_EQ(hw.on_deactivate(kActive), CallbackReturn::SUCCESS);
@@ -175,6 +204,7 @@ TEST_F(FakeBusTest, RateLimitsJumps)
 
 TEST_F(FakeBusTest, MissingServoFailsConfigure)
 {
+  start_bus();
   auto infos = hardware_interface::parse_control_resources_from_urdf(urdf(link_, "extra_joint"));
   FeetechStsSystem hw;
   ASSERT_EQ(hw.on_init(infos[0]), CallbackReturn::SUCCESS);
@@ -183,6 +213,8 @@ TEST_F(FakeBusTest, MissingServoFailsConfigure)
 
 TEST_F(FakeBusTest, TorqueOffOnlyReads)
 {
+  start_bus();
+  probe()->write_u8(3, reg::kTorqueEnable, 1);  // still holding from the last run
   auto infos = hardware_interface::parse_control_resources_from_urdf(urdf(link_, "", "false"));
   FeetechStsSystem hw;
   ASSERT_EQ(hw.on_init(infos[0]), CallbackReturn::SUCCESS);
@@ -194,13 +226,46 @@ TEST_F(FakeBusTest, TorqueOffOnlyReads)
   hw.on_deactivate(kActive);
   hw.on_cleanup(kInactive);
 
-  // nothing moved, and the EEPROM settings were applied once
-  so101_scan_hardware::StsBus bus;
-  bus.open(link_, 1000000, 50);
-  EXPECT_EQ(bus.read_u16(3, so101_scan_hardware::sts::reg::kPresentPosition).value_or(0), 2048);
-  EXPECT_EQ(bus.read_u8(3, so101_scan_hardware::sts::reg::kTorqueEnable).value_or(9), 0);
-  EXPECT_EQ(bus.read_u8(3, so101_scan_hardware::sts::reg::kPCoefficient).value_or(0), 16);
-  EXPECT_EQ(bus.read_u8(3, so101_scan_hardware::sts::reg::kReturnDelayTime).value_or(9), 0);
+  // the motors went off and nothing moved, and the EEPROM settings were applied once
+  auto bus = probe();
+  EXPECT_EQ(bus->read_u16(3, reg::kPresentPosition).value_or(0), 2048);
+  EXPECT_EQ(bus->read_u8(3, reg::kTorqueEnable).value_or(9), 0);
+  EXPECT_EQ(bus->read_u8(3, reg::kPCoefficient).value_or(0), 16);
+  EXPECT_EQ(bus->read_u8(3, reg::kReturnDelayTime).value_or(9), 0);
+}
+
+TEST_F(FakeBusTest, ALittleOutsideItsRangeComesBackSlowly)
+{
+  start_bus({3030});  // shoulder_pan 30 ticks past its max_ticks, 3000
+  auto infos = hardware_interface::parse_control_resources_from_urdf(urdf(link_));
+  FeetechStsSystem hw;
+  ASSERT_EQ(hw.on_init(infos[0]), CallbackReturn::SUCCESS);
+  auto state_ifs = hw.export_state_interfaces();
+  auto command_ifs = hw.export_command_interfaces();
+  ASSERT_EQ(hw.on_configure(kUnconfigured), CallbackReturn::SUCCESS);
+  ASSERT_EQ(hw.on_activate(kInactive), CallbackReturn::SUCCESS);
+  // the motor holds it where it is: no jump to the end of the range
+  std::this_thread::sleep_for(100ms);
+  ASSERT_EQ(hw.read(rclcpp::Time(0, 0, RCL_ROS_TIME), rclcpp::Duration(0, 10000000)), return_type::OK);
+  EXPECT_NEAR(state(state_ifs, "shoulder_pan/position"), (3030 - 2048) * kRadPerTick, 1e-9);
+  // then the commands bring it back to the end of its range, at max_velocity
+  run(hw, 0.5);
+  EXPECT_NEAR(state(state_ifs, "shoulder_pan/position"), (3000 - 2048) * kRadPerTick, 0.005);
+  ASSERT_EQ(hw.on_deactivate(kActive), CallbackReturn::SUCCESS);
+}
+
+TEST_F(FakeBusTest, FarOutsideItsRangeLeavesTheMotorsOff)
+{
+  start_bus({2048, 2048, 3500});  // elbow_flex 500 ticks past max_ticks: the calibration doesn't fit
+  auto infos = hardware_interface::parse_control_resources_from_urdf(urdf(link_));
+  FeetechStsSystem hw;
+  ASSERT_EQ(hw.on_init(infos[0]), CallbackReturn::SUCCESS);
+  ASSERT_EQ(hw.on_configure(kUnconfigured), CallbackReturn::SUCCESS);
+  EXPECT_EQ(hw.on_activate(kInactive), CallbackReturn::FAILURE);
+  hw.on_cleanup(kInactive);
+  auto bus = probe();
+  EXPECT_EQ(bus->read_u8(3, reg::kTorqueEnable).value_or(9), 0);
+  EXPECT_EQ(bus->read_u16(3, reg::kPresentPosition).value_or(0), 3500);
 }
 
 }  // namespace

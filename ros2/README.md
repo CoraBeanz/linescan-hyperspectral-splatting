@@ -108,8 +108,10 @@ JetPack 4 is Ubuntu 18.04 and Humble needs 22.04, so ROS runs in the container
 ([`docker/Dockerfile`](docker/Dockerfile)); the Nano only needs Docker, which JetPack includes.
 [`docker/run.sh`](docker/run.sh) explains each flag it passes.
 
-1. **Clone the repo** on the Nano and give the two USB devices stable names:
+1. **Clone the repo** on the Nano, let your user run Docker, and give the two USB devices
+   stable names:
    ```bash
+   sudo usermod -aG docker $USER      # then log out and back in, once
    sudo cp ros2/udev/99-so101-scan.rules /etc/udev/rules.d/
    sudo udevadm control --reload-rules && sudo udevadm trigger
    ls -l /dev/so101 /dev/scan_mirror
@@ -122,21 +124,28 @@ JetPack 4 is Ubuntu 18.04 and Humble needs 22.04, so ROS runs in the container
 ## First steps with the real arm
 
 Each step checks one thing before the next one trusts it. Power the servos from their own
-supply; keep a hand near the power switch for anything that moves.
+supply; keep a hand near the power switch for anything that moves. Stopping a launch leaves
+the motors holding the arm where it is; `torque:=false` or that switch lets it go.
 
 1. **Find the servos** (read-only, nothing moves):
    `ros2 run so101_scan_hardware sts_scan --port /dev/so101`
    should list ids 1 to 5 with their positions and voltages.
 2. **Calibrate:** `ros2 run so101_scan_hardware sts_calibrate --port /dev/so101`.
-   It asks you to hold the arm in the zero pose, move each joint through its range, then nudge
-   each joint the way it names, and writes `~/so101_scan/calibration.yaml`. It only reads
-   unless you add `--write-homing-offset`. Already calibrated the arm with LeRobot?
-   `--from-lerobot <its json>` converts that file instead; check the wrist roll afterwards.
+   It switches the motors off (asking you to hold the arm first if they are holding it), then
+   asks you to put the arm in the zero pose, move each joint through its range and nudge each
+   joint the way it names, and writes `~/so101_scan/calibration.yaml`. The servos' homing
+   offsets stay as they are unless you add `--write-homing-offset`, and a run you stop puts them
+   back; the only other thing it writes is position mode, to a servo that isn't in it. Already
+   calibrated the arm with LeRobot? `--from-lerobot <its json>` converts that file instead;
+   check the wrist roll afterwards.
 3. **Check the calibration with the motors off:**
    `ros2 launch so101_scan_bringup scan_arm.launch.py torque:=false mirror:=fake foxglove:=true`.
-   Move the arm by hand: the model in Foxglove should follow joint for joint. A joint that turns
-   the wrong way needs its sign fixed (`sts_calibrate --joints <name>`).
-4. **First move, slowly:** launch again without `torque:=false`, then
+   The motors switch off as it starts, so hold the arm. Move it by hand: the model in Foxglove
+   should follow joint for joint. A joint that turns the wrong way needs its sign fixed
+   (`sts_calibrate --joints <name>`).
+4. **First move, slowly:** launch again without `torque:=false`. The motors switch on holding
+   the arm where it is; if a joint is well outside its calibrated range, the driver leaves them
+   off and names the joint (recalibrate it, or move it into range with `torque:=false`). Then
    `ros2 run so101_scan_sweep move_arm --plan <plans>/one_view.yaml` moves at 20°/s to the
    view that looks straight down at the table.
 5. **A scan with the simulated mirror:** `ros2 run so101_scan_sweep scan_sweep --plan <plans>/one_view.yaml`.
