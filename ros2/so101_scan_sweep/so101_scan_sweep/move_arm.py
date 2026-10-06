@@ -5,7 +5,8 @@
 
 Joint order: shoulder_pan shoulder_lift elbow_flex wrist_flex wrist_roll. Needs
 scan_arm.launch.py running with the motors on. --speed-deg sets how fast the joint that moves
-furthest goes (default 20 deg/s, slow on purpose for first tries).
+furthest goes (default 20 deg/s, slow on purpose for first tries). Ctrl-C stops the arm where
+it is.
 """
 
 import argparse
@@ -14,6 +15,7 @@ import threading
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.signals import SignalHandlerOptions
 
 from so101_scan_sweep import plan as plan_mod
 from so101_scan_sweep.plan import ARM_JOINTS
@@ -32,21 +34,23 @@ def main(argv=None):
     ap.add_argument("--plan")
     ap.add_argument("--viewpoint", help="name or index in --plan (default: the first)")
     ap.add_argument("--speed-deg", type=float, default=20.0)
-    args, ros_args = ap.parse_known_args(argv)
+    args, _ = ap.parse_known_args(argv)  # leaves --ros-args to rclpy
     if args.joints_deg:
         goal = {j: math.radians(v) for j, v in zip(ARM_JOINTS, args.joints_deg)}
     elif args.plan:
         plan = plan_mod.load(args.plan)
         vps = plan.viewpoints
         pick = args.viewpoint or "0"
-        match = [v for v in vps if v.name == pick] or ([vps[int(pick)]] if pick.isdigit() and int(pick) < len(vps) else [])
+        match = [v for v in vps if v.name == pick]
+        if not match and pick.isdigit() and int(pick) < len(vps):
+            match = [vps[int(pick)]]
         if not match or not match[0].joints:
             ap.error("no viewpoint %r with joints in %s" % (pick, args.plan))
         goal = match[0].joints
     else:
         ap.error("give --joints-deg or --plan")
 
-    rclpy.init(args=ros_args)
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)  # Ctrl-C -> KeyboardInterrupt below
     node = ScanSweep()
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
@@ -66,6 +70,10 @@ def main(argv=None):
         code = 0 if ok else 1
     except ScanError as e:
         node.get_logger().error(str(e))
+        code = 1
+    except KeyboardInterrupt:
+        node.stop_arm()
+        print("stopped")
         code = 1
     finally:
         executor.shutdown()

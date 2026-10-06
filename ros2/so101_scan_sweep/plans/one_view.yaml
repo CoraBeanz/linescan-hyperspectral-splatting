@@ -3,7 +3,6 @@
 #
 #   ros2 run so101_scan_sweep scan_sweep --plan $(ros2 pkg prefix so101_scan_sweep)/share/so101_scan_sweep/plans/one_view.yaml
 name: one_view
-output_dir: ~/so101_scan/scans
 home_mirror: true          # home the mirror first if it hasn't been since power-up
 move:
   max_joint_speed_deg: 20  # slow while trying things out

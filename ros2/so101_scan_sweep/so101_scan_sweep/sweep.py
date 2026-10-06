@@ -5,7 +5,8 @@
 Needs scan_arm.launch.py running. For each viewpoint in the plan (plan.py) it moves the arm
 there through arm_controller, waits for it to settle, starts a mirror sweep, and for every
 scan line the mirror reports works out the head and line-camera poses at the line's timestamp
-(line_log.py). Each run writes a folder:
+(line_log.py). A move that fails (the arm blocked, or the servo bus lost) ends the run. Each
+run writes a folder:
 
     <output_dir>/<name>_<YYYYmmdd-HHMMSS>/
       lines.csv    one row per line: viewpoint, sweep_id, index, stamp_ns, mirror_angle, the head
@@ -36,6 +37,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import JointState
 from std_msgs.msg import ColorRGBA, String
 from std_srvs.srv import Trigger
@@ -85,6 +87,7 @@ class ScanSweep(Node):
         self.pending = deque()
         self.sweeps = {}      # sweep_id -> SweepLog
         self.csv = None
+        self.arm_goal = None  # the move in progress, to cancel on Ctrl-C
         self.lock = threading.Lock()
         group = ReentrantCallbackGroup()
 
@@ -230,7 +233,9 @@ class ScanSweep(Node):
         handle = self.wait(self.arm.send_goal_async(goal), 5.0, "arm_controller")
         if not handle.accepted:
             raise ScanError("arm_controller rejected the move")
+        self.arm_goal = handle
         result = self.wait(handle.get_result_async(), duration + 10.0, "the arm move").result
+        self.arm_goal = None
         ok = result.error_code == FollowJointTrajectory.Result.SUCCESSFUL
         return ok, "" if ok else (result.error_string or "error code %d" % result.error_code), duration
 
@@ -246,6 +251,15 @@ class ScanSweep(Node):
                 return True
             time.sleep(0.05)
         return False
+
+    def stop_arm(self):
+        """Cancel the move in progress: the controller holds the arm where it is."""
+        handle, self.arm_goal = self.arm_goal, None
+        if handle is not None:
+            try:
+                self.wait(handle.cancel_goal_async(), 2.0, "arm_controller")
+            except Exception as e:
+                self.get_logger().error("could not cancel the arm move: %s" % e)
 
     def ensure_homed(self, plan):
         self.wait_for(lambda: self.mirror_state is not None, 5.0,
@@ -302,8 +316,9 @@ class ScanSweep(Node):
                     ok, message, duration = self.move_arm(vp.joints, plan)
                     entry["move"] = {"ok": ok, "message": message, "duration_s": duration}
                     if not ok:
-                        self.get_logger().warning("move to %s: %s; sweeping anyway, the logged poses are "
-                                                  "measured" % (vp.name, message))
+                        # the arm is stuck or the bus is gone: stop rather than push on to the next pose
+                        raise ScanError("the move to %s failed (%s); stopping the scan. The arm holds "
+                                        "where it is." % (vp.name, message))
                     entry["settled"] = self.settle(plan.settle_time)
                 self.get_logger().info("viewpoint %d/%d %s: sweeping %d lines"
                                        % (i + 1, len(plan.viewpoints), vp.name, vp.sweep.n_lines))
@@ -313,10 +328,12 @@ class ScanSweep(Node):
                                        % (vp.name, len(log.stamps), vp.sweep.n_lines))
         except KeyboardInterrupt:
             info["interrupted"] = True
+            self.get_logger().warning("interrupted; stopping the arm and the mirror")
+            self.stop_arm()
             try:
                 self.call(self.stop_client, Trigger.Request(), 2.0, "/scan_mirror/stop")
-            except ScanError:
-                pass
+            except Exception as e:  # still write what was logged
+                self.get_logger().error("could not stop the mirror: %s" % e)
         finally:
             # log what is still queued, then close the file
             deadline = time.monotonic() + 1.0
@@ -353,12 +370,14 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Run a scan plan and log the pose of every scan line")
     ap.add_argument("--plan", required=True, help="plan YAML (see plans/)")
     ap.add_argument("--output", help="folder to write (default: <plan output_dir>/<name>_<date>-<time>)")
-    args, ros_args = ap.parse_known_args(argv)
+    args, _ = ap.parse_known_args(argv)  # leaves --ros-args to rclpy
     plan = plan_mod.load(args.plan)
     out_dir = args.output or os.path.join(plan.output_dir, "%s_%s" % (
         plan.name, datetime.now().strftime("%Y%m%d-%H%M%S")))
 
-    rclpy.init(args=ros_args)
+    # reads --ros-args from sys.argv; Ctrl-C raises KeyboardInterrupt here instead of shutting
+    # ROS down, so the mirror can still be told to stop
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     node = ScanSweep()
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
