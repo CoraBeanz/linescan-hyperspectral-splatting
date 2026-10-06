@@ -68,17 +68,17 @@ Prices marked ✓ were checked on the vendor page on 2026-10-05. Prices marked ~
 
 | # | Part | Pick | Price | Notes |
 |---|---|---|---|---|
-| 11 | Mirror stepper, 0.9° | StepperOnline **17HM19-1684S** (NEMA17, 0.9°, 1.68 A) | $11.41 ✓ | At 1/16 microstepping, one microstep moves the line 0.29 mm at 150 mm. A 1.8° motor also works if you add a 3:1 GT2 belt reduction. |
-| 12 | Stepper driver | Adafruit **#6121** TMC2209 breakout | ~$10 | It's quiet and can be controlled over UART. |
+| 11 | Mirror stepper, NEMA 8 | StepperOnline **8HS11-0204S** (NEMA 8, 1.8°, 0.2 A, 20 × 20 × 28 mm, 60 g, 4 mm D-cut shaft, M2 holes on 16 mm) | $15.98 ✓ | At 1/32 microstepping, one microstep moves the line 0.29 mm at 150 mm. A NEMA 17 also works on a bench, but on the arm the small motor keeps the scanner head at 188 g instead of 281 g. That takes the SO-101 shoulder servo from 94% to 75% of stall with the arm stretched out. |
+| 12 | Stepper driver | Adafruit **#6121** TMC2209 breakout | ~$10 | It's quiet and can be controlled over UART. Set the run current to about 0.2 A for the NEMA 8. |
 | 13 | Microcontroller | Espressif **ESP32-DevKitC-32E** (Digi-Key) | ~$10 | Drives the stepper. It can run as a micro-ROS node so the mirror shows up in ROS2. Any Arduino-class board works if you skip micro-ROS. |
-| 14 | Stepper power supply | 12–24 V, 2 A DC brick with a barrel jack, plus a jack adapter | ~$12 | |
+| 14 | Stepper power supply | 12 V, 1 A or larger DC brick with a barrel jack, plus a jack adapter | ~$12 | The NEMA 8 draws only about 0.2 A per phase. |
 | 15 | Home switch | A3144 hall sensor + a small magnet | ~$3 | Gives each scan an absolute start angle. |
 | 16 | Breadboard and wiring | Half-size breadboard, jumper wires, 100 µF capacitor across the motor supply | ~$10 | |
 | 17 | Lights | 2× halogen clamp or work lights (MR16/GU10 halogen) | ~$25 | LEDs have almost no output past 700 nm, and you need the NIR. |
 | 18 | Wavelength calibration | NE-2 neon indicator lamp (Digi-Key or Amazon) + any CFL bulb | ~$8 | Neon covers 585–880 nm, and the mercury in a CFL gives 546 and 611 nm. |
 | 19 | Alignment laser | 650 nm red laser diode module | ~$8 | For aligning the optical axis. It also adds a third calibration line near 650 nm. |
 | 20 | White reference | White PTFE sheet, 1/8" (McMaster-Carr "PTFE sheets", or a 12 × 24 in sheet from Walmart) | ~$15 | Flat-field and reflectance reference. |
-| 21 | Housing and stray-light lining | Black PLA print + flocking paper (Protostar or similar) | ~$15 | Stray light is the main enemy. Make the camera tilt adjustable by ±3°. You need a 3D printer or a print service. |
+| 21 | Housing, stray-light lining and fasteners | Black PLA print + flocking paper (Protostar or similar). Fasteners: 4× M2 × 4 screws for the motor, and 2× M3 × 35 bolts with M3 washers and nuts for the lid. | ~$20 | Stray light is the main enemy. Make the camera tilt adjustable by ±3°. You need a 3D printer or a print service. |
 
 ### 3.3 Compute and pose camera
 
@@ -107,9 +107,9 @@ Prices marked ✓ were checked on the vendor page on 2026-10-05. Prices marked ~
 
 | Build | Recommended | Budget |
 |---|---|---|
-| Spectrograph + scanner (3.1 + 3.2) | ~$420 | ~$315 |
-| + compute and pose camera (3.3) | ~$865 | ~$465 |
-| + viewpoints (3.4), full rig | **~$1,170** | **~$495** |
+| Spectrograph + scanner (3.1 + 3.2) | ~$430 | ~$325 |
+| + compute and pose camera (3.3) | ~$875 | ~$475 |
+| + viewpoints (3.4), full rig | **~$1,180** | **~$505** |
 
 The spectrograph and scanner rows are the core of the project. Everything else is common hobby gear, so check what you already have before buying. The totals leave out section 3.5. The bench spectrometer stage (build step 1 below) needs only rows 1–2 and 4–9, the lamps in row 18, the laser in row 19, the housing in row 21, and a Raspberry Pi or Jetson to read the camera.
 
@@ -138,7 +138,7 @@ The spectrograph and scanner rows are the core of the project. Everything else i
 - [Bartovation 500 l/mm grating sheet](https://bartovation.com/product/other-lab-supplies/diffraction-grating-sheets/500-lines-mm-linear-diffraction-grating-sheet/)
 - [Thorlabs precision slits](https://www.thorlabs.com/newgrouppage9.cfm?objectgroup_id=1464), [S50LK](https://www.thorlabs.com/item/S50LK)
 - [Thorlabs hard-coated edgepass filters (FELH0500)](https://www.thorlabs.com/hard-coated-edgepass-filters?pn=FEL+H0500)
-- [StepperOnline 17HM19-1684S](https://www.omc-stepperonline.com/nema-17-bipolar-0-9deg-44ncm-62-3oz-in-1-68a-2-8v-42x42x47mm-4-wires-17hm19-1684s)
+- [StepperOnline 8HS11-0204S (NEMA 8)](https://www.omc-stepperonline.com/nema-8-bipolar-1-8deg-1-4ncm-1-98oz-in-0-2a-20x20x28mm-4-wires-8hs11-0204s)
 - [Adafruit TMC2209 breakout](https://www.adafruit.com/product/6121)
 - [Espressif ESP32-DevKitC-32E (Digi-Key)](https://www.digikey.com/en/products/detail/espressif-systems/ESP32-DEVKITC-32E/12091810)
 - [Jetson price increase, Hardware Busters, July 2026](https://hwbusters.com/news/nvidia-jetson-prices-jump-up-to-101-the-249-orin-nano-super-is-now-399/), [NVIDIA: buy Jetson](https://developer.nvidia.com/buy-jetson)
