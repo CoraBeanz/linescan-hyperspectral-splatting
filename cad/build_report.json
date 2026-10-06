@@ -1,0 +1,462 @@
+{
+ "interference_mm3": [],
+ "rotor_full_turn_min_gap_mm": {
+  "HSI_shell": [
+   0.89,
+   300
+  ],
+  "HSI_lid": [
+   0.5,
+   0
+  ],
+  "HSI_filter_cap": [
+   3.42,
+   100
+  ],
+  "HSI_hall": [
+   1.1,
+   0
+  ],
+  "HSI_objective": [
+   6.12,
+   100
+  ]
+ },
+ "mass": {
+  "rows": [
+   {
+    "part": "Housing (printed)",
+    "g": 35.9,
+    "source": "PETG, 35.3 cm3 at 80%"
+   },
+   {
+    "part": "Lid with motor mount (printed)",
+    "g": 13.1,
+    "source": "PETG, 12.9 cm3 at 80%"
+   },
+   {
+    "part": "Mirror clamp (printed)",
+    "g": 1.7,
+    "source": "PETG, 1.7 cm3 at 80%"
+   },
+   {
+    "part": "Wrist puck with dovetail rail (printed)",
+    "g": 4.8,
+    "source": "PETG, 4.7 cm3 at 80%"
+   },
+   {
+    "part": "Objective carrier (printed)",
+    "g": 2.4,
+    "source": "PETG, 2.3 cm3 at 80%"
+   },
+   {
+    "part": "Slit block (printed)",
+    "g": 3.6,
+    "source": "PETG, 3.6 cm3 at 80%"
+   },
+   {
+    "part": "Grating carrier (printed)",
+    "g": 2.2,
+    "source": "PETG, 2.1 cm3 at 80%"
+   },
+   {
+    "part": "Filter cap and stop (printed)",
+    "g": 1.2,
+    "source": "PETG, 1.2 cm3 at 80%"
+   },
+   {
+    "part": "Stepper 8HS11-0204S (NEMA 8, 1.8 deg, 60 g)",
+    "g": 60.0,
+    "source": "listing"
+   },
+   {
+    "part": "Scan mirror 25 x 20 x 2 mm, front surface",
+    "g": 2.5,
+    "source": "est"
+   },
+   {
+    "part": "Home magnet 5 x 2 mm",
+    "g": 0.3,
+    "source": "est"
+   },
+   {
+    "part": "A3144 hall sensor (home switch)",
+    "g": 0.3,
+    "source": "est"
+   },
+   {
+    "part": "510 nm long-pass, 17 mm disc",
+    "g": 0.9,
+    "source": "est"
+   },
+   {
+    "part": "Objective: Commonlands CIL161 16 mm (at f/4)",
+    "g": 5.0,
+    "source": "listing"
+   },
+   {
+    "part": "M12 holder U0756M10 (objective)",
+    "g": 3.5,
+    "source": "est"
+   },
+   {
+    "part": "Slit: two snap-off blade pieces, 50 um gap",
+    "g": 1.0,
+    "source": "est"
+   },
+   {
+    "part": "Field lens, N-BK7 PCX 12.7 mm, f = 15 mm",
+    "g": 1.5,
+    "source": "est"
+   },
+   {
+    "part": "M12 holder U0756M10 (collimator)",
+    "g": 3.5,
+    "source": "est"
+   },
+   {
+    "part": "Collimator: Arducam LN016 25 mm (reversed)",
+    "g": 8.0,
+    "source": "listing"
+   },
+   {
+    "part": "Grating film 500 l/mm (grooves along X)",
+    "g": 0.1,
+    "source": "est"
+   },
+   {
+    "part": "Camera lens: Commonlands CIL122 12 mm",
+    "g": 7.0,
+    "source": "listing"
+   },
+   {
+    "part": "Arducam B0152 IMX219 NoIR (M12)",
+    "g": 14.0,
+    "source": "est"
+   },
+   {
+    "part": "Pose camera: Pi NoIR v2 (owned)",
+    "g": 3.0,
+    "source": "ds"
+   },
+   {
+    "part": "Screws, nuts, inserts, glue",
+    "g": 12.0,
+    "source": "est"
+   }
+  ],
+  "total_g": 187.5,
+  "com_head_mm": [
+   -10.7,
+   -1.4,
+   55.2
+  ]
+ },
+ "roll_clearance": {
+  "min_gap_mm": 1.42,
+  "at_radius_mm": 12.5,
+  "by_radius": {
+   "0.0": 40.7,
+   "2.5": 1.83,
+   "5.0": 3.0,
+   "7.5": 3.0,
+   "10.0": 2.0,
+   "12.5": 1.42,
+   "15.0": 3.26,
+   "17.5": 3.97,
+   "20.0": 3.47,
+   "22.5": 3.47,
+   "25.0": 24.9,
+   "27.5": 6.9,
+   "30.0": 113.88
+  }
+ },
+ "flex_free_deg_by_roll": {
+  "all_rolls": [
+   -95,
+   95
+  ],
+  "by_roll": {
+   "-150": [
+    -95,
+    95
+   ],
+   "-120": [
+    -95,
+    95
+   ],
+   "-90": [
+    -95,
+    95
+   ],
+   "-60": [
+    -95,
+    95
+   ],
+   "-30": [
+    -95,
+    95
+   ],
+   "0": [
+    -95,
+    95
+   ],
+   "30": [
+    -95,
+    95
+   ],
+   "60": [
+    -95,
+    95
+   ],
+   "90": [
+    -95,
+    95
+   ],
+   "120": [
+    -95,
+    95
+   ],
+   "150": [
+    -95,
+    95
+   ]
+  }
+ },
+ "torque_Nm": {
+  "stall_Nm": 1.62,
+  "pose": {
+   "shoulder_pan": 0.0,
+   "shoulder_lift": -50.0,
+   "elbow_flex": 90.0,
+   "wrist_flex": -40.0,
+   "wrist_roll": -90.0
+  },
+  "stock_gripper": {
+   "shoulder_pan": 0.0,
+   "shoulder_lift": 0.129,
+   "elbow_flex": 0.382,
+   "wrist_flex": 0.117,
+   "wrist_roll": -0.002
+  },
+  "with_head": {
+   "shoulder_pan": 0.0,
+   "shoulder_lift": 0.295,
+   "elbow_flex": 0.607,
+   "wrist_flex": 0.249,
+   "wrist_roll": 0.019
+  },
+  "worst_stock": {
+   "shoulder_pan": [
+    0.0,
+    [
+     75,
+     -75,
+     0
+    ]
+   ],
+   "shoulder_lift": [
+    0.863,
+    [
+     75,
+     -75,
+     0
+    ]
+   ],
+   "elbow_flex": [
+    0.453,
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "wrist_flex": [
+    0.117,
+    [
+     0,
+     30,
+     -30
+    ]
+   ],
+   "wrist_roll": [
+    -0.0,
+    [
+     -15,
+     -75,
+     -90
+    ]
+   ]
+  },
+  "worst_head": {
+   "shoulder_pan": [
+    0.0,
+    [
+     75,
+     -75,
+     0
+    ]
+   ],
+   "shoulder_lift": [
+    1.214,
+    [
+     75,
+     -75,
+     0
+    ]
+   ],
+   "elbow_flex": [
+    0.702,
+    [
+     -15,
+     15,
+     0
+    ]
+   ],
+   "wrist_flex": [
+    0.249,
+    [
+     0,
+     30,
+     -30
+    ]
+   ],
+   "wrist_roll": [
+    0.004,
+    [
+     15,
+     -90,
+     75
+    ]
+   ]
+  }
+ },
+ "stations_mm": {
+  "z_mirror": 28.41,
+  "z_obj": 49.41,
+  "z_slit": 67.32,
+  "z_coll": 92.32,
+  "z_grat": 114.32,
+  "z_film": 98.32,
+  "g2c": 16.03,
+  "z_cam": 113.19,
+  "y_cam": -4.01,
+  "z_sensor": 124.31,
+  "y_sensor": -8.51,
+  "theta": 22.02,
+  "hall_y": -10.28,
+  "hall_z": 23.4,
+  "y_shaft": -2.31,
+  "z_shaft": 24.1
+ },
+ "stl": [
+  {
+   "file": "stl/housing.stl",
+   "part": "Housing",
+   "qty": 1,
+   "print": "floor (dovetail side) on the bed, camera end up; 0.2 mm layers, 3 perimeters, 20% gyroid; supports only under the camera flange",
+   "volume_cm3": 35.3,
+   "size_mm": [
+    35.5,
+    48.3,
+    127.5
+   ]
+  },
+  {
+   "file": "stl/lid.stl",
+   "part": "Lid",
+   "qty": 1,
+   "print": "inner (flat) face on the bed; 0.2 mm layers, 4 perimeters around the motor holes",
+   "volume_cm3": 12.9,
+   "size_mm": [
+    124.0,
+    47.0,
+    4.0
+   ]
+  },
+  {
+   "file": "stl/mirror_clamp.stl",
+   "part": "Mirror clamp",
+   "qty": 1,
+   "print": "mirror pad face on the bed; 0.15 mm layers, 100% infill; M3x8 pinch screw + nut",
+   "volume_cm3": 1.7,
+   "size_mm": [
+    25.5,
+    17.0,
+    15.1
+   ]
+  },
+  {
+   "file": "stl/wrist_puck.stl",
+   "part": "Wrist puck",
+   "qty": 1,
+   "print": "horn side on the bed (bridges the 20 mm horn recess); 100% infill; 4x M3x6 into the horn",
+   "volume_cm3": 4.7,
+   "size_mm": [
+    29.0,
+    29.0,
+    10.0
+   ]
+  },
+  {
+   "file": "stl/objective_carrier.stl",
+   "part": "Objective carrier",
+   "qty": 1,
+   "print": "flat; M12 holder on the face toward the mirror with 2x M2x5",
+   "volume_cm3": 2.3,
+   "size_mm": [
+    26.5,
+    32.5,
+    3.0
+   ]
+  },
+  {
+   "file": "stl/slit_block.stl",
+   "part": "Slit block",
+   "qty": 1,
+   "print": "back face on the bed so the blade recess prints flat; 0.12 mm layers for the recess",
+   "volume_cm3": 3.6,
+   "size_mm": [
+    26.5,
+    32.5,
+    5.0
+   ]
+  },
+  {
+   "file": "stl/grating_carrier.stl",
+   "part": "Grating carrier",
+   "qty": 1,
+   "print": "flat, film recess up; tape the film in with its grooves along X",
+   "volume_cm3": 2.1,
+   "size_mm": [
+    26.5,
+    32.5,
+    3.0
+   ]
+  },
+  {
+   "file": "stl/filter_cap.stl",
+   "part": "Filter cap",
+   "qty": 1,
+   "print": "stop face on the bed; check the sleeve is a snug push fit on the lens",
+   "volume_cm3": 1.2,
+   "size_mm": [
+    19.8,
+    19.8,
+    7.7
+   ]
+  },
+  {
+   "file": "stl/bench_puck.stl",
+   "part": "Bench puck",
+   "qty": 1,
+   "print": "flat side on the bed; 1/4\"-20 hex nut pressed in from below",
+   "volume_cm3": 18.5,
+   "size_mm": [
+    50.0,
+    40.0,
+    13.0
+   ]
+  }
+ ]
+}

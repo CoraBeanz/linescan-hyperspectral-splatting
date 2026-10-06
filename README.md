@@ -15,6 +15,7 @@
 <p align="center">
   <a href="#how-it-works"><b>How it works</b></a> ·
   <a href="#the-rig"><b>The rig</b></a> ·
+  <a href="#cad-model"><b>CAD model</b></a> ·
   <a href="#optical-path"><b>Optical path</b></a> ·
   <a href="#optiland-model"><b>Optiland model</b></a> ·
   <a href="#reconstruction"><b>Reconstruction</b></a> ·
@@ -28,7 +29,7 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
 
 | 1 · Pick a viewpoint | 2 · Sweep the slit | 3 · Train the splat |
 |---|---|---|
-| The SO-101 arm carries the scanner head to a pose and holds still. An RGB camera on the head reads an AprilTag board to get that pose. | A 0.9° stepper turns the scan mirror one step per frame. Each frame is one line of the object by its spectrum, and about 150 lines cover a 63 × 42 mm patch. | Every scan line is a training sample. A C++/CUDA renderer draws the splat through a line-camera model at that line's pose and compares it with the measured line. |
+| The SO-101 arm carries the scanner head to a pose and holds still. An RGB camera on the head reads an AprilTag board to get that pose. | A NEMA 8 stepper turns the scan mirror one microstep per frame. Each frame is one line of the object by its spectrum, and about 150 lines cover a 63 × 42 mm patch. | Every scan line is a training sample. A C++/CUDA renderer draws the splat through a line-camera model at that line's pose and compares it with the measured line. |
 
 ## The rig
 
@@ -46,7 +47,7 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
 
 **Arm.** An [SO-101](https://huggingface.co/docs/lerobot/so101) follower from [LeRobot](https://github.com/huggingface/lerobot), with six STS3215 servos. It only sets the viewpoint, then holds still while the mirror scans.
 
-**Scanner head.** The spectrograph below, plus a first-surface scan mirror on a 0.9° NEMA17 stepper. A TMC2209 driver runs it from an ESP32 on micro-ROS.
+**Scanner head.** The spectrograph below, plus a first-surface scan mirror on a 60 g NEMA 8 stepper. A TMC2209 driver runs it at 1/32 microstepping from an ESP32 on micro-ROS.
 
 **Pose.** An RGB camera on the head sees an AprilTag board under the object.
 
@@ -57,6 +58,25 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
   </td>
   </tr>
 </table>
+
+## CAD model
+
+<p align="center">
+  <img src="cad/renders/rig.png" width="100%" alt="Render of the FreeCAD model: the SO-101 arm, folded, holds the black scanner head out over a table, and a faint red fan of light from the scan window draws a line on the table.">
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="cad/renders/head.png" width="100%" alt="The scanner head from below: the housing with its scan window and hood, the pose camera board, the NEMA 8 stepper on the lid and the round wrist puck."></td>
+    <td width="50%"><img src="cad/renders/head_open.png" width="100%" alt="The head with the lid and stepper hidden and the parts labelled: IMX219 board, camera lens, grating, collimator, slit and field lens, objective with its 4 mm stop, scan mirror on its clamp, and the wrist puck."></td>
+  </tr>
+  <tr>
+    <td><sub>The head from below: scan window and hood, pose camera, NEMA 8 stepper, wrist puck.</sub></td>
+    <td><sub>Lid and stepper hidden to show the optical train.</sub></td>
+  </tr>
+</table>
+
+The whole rig is a parametric [FreeCAD model](cad/). One script builds the SO-101 from its URDF, reads the optical spacings from the Optiland model, and wraps the optics in a printable PETG housing that slides onto a puck on the wrist-roll servo. It checks the parts for clashes, the mirror's full turn and the wrist's clearance, and works out the servo load: the 188 g head needs 75% of the shoulder servo's stall torque with the arm stretched out level, and 18% in the folded scanning pose above. The STLs and assembly steps are in [`cad/`](cad/).
 
 ## Optical path
 
@@ -116,6 +136,7 @@ Splatting through a non-pinhole camera has precedent in satellite imagery ([RPC-
 ## Roadmap
 
 - [x] First-order optical design and Optiland model (configs A, B, C)
+- [x] [FreeCAD model](cad/) of the arm and scanner head, with printable housing, optics carriers and wrist mount
 - [ ] **Bench spectrometer:** slit, field lens, collimator, grating and camera aimed at neon and CFL lamps; fit the wavelength map and the smile/keystone warp
 - [ ] **Line imager:** add the objective, focus it on a printed target, measure the line on a knife edge
 - [ ] **Scanner:** add the mirror and stepper, scan a color card, assemble the datacube on the Jetson (first CUDA kernel: warp + bin)
@@ -143,6 +164,10 @@ optics/
 ├── spectrograph_model.py      Optiland model of the spectrograph, configs A–C
 ├── readme_figures.py          traces the model and renders the Optiland figures
 └── model_output/              results.txt and ray layouts
+cad/
+├── so101_hsi_rig.FCStd        FreeCAD assembly: SO-101 arm and scanner head
+├── build_rig.py               builds it, checks clearances and servo load, exports
+└── stl/, step/, renders/      printable parts, the head as STEP, images
 ```
 
 ## Background reading
@@ -156,4 +181,5 @@ optics/
 ## Credits
 
 - SO-101 photo: [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100) (`media/SO101_Follower.webp`), used unmodified under the Apache License 2.0; a copy of the license is in [`docs/img/SO-ARM100_LICENSE.txt`](docs/img/SO-ARM100_LICENSE.txt). The SO-101 is designed by The Robot Studio in collaboration with Hugging Face.
+- SO-101 URDF and meshes in the CAD model: [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100) (`Simulation/SO101`), Apache License 2.0.
 - Ray tracing: [Optiland](https://github.com/HarrisonKramer/optiland) (MIT).
