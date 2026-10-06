@@ -1,0 +1,37 @@
+# ros2_control for the SO-101 scan arm: a 100 Hz loop (one sync read and one sync write of the
+# five servos per cycle, about 2 ms at 1 Mbaud), a broadcaster that publishes /joint_states,
+# and a trajectory controller that moves the arm between scan viewpoints.
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+arm_controller:
+  ros__parameters:
+    joints: [shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    state_publish_rate: 50.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
+    # Start each new trajectory from the last command, not the measured position: the servos
+    # sag a little under the head's weight, and starting from the sagged reading would make
+    # the arm dip at the start of every move.
+    open_loop_control: true
+    # every move ends at rest
+    allow_nonzero_velocity_at_trajectory_end: false
+    constraints:
+      # loose on purpose: the sweep logs the measured pose anyway. These only catch a joint
+      # that is stuck, e.g. the head pressing on the table.
+      stopped_velocity_tolerance: 0.2
+      goal_time: 1.0
+      shoulder_pan: {trajectory: 0.0, goal: 0.1}
+      shoulder_lift: {trajectory: 0.0, goal: 0.1}
+      elbow_flex: {trajectory: 0.0, goal: 0.1}
+      wrist_flex: {trajectory: 0.0, goal: 0.1}
+      wrist_roll: {trajectory: 0.0, goal: 0.1}
