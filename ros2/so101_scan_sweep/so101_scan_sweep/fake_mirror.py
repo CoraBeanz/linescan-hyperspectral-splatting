@@ -2,13 +2,16 @@
 
     ros2 run so101_scan_sweep fake_scan_mirror --link /tmp/scan_mirror_fake
 
-It speaks mirror_protocol like the firmware: homes, moves, sweeps and stamps every line with
-its own microsecond clock, which starts at a random offset and can run a little fast or slow
-(--drift-ppm), and it answers after a random USB-like delay, so the bridge's clock mapping is
-exercised too.
+It speaks the firmware's protocol (firmware/PROTOCOL.md) as far as the bridge needs: INFO, PING,
+STATUS, ENABLE, DISABLE, HOME, MOVE, STOP, stare SCANs and REBOOT, with the replies, events and
+errors the firmware sends. Like the real board it starts with the motor off and not homed. Its
+microsecond clock starts at a random offset and can run a little fast or slow (--drift-ppm),
+and every line it sends arrives after a random USB-like delay, so the bridge's clock mapping is
+exercised too. Sweep-mode scans, NUDGE, PERIOD and the settings commands aren't in it.
 """
 
 import argparse
+import math
 import os
 import queue
 import random
@@ -18,12 +21,22 @@ import threading
 import time
 import tty
 
-from so101_scan_sweep import mirror_protocol as mp
+BUSY = ("moving", "stopping", "homing", "scanning")
+
+
+class Abort(Exception):
+    """The running job was ended by STOP, DISABLE, REBOOT or a newer MOVE."""
+
+
+def _fmt(v):
+    if isinstance(v, float):
+        return ("%.3f" % v).rstrip("0").rstrip(".")
+    return str(v)
 
 
 class FakeMirror:
-    def __init__(self, link=None, steps_per_second=4000.0, home_time=0.3, latency_ms=(0.2, 2.0),
-                 clock_offset_us=None, drift_ppm=0.0, start_step=None, seed=None):
+    def __init__(self, link=None, vmax=3200, vstart=1600, settle_us=3000, home_time=0.3, hall=True,
+                 latency_ms=(0.2, 2.0), clock_offset_us=None, drift_ppm=0.0, start_pos=None, seed=None):
         self.rng = random.Random(seed)
         self.master, self.slave = os.openpty()
         tty.setraw(self.slave)
@@ -33,140 +46,285 @@ class FakeMirror:
             if os.path.lexists(link):
                 os.remove(link)
             os.symlink(self.path, link)
-        self.steps_per_second = steps_per_second
-        self.home_time = home_time
+        self.vmax, self.vstart, self.settle_us = vmax, vstart, settle_us
+        self.home_time, self.hall = home_time, hall
         self.latency = latency_ms
-        self.clock_offset_us = (self.rng.randint(10_000_000, 900_000_000) if clock_offset_us is None
-                                else clock_offset_us)
         self.drift = drift_ppm * 1e-6
-        self._t0 = time.monotonic()
-        # where the motor is before homing, unknown to the host
-        self.step = self.rng.randint(-800, 800) if start_step is None else start_step
-        self.homed = False
-        self.busy = False
-        self.sweep_id = 0
-        self.received = []          # every command line, for tests
-        self.line_times = []        # (sweep_id, index, wall-clock ns) of every LINE sent, for tests
+        self.limits = (-3200, 3200)
         self.lock = threading.RLock()
-        self._job = None            # the running HOME / GOTO / SWEEP thread
-        self._cancel = threading.Event()
+        self.received = []          # every command line, for tests
+        self.line_times = []        # (scan number, line, wall-clock ns when it was ready), for tests
+        self.scans = 0
+        self._job = None
+        self._abort = threading.Event()
         self._out = queue.Queue()
         self.running = False
         self._threads = [threading.Thread(target=self._serve, daemon=True),
                          threading.Thread(target=self._writer, daemon=True)]
+        self._power_up(self.rng.randint(10_000_000, 900_000_000) if clock_offset_us is None else clock_offset_us,
+                       start_pos, "poweron")
 
-    # --- clock and motion ---------------------------------------------------------------
+    def _power_up(self, clock_offset_us, start_pos, reset):
+        with self.lock:
+            self.clock_offset_us, self._t0 = clock_offset_us, time.monotonic()
+            # where the motor is before homing, unknown to the host
+            self.pos = self.rng.randint(-800, 800) if start_pos is None else start_pos
+            self.target, self._motion = self.pos, None
+            self.state, self.homed = "disabled", False
+            self.line = self.lines = 0
+            self._send("ets Jun  8 2016 00:22:57")  # what the boot ROM prints, not protocol
+            self._ev("BOOT", fw="fake", proto=1, reset=reset, drv="ok", t=self.now_us())
+
+    # --- clock and motion -----------------------------------------------------------------
 
     def now_us(self):
         return self.clock_offset_us + int((time.monotonic() - self._t0) * 1e6 * (1.0 + self.drift))
 
-    def _move_to(self, target):
-        """Step toward target at steps_per_second; False if cancelled."""
-        while True:
+    def _wait(self, seconds):
+        if self._abort.wait(max(0.0, seconds)):
+            raise Abort
+
+    def _wait_until_us(self, t_us):
+        self._wait(self._t0 + (t_us - self.clock_offset_us) / (1e6 * (1.0 + self.drift)) - time.monotonic())
+
+    def _pos_now(self):
+        if self._motion is None:
+            return self.pos
+        start, target, t_start, speed = self._motion
+        done = int(speed * (time.monotonic() - t_start))
+        if done >= abs(target - start):
+            return target
+        return start + (done if target > start else -done)
+
+    def _move(self, target, speed):
+        """Turn to target at a constant speed (no ramps here); Abort leaves it where it got to."""
+        with self.lock:
+            start = self.pos = self._pos_now()
+            self.target, self._motion = target, (start, target, time.monotonic(), speed)
+        try:
+            self._wait(abs(target - start) / speed)
+            arrived = True
+        except Abort:
+            arrived = False
+            raise
+        finally:
             with self.lock:
-                if self.step == target:
-                    return True
-                self.step += 1 if target > self.step else -1
-            if self._cancel.wait(1.0 / self.steps_per_second):
-                return False
+                self.pos = target if arrived else self._pos_now()
+                self.target, self._motion = self.pos, None
 
-    # --- jobs -----------------------------------------------------------------------------
+    # --- jobs: what runs between a command's reply and the event that ends it --------------
 
-    def _run(self, fn, *args):
-        self._cancel.clear()
-        self.busy = True
+    def _start(self, state, job, *args):
+        self._abort.clear()
+        with self.lock:
+            self.state = state
 
-        def job():
+        def run():
             try:
-                fn(*args)
-            finally:
-                with self.lock:
-                    self.busy = False
+                job(*args)
+            except Abort:
+                pass
 
-        self._job = threading.Thread(target=job, daemon=True)
+        self._job = threading.Thread(target=run, daemon=True)
         self._job.start()
 
-    def _home(self):
-        if self._cancel.wait(self.home_time):
-            return
+    def _end_job(self):
+        """Abort the running job and wait for it. Never call with self.lock held: the job needs it."""
+        self._abort.set()
+        if self._job is not None:
+            self._job.join(timeout=2.0)
+            self._job = None
+
+    def _halt(self, why):
+        """End the running job as the firmware does, with the events it sends for that."""
+        self._end_job()
         with self.lock:
-            self.step = 0
-            self.homed = True
-        self._send("HOMED 0 %d" % self.now_us())
+            if self.state == "homing":
+                self._ev("HOME_FAILED", reason=why, pos=self.pos, t=self.now_us())
+            elif self.state == "scanning":
+                self._ev("SCAN_DONE", lines=self.line, t=self.now_us(), pos=self.pos, aborted=1)
+            was, self.state = self.state, "idle"
+        return was
 
-    def _goto(self, target):
-        self._move_to(target)
+    def _home(self):
+        self._wait(self.home_time)
+        with self.lock:
+            if self._abort.is_set():
+                raise Abort
+            self.state = "idle"
+            if not self.hall:
+                return self._ev("HOME_FAILED", reason="not_found", pos=self.pos, t=self.now_us())
+            # the hall window's middle is home_pos (-711); HOME then parks at 0, the 45 deg rest
+            shift, self.pos, self.target, self.homed = -self.pos, 0, 0, True
+            self._ev("HOMED", pos=0, t=self.now_us(), width=131, shift=shift)
 
-    def _sweep(self, sweep_id, start, steps_per_line, n_lines, period_us):
-        if not self._move_to(start):
-            self._send("DONE %d %d" % (sweep_id, self.now_us()))
-            return
-        t_start = time.monotonic()
-        for i in range(n_lines):
-            wait = t_start + i * period_us * 1e-6 - time.monotonic()
-            if wait > 0 and self._cancel.wait(wait):
-                break
-            if i and not self._move_to(start + i * steps_per_line):
-                break
+    def _go(self, target):
+        self._move(target, self.vmax)
+        self._wait(self.settle_us * 1e-6)
+        with self.lock:
+            if self._abort.is_set():
+                raise Abort
+            self.state = "idle"
+            self._ev("MOVED", pos=self.pos, t=self.now_us())
+
+    def _scan(self, start, step, lines, period, t0, settle_us):
+        self.line, self.lines = 0, lines
+        if self.pos != start:
+            self._move(start, self.vmax)
+            self._wait(settle_us * 1e-6)
+        # ticks that come before the mirror has arrived and settled are skipped, whole periods
+        first = t0 + max(0, math.ceil((self.now_us() - t0) / period)) * period
+        for n in range(lines):
+            tick = first + n * period
+            self._wait_until_us(tick)
+            if n:
+                self._move(start + n * step, self.vstart)
+                self._wait(settle_us * 1e-6)
             with self.lock:
-                step = self.step
-            t_us, wall = self.now_us(), time.time_ns()
-            self.line_times.append((sweep_id, i, wall))
-            self._send("LINE %d %d %d %d" % (sweep_id, i, step, t_us))
-        self._send("DONE %d %d" % (sweep_id, self.now_us()))
+                if self._abort.is_set():
+                    raise Abort
+                ready = self.now_us()
+                self.line = n + 1
+                self.line_times.append((self.scans, n, time.time_ns()))
+                self._ev("LINE", n=n, t=round(tick), pos=self.pos, ready=ready if ready < tick + period else -1)
+        with self.lock:
+            if self._abort.is_set():
+                raise Abort
+            self.state = "idle"
+            self._ev("SCAN_DONE", lines=lines, t=round(first + lines * period), pos=self.pos, aborted=0)
 
     # --- commands -------------------------------------------------------------------------
 
     def _handle(self, text):
         self.received.append(text)
-        word, *f = text.split()
+        words = text.split()
+        verb, args, cid = words[0].upper(), {}, None
+        for w in words[1:]:
+            key, eq, value = w.partition("=")
+            key = key.lower()
+            if not eq or key in args:
+                return self._err(verb, "syntax", cid, "not VERB key=value ...")
+            if key == "id":
+                cid = value
+            else:
+                args[key] = value
+        handler = getattr(self, "_cmd_" + verb.lower(), None)
+        if handler is None:
+            return self._err(verb, "unknown_cmd", cid, "the fake mirror doesn't do %s" % verb)
         try:
-            args = [int(x) for x in f]
-        except ValueError:
-            return self._send("ERR %s bad number" % word)
-        if word == "PING" and len(args) == 1:
-            return self._send("PONG %d %d" % (args[0], self.now_us()))
-        if word == "STATUS" and not args:
-            with self.lock:
-                return self._send("STATUS %d %d %d %d %d" % (self.homed, self.busy, self.step, self.sweep_id,
-                                                             self.now_us()))
-        if word == "STOP" and not args:
-            self._stop_job()
-            return self._send("OK STOP")
-        if word == "HOME" and not args:
-            if self.busy:
-                return self._send("ERR HOME busy")
-            self._send("OK HOME")
-            return self._run(self._home)
-        if word == "GOTO" and len(args) == 1:
-            if not self.homed:
-                return self._send("ERR GOTO not homed")
-            if self.busy:
-                return self._send("ERR GOTO busy")
-            self._send("OK GOTO")
-            return self._run(self._goto, args[0])
-        if word == "SWEEP" and len(args) == 5:
-            sweep_id, start, spl, n, period = args
-            if not self.homed:
-                return self._send("ERR SWEEP not homed")
-            if self.busy:
-                return self._send("ERR SWEEP busy")
-            if n < 1 or period < 1:
-                return self._send("ERR SWEEP bad arguments")
-            self.sweep_id = sweep_id
-            self._send("OK SWEEP %d" % sweep_id)
-            return self._run(self._sweep, sweep_id, start, spl, n, period)
-        self._send("ERR %s unknown command" % word)
+            handler(args, cid)   # one at a time, from this thread, like the firmware's loop()
+        except ValueError as e:
+            self._err(verb, "bad_arg", cid, str(e))
 
-    def _stop_job(self):
-        self._cancel.set()
-        if self._job:
-            self._job.join(timeout=2.0)
+    def _not_now(self, verb, cid):
+        code = "disabled" if self.state in ("disabled", "fault") else "busy"
+        self._err(verb, code, cid, "not allowed while %s" % self.state)
+
+    def _cmd_info(self, args, cid):
+        self._ok("INFO", cid, fw="fake", proto=1, usteps=32, full_steps=200, tick_us=50, max_rate=10000)
+
+    def _cmd_ping(self, args, cid):
+        self._ok("PING", cid, t=self.now_us())
+
+    def _cmd_status(self, args, cid):
+        with self.lock:
+            self._ok("STATUS", cid, state=self.state, pos=self._pos_now(), target=self.target,
+                     homed=int(self.homed), en=int(self.state not in ("disabled", "fault")), hall=0,
+                     line=self.line, lines=self.lines, drv="ok", fault="none", dropped=0, t=self.now_us())
+
+    def _cmd_enable(self, args, cid):
+        with self.lock:
+            if self.state in BUSY:
+                return self._ok("ENABLE", cid)
+            self.state = "idle"
+            self._ok("ENABLE", cid, drv="ok")
+
+    def _cmd_disable(self, args, cid):
+        self._ok("DISABLE", cid)
+        was = self._halt("disabled")
+        with self.lock:
+            if was in BUSY:
+                self._ev("STOPPED", pos=self.pos, t=self.now_us())
+            self.state, self.homed = "disabled", False
+
+    def _cmd_home(self, args, cid):
+        if self.state != "idle":
+            return self._not_now("HOME", cid)
+        self._ok("HOME", cid)
+        self._start("homing", self._home)
+
+    def _cmd_move(self, args, cid):
+        if sorted(args) not in (["pos"], ["rel"]):
+            raise ValueError("give exactly one of pos= or rel= (the fake takes no v= or a=)")
+        with self.lock:
+            if self.state not in ("idle", "moving"):
+                return self._not_now("MOVE", cid)
+            target = int(args["pos"]) if "pos" in args else self.target + int(args["rel"])
+        if not self.limits[0] <= target <= self.limits[1]:
+            return self._err("MOVE", "range", cid, "target %d is outside min..max %d..%d" % ((target,) + self.limits))
+        self._end_job()   # a MOVE while moving replaces the old target, quietly
+        self._ok("MOVE", cid, pos=target)
+        self._start("moving", self._go, target)
+
+    def _cmd_stop(self, args, cid):
+        self._ok("STOP", cid)
+        if self.state not in ("disabled", "fault"):
+            self._halt("stopped")
+        with self.lock:
+            self._ev("STOPPED", pos=self.pos, t=self.now_us())
+
+    def _cmd_scan(self, args, cid):
+        known = {"mode", "start", "step", "lines", "period", "t0", "delay", "settle"}
+        if set(args) - known:
+            raise ValueError("unknown key '%s'" % sorted(set(args) - known)[0])
+        if args.get("mode", "stare") != "stare":
+            raise ValueError("the fake mirror only does stare scans")
+        if "lines" not in args or "period" not in args:
+            raise ValueError("lines= and period= are required")
+        if "t0" in args and "delay" in args:
+            raise ValueError("give t0= or delay=, not both")
+        lines, period = int(args["lines"]), float(args["period"])
+        start, step = int(args.get("start", self.pos)), int(args.get("step", 1))
+        settle = int(args.get("settle", self.settle_us))
+        if lines < 1 or not 1000 <= period <= 60e6:
+            raise ValueError("lines must be at least 1 and period 1000..60000000 us")
+        if self.state != "idle":
+            return self._not_now("SCAN", cid)
+        last = start + step * (lines - 1)
+        if min(start, last) < self.limits[0] or max(start, last) > self.limits[1]:
+            return self._err("SCAN", "range", cid, "scan covers %d..%d, outside min..max %d..%d"
+                             % ((min(start, last), max(start, last)) + self.limits))
+        now = self.now_us()
+        t0 = int(args["t0"]) if "t0" in args else now + int(args.get("delay", 0))
+        if t0 < now + 2000:  # too soon: on by whole periods, keeping the phase
+            t0 += math.ceil((now + 2000 - t0) / period) * period
+        self.scans += 1
+        self._ok("SCAN", cid, mode="stare", t0=round(t0), period=period, start=start, step=step, lines=lines)
+        self._start("scanning", self._scan, start, step, lines, period, t0, settle)
+
+    def _cmd_reboot(self, args, cid):
+        self._ok("REBOOT", cid)
+        self.reboot()
+
+    def reboot(self, reset="software"):
+        """Restart like the ESP32 does: motor off, not homed, its clock from zero."""
+        self._end_job()
+        self._power_up(0, None, reset)
 
     # --- serial ---------------------------------------------------------------------------
 
     def _send(self, text):
         self._out.put(text)
+
+    def _ok(self, verb, cid, **fields):
+        self._send(" ".join(["OK", verb] + ["%s=%s" % (k, _fmt(v)) for k, v in fields.items()]
+                            + (["id=" + cid] if cid else [])))
+
+    def _err(self, verb, code, cid, msg):
+        self._send(" ".join(["ERR", verb, "code=" + code] + (["id=" + cid] if cid else []) + ["msg=" + msg]))
+
+    def _ev(self, name, **fields):
+        self._send(" ".join(["EV", name] + ["%s=%s" % (k, _fmt(v)) for k, v in fields.items()]))
 
     def _writer(self):
         while self.running:
@@ -193,7 +351,7 @@ class FakeMirror:
             while b"\n" in buf:
                 raw, buf = buf.split(b"\n", 1)
                 text = raw.decode(errors="replace").strip()
-                if text:
+                if text and not text.startswith("#"):
                     self._handle(text)
 
     def start(self):
@@ -203,7 +361,7 @@ class FakeMirror:
         return self
 
     def stop(self):
-        self._stop_job()
+        self._end_job()
         self.running = False
         for t in self._threads:
             t.join(timeout=1.0)
@@ -216,10 +374,9 @@ class FakeMirror:
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Pretend scan-mirror ESP32 on a pseudo-terminal")
     ap.add_argument("--link", default="/tmp/scan_mirror_fake", help="symlink to the pseudo-terminal")
-    ap.add_argument("--steps-per-second", type=float, default=4000.0)
     ap.add_argument("--drift-ppm", type=float, default=30.0, help="how much faster its clock runs")
     args, _ = ap.parse_known_args(argv)  # ros2 run adds --ros-args
-    mirror = FakeMirror(args.link, args.steps_per_second, drift_ppm=args.drift_ppm).start()
+    mirror = FakeMirror(args.link, drift_ppm=args.drift_ppm).start()
     print("fake scan-mirror ESP32 on %s (link %s)" % (mirror.path, args.link), flush=True)
     stop = threading.Event()
     signal.signal(signal.SIGINT, lambda *_: stop.set())

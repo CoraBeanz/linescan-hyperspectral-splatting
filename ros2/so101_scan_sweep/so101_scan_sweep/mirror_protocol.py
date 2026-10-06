@@ -1,151 +1,110 @@
-"""The serial protocol between the Jetson and the scan-mirror ESP32.
+"""The scan-mirror ESP32's serial protocol, version 1. firmware/PROTOCOL.md has all of it.
 
-Plain ASCII, one message per line, fields separated by spaces, so it can be typed and read in
-any serial monitor. Positions are whole microsteps counted from where the hall sensor triggers
-(step 0); times are the ESP32's own microsecond clock (esp_timer). The ESP32 never deals in
-angles: scan_mirror_bridge turns steps into mirror angles with scan_mirror.yaml.
+Plain ASCII lines at 921600 baud. The host sends `VERB key=value ... id=<n>`, and every command
+gets exactly one reply, in the order sent, carrying the same id:
 
-    host -> ESP32                       ESP32 -> host
-    PING <seq>                          PONG <seq> <t_us>
-    STATUS                              STATUS <homed 0|1> <busy 0|1> <step> <sweep_id> <t_us>
-    HOME                                OK HOME, later HOMED <step> <t_us>
-    GOTO <step>                         OK GOTO
-    SWEEP <id> <start_step> <steps_per_line> <n_lines> <period_us>
-                                        OK SWEEP <id>, then one LINE per line and a DONE:
-                                        LINE <id> <index> <step> <t_us>
-                                        DONE <id> <t_us>
-    STOP                                OK STOP
-                                        ERR <command> <reason ...>   when a command is refused
-                                        # <text>                     log text, ignored
+    OK VERB key=value ... id=<n>
+    ERR VERB code=<code> id=<n> msg=<text to the end of the line>
 
-LINE's t_us is the moment the mirror settled on that line. Everything about the wire format
-is in this file, so matching a change in the firmware is a change here only.
+The ESP32 also sends events when something happens: `EV NAME key=value ...`. Positions are
+microsteps (6400 per mirror turn at the default 1/32 microstepping), and after HOME position 0
+is the mirror's 45 deg rest. Times are the ESP32's own microsecond clock.
+
+What scan_mirror_bridge uses:
+
+    INFO                       OK INFO fw= proto= usteps= full_steps= ...
+    PING                       OK PING t=
+    STATUS                     OK STATUS state= pos= homed= ...
+    ENABLE                     OK ENABLE drv=        (the motor is off after every start)
+    HOME                       OK HOME, then EV HOMED pos= t= width=  or  EV HOME_FAILED reason=
+    MOVE pos=                  OK MOVE pos=, then EV MOVED pos= t=
+    SCAN mode=stare start= step= lines= period=
+                               OK SCAN t0= ..., then EV LINE n= t= pos= ready= for each line,
+                               then EV SCAN_DONE lines= t= pos= aborted=
+    STOP                       OK STOP, then EV SCAN_DONE aborted=1 if a scan was running, and
+                               EV STOPPED pos= t=
+
+and, at any time, EV BOOT (it has just started: motor off, not homed), EV FAULT and EV WARN.
+Lines that start with anything else, like the boot ROM's output after a reset, aren't protocol.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+PROTOCOL_VERSION = 1
+BAUD = 921600
+# ESP32 states in which it won't take a new HOME, SCAN (or, but for "moving", MOVE)
+BUSY_STATES = ("moving", "stopping", "homing", "scanning")
 
 
 class ProtocolError(ValueError):
     pass
 
 
-# --- host -> ESP32 ----------------------------------------------------------------------
-
-def ping(seq):
-    return "PING %d\n" % seq
-
-
-def status():
-    return "STATUS\n"
-
-
-def home():
-    return "HOME\n"
+def _value(v):
+    if isinstance(v, bool):
+        return "1" if v else "0"
+    if isinstance(v, float):
+        text = ("%.6f" % v).rstrip("0").rstrip(".")
+        return "0" if text in ("", "-0") else text
+    text = str(v)
+    if not text or any(c.isspace() for c in text):
+        raise ProtocolError("value %r is empty or has spaces" % (v,))
+    return text
 
 
-def goto(step):
-    return "GOTO %d\n" % step
-
-
-def sweep(sweep_id, start_step, steps_per_line, n_lines, period_us):
-    if n_lines < 1 or period_us < 1:
-        raise ProtocolError("a sweep needs at least one line and a positive period")
-    return "SWEEP %d %d %d %d %d\n" % (sweep_id, start_step, steps_per_line, n_lines, period_us)
-
-
-def stop():
-    return "STOP\n"
-
-
-# --- ESP32 -> host ----------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class Pong:
-    seq: int
-    t_us: int
+def command(verb, **fields):
+    """command("MOVE", pos=12, id=3) -> "MOVE pos=12 id=3\\n". Fields that are None are left out."""
+    words = [verb.upper()] + ["%s=%s" % (k, _value(v)) for k, v in fields.items() if v is not None]
+    return " ".join(words) + "\n"
 
 
 @dataclass(frozen=True)
-class Status:
-    homed: bool
-    busy: bool
-    step: int
-    sweep_id: int
-    t_us: int
+class Message:
+    """One line from the ESP32: a reply (kind "OK" or "ERR") or an event (kind "EV")."""
 
+    kind: str
+    name: str                      # the command's verb for a reply, the event's name for EV
+    fields: dict = field(default_factory=dict, hash=False)
 
-@dataclass(frozen=True)
-class Ok:
-    command: str
-    args: tuple = ()
+    @property
+    def id(self):
+        return self.fields.get("id")
 
+    def get(self, key, default=None):
+        return self.fields.get(key, default)
 
-@dataclass(frozen=True)
-class Err:
-    command: str
-    reason: str
+    def int(self, key):
+        try:
+            return int(self.fields[key])
+        except (KeyError, ValueError):
+            raise ProtocolError("%s %s has no whole number %s=" % (self.kind, self.name, key)) from None
 
+    def float(self, key):
+        try:
+            return float(self.fields[key])
+        except (KeyError, ValueError):
+            raise ProtocolError("%s %s has no number %s=" % (self.kind, self.name, key)) from None
 
-@dataclass(frozen=True)
-class Homed:
-    step: int
-    t_us: int
-
-
-@dataclass(frozen=True)
-class Line:
-    sweep_id: int
-    index: int
-    step: int
-    t_us: int
-
-
-@dataclass(frozen=True)
-class Done:
-    sweep_id: int
-    t_us: int
-
-
-@dataclass(frozen=True)
-class Log:
-    text: str
-
-
-def _ints(fields, n, what):
-    if len(fields) != n:
-        raise ProtocolError("%s needs %d fields, got %d" % (what, n, len(fields)))
-    try:
-        return [int(f) for f in fields]
-    except ValueError as e:
-        raise ProtocolError("%s: %s" % (what, e)) from None
+    def __str__(self):
+        return " ".join([self.kind, self.name] + ["%s=%s" % kv for kv in self.fields.items()])
 
 
 def parse(line):
-    """One line from the ESP32 (without or with its newline) -> one of the classes above.
-    Raises ProtocolError for anything malformed, so the caller can log it and carry on."""
+    """One line from the ESP32 -> Message. Raises ProtocolError for anything that isn't protocol
+    (the boot ROM's output after a reset, a garbled line), which the caller skips."""
     text = line.strip()
-    if not text:
-        raise ProtocolError("empty line")
-    if text.startswith("#"):
-        return Log(text[1:].strip())
-    word, *fields = text.split()
-    if word == "PONG":
-        return Pong(*_ints(fields, 2, word))
-    if word == "STATUS":
-        homed, busy, step, sweep_id, t_us = _ints(fields, 5, word)
-        return Status(bool(homed), bool(busy), step, sweep_id, t_us)
-    if word == "LINE":
-        return Line(*_ints(fields, 4, word))
-    if word == "DONE":
-        return Done(*_ints(fields, 2, word))
-    if word == "HOMED":
-        return Homed(*_ints(fields, 2, word))
-    if word == "OK":
-        if not fields:
-            raise ProtocolError("OK without a command")
-        return Ok(fields[0], tuple(fields[1:]))
-    if word == "ERR":
-        if not fields:
-            raise ProtocolError("ERR without a command")
-        return Err(fields[0], " ".join(fields[1:]))
-    raise ProtocolError("unknown message %r" % word)
+    kind, _, rest = text.partition(" ")
+    if kind not in ("OK", "ERR", "EV"):
+        raise ProtocolError("not a protocol line: %r" % text[:60])
+    words = rest.split(" ")
+    if not words[0]:
+        raise ProtocolError("%s without a name" % kind)
+    fields = {}
+    for i, word in enumerate(words[1:], 1):
+        if word.startswith("msg="):
+            fields["msg"] = " ".join(words[i:])[4:]   # free text, always last
+            break
+        key, eq, value = word.partition("=")
+        if eq:
+            fields[key] = value
+    return Message(kind, words[0].upper(), fields)

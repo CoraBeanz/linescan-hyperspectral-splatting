@@ -1,7 +1,7 @@
 """Map the ESP32's microsecond clock onto ROS time.
 
 The bridge sends PING about once a second and notes the ROS time it sent it and the ROS time
-the PONG came back; the PONG carries the ESP32's clock when it answered. The ESP32 answered
+the reply came back; the reply carries the ESP32's clock when it answered. The ESP32 answered
 somewhere inside that round trip, so the middle of the round trip is the best guess for the
 ROS time that matches its clock. USB and Linux scheduling sometimes delay a reply by a few
 milliseconds; round trips that took longer than most are left out, because those are the ones
@@ -25,7 +25,7 @@ class ClockSync:
         self._fit = None
 
     def add(self, t_send_ns, t_recv_ns, t_esp_us):
-        """One PING/PONG round trip. Returns the round trip time in ns."""
+        """One PING round trip. Returns the round trip time in ns."""
         if self.samples and t_esp_us < self.samples[-1][0]:
             self.reset()  # the ESP32 clock went backwards: it rebooted
         rtt = t_recv_ns - t_send_ns

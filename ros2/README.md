@@ -27,7 +27,7 @@ flowchart LR
     servos["SO-101<br/>5 x STS3215"]
     esp["Mirror ESP32<br/>TMC2209 + NEMA 8"]
     sweep -- "FollowJointTrajectory" --> jtc --> drv -- "USB serial, 1 Mbaud" --> servos
-    sweep -- "start_sweep / home" --> bridge -- "USB serial, text" --> esp
+    sweep -- "start_sweep / home" --> bridge -- "USB serial, 921600 baud, text" --> esp
     bridge -- "/scan_mirror/line" --> sweep
     drv -- "/joint_states" --> sweep
     drv -- "/joint_states" --> rsp
@@ -35,11 +35,11 @@ flowchart LR
 ```
 
 For each viewpoint, `scan_sweep` moves the arm, waits for it to stop, and asks the bridge for a
-sweep. The ESP32 steps the mirror line by line and stamps each line with its own microsecond
-clock; the bridge maps that clock onto ROS time (ping round trips, about 1 ms), so every line
-carries the ROS time the mirror settled. `scan_sweep` then reads the arm's joints at that
-instant from `/joint_states`, adds the line's mirror angle, and puts both through the URDF to
-get the head pose and the line-camera pose.
+sweep. The ESP32 steps the mirror line by line, holding still on each for about a camera frame,
+and stamps each line with its own microsecond clock; the bridge maps that clock onto ROS time
+(ping round trips, about 1 ms), so every line carries the ROS time the mirror settled.
+`scan_sweep` then reads the arm's joints at that instant from `/joint_states`, adds the line's
+mirror angle, and puts both through the URDF to get the head pose and the line-camera pose.
 
 A few ROS 2 ideas this leans on:
 - **ros2_control** splits a robot into a *hardware interface* (here, the C++ driver that reads
@@ -65,8 +65,8 @@ All lengths in metres, angles in radians, quaternions x y z w.
 | `pose_camera_optical_frame` | The Pi NoIR that sees the AprilTags (nominal, until hand-eye calibration) |
 
 **Mirror angle:** 0 is the 45° rest, where the head looks straight out of its window (+Y);
-positive turns the view toward +Z. The hall sensor triggers at -40° (`home_angle` in
-[`scan_mirror.yaml`](so101_scan_bringup/config/scan_mirror.yaml)). One microstep is
+positive turns the view toward +Z. The hall sensor sits at -40°, which the firmware keeps as
+`home_pos` (-711 microsteps); homing finds it and parks the mirror at 0. One microstep is
 2π/6400 rad (0.05625°) of mirror and twice that of view.
 
 **Arm joints:** zero is the URDF's zero pose (upper arm straight up, forearm level and
@@ -142,9 +142,13 @@ supply; keep a hand near the power switch for anything that moves.
 5. **A scan with the simulated mirror:** `ros2 run so101_scan_sweep scan_sweep --plan <plans>/one_view.yaml`.
    The arm moves and holds while the fake mirror sweeps; check `arm_motion_max_rad` in the
    scan's `scan.json` to see how still the arm held.
-6. **The real mirror:** with the ESP32 flashed and plugged in, launch with the default
-   `mirror:=esp32`, then `ros2 service call /scan_mirror/home std_srvs/srv/Trigger`, and scan.
-   If sweeps run backwards, set `direction: -1` in `scan_mirror.yaml`.
+6. **The real mirror:** flash and bench-test the ESP32 first
+   ([`firmware/README.md`](../firmware/README.md): wiring, the driver's current, first run).
+   Then launch with the default `mirror:=esp32` and run
+   `ros2 service call /scan_mirror/home std_srvs/srv/Trigger`, which powers the motor and finds
+   the hall sensor (needed again whenever the ESP32 restarts), and scan. If sweeps run
+   backwards, stop the launch and send the ESP32 `CFG dir_inv=1` then `SAVE` (the firmware
+   README shows how).
 
 `<plans>` is `src/linescan-hyperspectral-splatting/ros2/so101_scan_sweep/plans`.
 
@@ -153,9 +157,12 @@ supply; keep a hand near the power switch for anything that moves.
 `<output_dir>/<name>_<date>-<time>/` (by default under `$SO101_SCAN_DATA/scans`, which is
 `~/so101_scan` on the host):
 
-- **`lines.csv`**, one row per scan line: `viewpoint, sweep_id, index, stamp_ns, mirror_angle`,
-  the head pose `head_x..head_qw` and the line-camera pose `cam_x..cam_qw` in `base_link`, and
-  the five arm joints at the line's time. Camera frames are matched to lines by `stamp_ns`.
+- **`lines.csv`**, one row per scan line: `viewpoint, sweep_id, index, stamp_ns, hold_until_ns,
+  settled, mirror_angle`, the head pose `head_x..head_qw` and the line-camera pose
+  `cam_x..cam_qw` in `base_link`, and the five arm joints at the line's time. The mirror holds
+  still from `stamp_ns` until `hold_until_ns`, so a camera frame belongs to a line when its
+  whole exposure falls in between. `settled` is 0 when the mirror was still moving as the next
+  line came due (a longer `line_period_s` fixes that).
 - **`scan.json`**: the plan, and per viewpoint whether the move succeeded, lines expected and
   logged, line period and jitter, and how much the arm moved during the sweep.
 - **`robot.urdf`** and **`plan.yaml`**: the URDF the poses came from (calibration included)
@@ -163,12 +170,15 @@ supply; keep a hand near the power switch for anything that moves.
 
 ## The mirror ESP32's serial protocol
 
-Plain text, one message per line, so it can be tried in any serial monitor:
-`SWEEP <id> <start_step> <steps_per_line> <n_lines> <period_us>` answered by
-`OK SWEEP <id>`, then `LINE <id> <index> <step> <t_us>` per line and `DONE <id> <t_us>`;
-`PING`/`PONG` for the clock, plus `HOME`, `GOTO`, `STOP` and `STATUS`. The full list is at the
-top of [`mirror_protocol.py`](so101_scan_sweep/so101_scan_sweep/mirror_protocol.py); a change to
-the wire format is a change to that file only.
+The firmware is in [`firmware/`](../firmware), and its protocol in
+[`firmware/PROTOCOL.md`](../firmware/PROTOCOL.md): plain text at 921600 baud, so it can be tried
+in any serial monitor. Each command, `VERB key=value ... id=<n>`, gets one `OK` or `ERR` reply
+with the same id, and the ESP32 sends `EV` lines when something happens (a scan line, homing
+done, a fault, a restart). The bridge uses `INFO`, `PING`, `STATUS`, `ENABLE`, `HOME`, `MOVE`,
+`STOP` and stare-mode `SCAN`; its side of the protocol is
+[`mirror_protocol.py`](so101_scan_sweep/so101_scan_sweep/mirror_protocol.py), and
+`fake_scan_mirror` plays the ESP32 for the tests and for `mirror:=fake`. Locking the line clock
+to the camera's frames (the firmware's `NUDGE` and `PERIOD`) waits for the camera node.
 
 ## Development
 

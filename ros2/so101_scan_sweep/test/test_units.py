@@ -42,21 +42,25 @@ def robot():
 # --- protocol -----------------------------------------------------------------------------
 
 def test_commands():
-    assert mp.sweep(7, 604, 2, 107, 33333) == "SWEEP 7 604 2 107 33333\n"
-    assert mp.goto(-12) == "GOTO -12\n" and mp.ping(3) == "PING 3\n"
+    assert mp.command("SCAN", mode="stare", start=-107, step=2, lines=107, period=1e6 / 30, id="7") == \
+        "SCAN mode=stare start=-107 step=2 lines=107 period=33333.333333 id=7\n"
+    assert mp.command("move", pos=-12, v=None) == "MOVE pos=-12\n"
+    assert mp.command("SCAN", period=0.0333 * 1e6) == "SCAN period=33300\n"
     with pytest.raises(mp.ProtocolError):
-        mp.sweep(1, 0, 1, 0, 1000)
+        mp.command("CFG", note="two words")
 
 
-def test_events():
-    assert mp.parse("LINE 7 0 604 81234567\r\n") == mp.Line(7, 0, 604, 81234567)
-    assert mp.parse("DONE 7 86234567") == mp.Done(7, 86234567)
-    assert mp.parse("PONG 42 81000123") == mp.Pong(42, 81000123)
-    assert mp.parse("STATUS 1 0 -5 7 99") == mp.Status(True, False, -5, 7, 99)
-    assert mp.parse("OK SWEEP 7") == mp.Ok("SWEEP", ("7",))
-    assert mp.parse("ERR SWEEP not homed") == mp.Err("SWEEP", "not homed")
-    assert mp.parse("# stepper driver ok") == mp.Log("stepper driver ok")
-    for bad in ["", "LINE 1 2", "PONG x 1", "ets Jun  8 2016 00:22:57", "OK"]:
+def test_replies_and_events():
+    m = mp.parse("EV LINE n=3 t=5343950 pos=-14 ready=5347600\r\n")
+    assert (m.kind, m.name, m.int("n"), m.int("pos"), m.int("ready"), m.id) == ("EV", "LINE", 3, -14, 5347600, None)
+    m = mp.parse("OK SCAN mode=stare t0=5243950 period=33333.333 start=-20 step=2 lines=5 id=3")
+    assert m.kind == "OK" and m.name == "SCAN" and m.id == "3" and m.float("period") == pytest.approx(33333.333)
+    m = mp.parse("ERR MOVE code=range id=9 msg=target 4000 is outside min..max -3200..3200")
+    assert (m.kind, m.get("code"), m.id, m.get("msg")) == ("ERR", "range", "9", "target 4000 is outside min..max -3200..3200")
+    assert mp.parse("EV FAULT code=drv_ot t=12 msg=TMC2209 overheated").get("msg") == "TMC2209 overheated"
+    with pytest.raises(mp.ProtocolError):
+        mp.parse("EV LINE n=x").int("n")
+    for bad in ["", "ets Jun  8 2016 00:22:57", "OK", "PONG 1 2", "ok PING t=1"]:
         with pytest.raises(mp.ProtocolError):
             mp.parse(bad)
 
@@ -161,10 +165,10 @@ def test_line_poser_and_csv(robot, tmp_path):
     _, cam2 = poser.poses(q, math.radians(5))
     assert math.degrees(math.acos(np.dot(cam[:3, 2], cam2[:3, 2]))) == pytest.approx(10.0, abs=1e-6)
     out = LinesCsv(tmp_path / "lines.csv")
-    out.write(0, 7, 3, 1234, 0.0, head, cam, q)
+    out.write(0, 7, 3, 1234, 5678, True, 0.0, head, cam, q)
     out.close()
     header, row = (tmp_path / "lines.csv").read_text().splitlines()
-    assert header.split(",") == CSV_COLUMNS and row.split(",")[:4] == ["0", "7", "3", "1234"]
+    assert header.split(",") == CSV_COLUMNS and row.split(",")[:6] == ["0", "7", "3", "1234", "5678", "1"]
 
 
 # --- viewpoint planner --------------------------------------------------------------------
