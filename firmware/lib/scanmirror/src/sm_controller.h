@@ -69,6 +69,7 @@ class Controller {
   void homeStop();
   void homeFail(const char* reason);
   void checkDriver(int64_t now);
+  void judgeDriver(const DriverStatus& st, int64_t now);
   void fault(const char* code, const char* msg);
   void stopEverything(const char* why);
   void applyCoreConfig();

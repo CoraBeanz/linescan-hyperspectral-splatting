@@ -394,6 +394,7 @@ void Controller::cmdScan() {
   p.period_q16 = period;
   p.settle_us = static_cast<uint32_t>(settle);
   p.sweep_v = sweep && step != 0 ? velocityQ32(rate) : 0;
+  p.sweep_limit = step < 0 ? cfg_.lim_min : cfg_.lim_max;
   p.slew = slewProfile();
   p.line = slewProfile();
 
@@ -554,6 +555,8 @@ void Controller::cmdDrv() {
   b.kv("reset", (st.gstat & kGstatReset) ? 1 : 0).kv("drv_err", (st.gstat & kGstatDrvErr) ? 1 : 0);
   b.kv("uv_cp", (st.gstat & kGstatUvCp) ? 1 : 0).kv("mscnt", st.mscnt).kvHex("raw", d);
   replyOk(b);
+  // The read cleared GSTAT, so the watchdog won't see a reset: act on it now.
+  if (enabled() && drv_state_ == kDrvOk) judgeDriver(st, port_.nowUs());
 }
 
 void Controller::cmdReboot() {
@@ -792,6 +795,12 @@ void Controller::checkDriver(int64_t now) {
 
   DriverStatus st;
   if (!drv_.read(&st)) return fault("drv_noresp", "TMC2209 stopped answering on UART");
+  judgeDriver(st, now);
+}
+
+// Every read of a running driver ends up here, because reading clears the
+// latched GSTAT flags.
+void Controller::judgeDriver(const DriverStatus& st, int64_t now) {
   const uint32_t d = st.drv_status;
   // A reset means the driver lost power and is back on its power-up
   // settings, where the current comes from the VREF pot.

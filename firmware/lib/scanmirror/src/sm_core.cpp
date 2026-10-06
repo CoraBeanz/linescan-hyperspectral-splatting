@@ -144,7 +144,7 @@ void SM_ISR MirrorCore::lineTick(uint32_t idx, int64_t now) {
     if (idx == 0) {
       // Half a step of preloaded phase rounds the position to the nearest
       // microstep of the ideal line start + v * (t - t_line0).
-      sg_.runVelocity(scan_.step < 0 ? -1 : 1, scan_.sweep_v, 0x80000000u, scan_.line);
+      sg_.runVelocity(scan_.step < 0 ? -1 : 1, scan_.sweep_v, 0x80000000u, scan_.sweep_limit, scan_.line);
     }
     post(kEvLine, 0, 0, static_cast<int32_t>(idx), sg_.position(), now, -1);
     lines_done_++;
@@ -191,6 +191,9 @@ TickOut SM_ISR MirrorCore::tick(int64_t now, bool hall_raw) {
   TickOut out;
   out.step = sg_.tick();
   if (out.step != 0) last_step_us_ = now;
+  // During a sweep the generator stops by itself only on its limit, where
+  // NUDGE or PERIOD stretched the sweep to the edge of min..max.
+  if (scanning_ && started_ && scan_.mode == ScanMode::kSweep && !sg_.busy()) finishScan(now, true);
 
   const bool stare = scanning_ && scan_.mode == ScanMode::kStare;
   const uint32_t settle = stare ? scan_.settle_us : settle_us_;
