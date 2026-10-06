@@ -36,3 +36,8 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# FreeCAD
+*.FCBak
+*.FCStd1
+cad/vendor/so101/assets/
