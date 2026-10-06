@@ -15,12 +15,24 @@
 //              Features are done 8 or 16 channels at a time (grid.y), so any
 //              number of spectral features fits in registers.
 // This is the 3DGS tile rasterizer with the image collapsed to rows of tiles.
+//
+// For training, mse_backward() runs the same passes and then three more:
+//   6. loss    per pixel, the bands, the squared error against the measured
+//              line and dL/dfeatures
+//   7. raster  one warp per (line, tile) again, walking each pixel's list
+//      back    back to front from where the forward pass stopped (as
+//              backward_cpu.hpp does per pixel); per splat the warp sums its
+//              pixels' gradients and adds them with one atomic per value
+//   8. project one thread per visible pair: through the projection to the
+//      back    Gaussian's mean, covariance and opacity, and the line's camera
+// and finally turns covariance gradients into scale and rotation ones.
 #pragma once
 
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "linesplat/backward_cpu.hpp"
 #include "linesplat/line_camera.hpp"
 #include "linesplat/render_cpu.hpp"
 #include "linesplat/scene.hpp"
@@ -52,6 +64,16 @@ class CudaRasterizer {
   LineImage render(const std::vector<LineCamera>& cams, CudaRenderStats* stats = nullptr);
   // The same into *out, reusing its memory when it already has the right size.
   void render(const std::vector<LineCamera>& cams, LineImage* out, CudaRenderStats* stats = nullptr);
+
+  // Training. Copies measured lines [num_lines, width, bands] to the GPU,
+  // where they stay for mse_backward.
+  void set_targets(const float* lines, int num_lines, int width, int bands);
+  // Renders the scene's bands on cams, where camera i sees measured line
+  // lines[i], and backpropagates the mean squared error over all their pixels
+  // and bands into *grad and, if not null, *cam_grad (one per camera), as
+  // render_backward_cpu does. Returns that error.
+  double mse_backward(const std::vector<LineCamera>& cams, const std::vector<int>& lines, SceneGradT<float>* grad,
+                      std::vector<CameraGradT<float>>* cam_grad = nullptr, CudaRenderStats* stats = nullptr);
 
   // Cap on lines x Gaussians per batch. It sets the scratch memory: about
   // 12 bytes per pair, so the default 2^24 needs about 200 MB.
