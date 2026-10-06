@@ -1,0 +1,7 @@
+# PC side (calibrate, apply, synth, selftest). Python 3.8 or newer.
+numpy>=1.20
+scipy>=1.7
+matplotlib>=3.3            # plots in the report (optional)
+opencv-python-headless>=4.5  # faster warp in apply (optional; scipy is used without it)
+pytest>=7                  # tests (optional)
+# Jetson side (capture, plan, focus): numpy only, plus `sudo apt install v4l-utils`.

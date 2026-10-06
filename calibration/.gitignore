@@ -1,0 +1,5 @@
+# sessions, calibrations and outputs made by the commands, when run from this folder
+/session*/
+/cal/
+/spectra/
+/focus_tmp/
