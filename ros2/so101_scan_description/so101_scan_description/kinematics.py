@@ -67,6 +67,15 @@ class Robot:
             self.joints[info["name"]] = info
             self.parent_joint[info["child"]] = info
 
+    def limits(self):
+        """{joint: (lower, upper)} for the joints with limits."""
+        out = {}
+        for j in self.root.findall("joint"):
+            lim = j.find("limit")
+            if lim is not None and lim.get("lower") is not None and j.get("type") == "revolute":
+                out[j.get("name")] = (float(lim.get("lower")), float(lim.get("upper")))
+        return out
+
     def movable(self):
         return [n for n, j in self.joints.items() if j["type"] != "fixed" and j["mimic"] is None]
 
@@ -92,3 +101,43 @@ class Robot:
         if base is not None and link != base:
             raise ValueError("%s is not above the link in the tree" % base)
         return t
+
+
+def solve_ik(robot, link, joints, q0, position=None, z_axis=None, base=None, limits=None,
+             iterations=300, tolerance=1e-7, damping=1e-4, max_step=0.2):
+    """Joint positions that put `link`'s origin at `position` and point its z axis along
+    `z_axis` (either may be None), by damped least squares from `q0`.
+
+    joints: the joint names to move. limits: {joint: (lower, upper)}, e.g. Robot.limits().
+    Returns (q, error_norm); check the error, since an unreachable target still returns.
+    """
+    q = dict(q0)
+    names = list(joints)
+    target_z = None if z_axis is None else np.asarray(z_axis, float) / np.linalg.norm(z_axis)
+
+    def residual(qq):
+        t = robot.fk(link, qq, base)
+        parts = []
+        if position is not None:
+            parts.append(np.asarray(position, float) - t[:3, 3])
+        if target_z is not None:
+            parts.append(np.cross(t[:3, 2], target_z))
+        return np.concatenate(parts)
+
+    err = residual(q)
+    for _ in range(iterations):
+        if np.linalg.norm(err) < tolerance:
+            break
+        jac = np.zeros((len(err), len(names)))
+        for k, n in enumerate(names):
+            dq = dict(q)
+            dq[n] += 1e-6
+            jac[:, k] = (err - residual(dq)) / 1e-6
+        step = np.linalg.solve(jac.T @ jac + damping * np.eye(len(names)), jac.T @ err)
+        step *= min(1.0, max_step / np.abs(step).max())  # small steps: the arm is far from linear
+        for k, n in enumerate(names):
+            q[n] += step[k]
+            if limits and n in limits:
+                q[n] = min(max(q[n], limits[n][0]), limits[n][1])
+        err = residual(q)
+    return q, float(np.linalg.norm(err))

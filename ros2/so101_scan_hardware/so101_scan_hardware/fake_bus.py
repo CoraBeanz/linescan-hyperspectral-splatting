@@ -14,6 +14,7 @@ prints the pseudo-terminal's path and keeps a symlink to it at --link.
 
 import argparse
 import os
+import select
 import signal
 import threading
 import time
@@ -155,7 +156,6 @@ class FakeBus:
 
     def _serve(self):
         parser = sts.Parser()
-        import select
         while self.running:
             ready, _, _ = select.select([self.master], [], [], 0.05)
             if not ready:
