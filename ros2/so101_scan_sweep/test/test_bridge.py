@@ -15,7 +15,7 @@ from std_srvs.srv import Trigger
 
 from so101_scan_interfaces.msg import MirrorState, ScanLine
 from so101_scan_interfaces.srv import MoveMirror, StartSweep
-from so101_scan_sweep.bridge import ScanMirrorBridge
+from so101_scan_sweep.bridge import MirrorLink, ScanMirrorBridge
 from so101_scan_sweep.fake_mirror import FakeMirror
 
 RAD_PER_STEP = 2 * math.pi / 6400
@@ -183,14 +183,40 @@ def test_stop_ends_a_sweep(ros):
     assert len(client.lines) == n < 500
 
 
-def test_esp32_restart_needs_homing_again(ros, fake):
+@pytest.mark.parametrize("boot_lost", [False, True])
+def test_esp32_restart_mid_sweep(ros, fake, boot_lost):
+    """A reset ends the sweep and the homing, whether or not its EV BOOT gets through."""
     client, bridge = ros
     home(client)
-    fake.reboot()       # its clock starts again from zero
-    client.wait_for(lambda: not client.state.homed and client.state.state == "disabled")
-    assert not client.call("start_sweep", sweep_request(0.0, 2, 5, 0.02)).accepted
+    first = client.call("start_sweep", sweep_request(0.0, 1, 500, 0.02))
+    assert first.accepted
+    client.wait_for(lambda: len(client.lines) >= 5)
+    if boot_lost:
+        fake.drop.add("BOOT")       # then only its clock going back gives the reset away
+    fake.reboot()
+    client.wait_for(lambda: not client.state.homed and client.state.state == "disabled" and not client.state.busy)
+    assert client.state.sweep_id == first.sweep_id
+    assert not client.call("start_sweep", sweep_request(0.0, 2, 5, 0.02)).accepted   # not homed
     client.wait_for(lambda: bridge.clock_sync.ready)
     home(client)
     res = client.call("start_sweep", sweep_request(0.0, 2, 10, 0.02))
     assert res.accepted, res.message
     check_sweep(client, fake, res, 10, 0.02)    # stamps are right on the restarted clock
+
+
+def test_lost_scan_done(ros, fake):
+    """If SCAN_DONE never arrives, STATUS shows the ESP32 isn't scanning and the sweep ends."""
+    client, _ = ros
+    home(client)
+    fake.drop.add("SCAN_DONE")
+    res = client.call("start_sweep", sweep_request(0.0, 2, 10, 0.02))
+    assert res.accepted
+    client.wait_for(lambda: client.state.sweep_id == res.sweep_id and not client.state.busy)
+    assert client.call("start_sweep", sweep_request(0.0, 2, 5, 0.02)).accepted
+
+
+def test_send_survives_the_port_vanishing():
+    """send() racing the reader thread's close: no exception, just nothing sent."""
+    link = MirrorLink("/dev/null-mirror", 921600, lambda m: None, lambda c: None, None)
+    link.connected, link.ser = True, None
+    assert not link.send("PING id=1\n")

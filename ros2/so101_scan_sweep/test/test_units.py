@@ -65,6 +65,19 @@ def test_replies_and_events():
             mp.parse(bad)
 
 
+def test_finds_the_message_after_boot_garbage():
+    boot = "EV BOOT fw=0.1.0 proto=1 reset=poweron drv=ok t=301234"
+    # the boot ROM's bytes at the wrong baud rate, glued to EV BOOT, after a line the reset cut off
+    for line in [boot, "\x00\ufffd\ufffd" + boot, "EV LINE n=5 t=12\x00\ufffd" + boot, "x\ufffd" + boot]:
+        assert mp.find_message(line) == boot
+    msg = "ERR SCAN code=range id=4 msg=scan covers -20..4000, outside min..max -3200..3200"
+    assert mp.find_message(msg) == msg
+    msg = "ERR MOVE code=busy id=7 msg=wait for EV MOVED or send STOP"   # protocol words in the text
+    assert mp.find_message(msg + "\r") == msg
+    assert mp.find_message("OK PING t=12 id=OK") == "OK PING t=12 id=OK"   # not inside a value
+    assert mp.find_message("\x00\ufffd\x00") is None and mp.find_message("BREVITY OK") is None
+
+
 # --- clock mapping ------------------------------------------------------------------------
 
 def test_clock_sync_follows_offset_and_drift():

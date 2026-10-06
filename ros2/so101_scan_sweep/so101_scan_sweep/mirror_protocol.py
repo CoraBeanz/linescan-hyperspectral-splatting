@@ -28,6 +28,7 @@ and, at any time, EV BOOT (it has just started: motor off, not homed), EV FAULT 
 Lines that start with anything else, like the boot ROM's output after a reset, aren't protocol.
 """
 
+import re
 from dataclasses import dataclass, field
 
 PROTOCOL_VERSION = 1
@@ -87,6 +88,22 @@ class Message:
 
     def __str__(self):
         return " ".join([self.kind, self.name] + ["%s=%s" % kv for kv in self.fields.items()])
+
+
+# where a message starts: not in the middle of a word or a key=value
+_START = re.compile(r"(?<![A-Za-z0-9_=])(?:OK|ERR|EV) [A-Z?]")
+
+
+def find_message(line):
+    """The protocol message in a line read from the port, or None. After a reset the boot ROM
+    prints at 115200 baud, which reads as a few bytes of garbage with no newline, so the EV BOOT
+    that follows arrives glued to them (and to whatever was cut off by the reset). A clean line
+    is taken whole; one with garbage in it, from its last message start on."""
+    text = line.strip()
+    if text.isascii() and text.isprintable() and _START.match(text):
+        return text
+    starts = list(_START.finditer(text))
+    return text[starts[-1].start():] if starts else None
 
 
 def parse(line):
