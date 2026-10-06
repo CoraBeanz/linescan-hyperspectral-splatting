@@ -22,7 +22,7 @@ A parametric FreeCAD model of the whole rig: the SO-101 follower arm, the spectr
 - **Head:** 281 g and 61 × 53 × 135 mm, wrist puck included. The stepper is 150 g of that.
 - **Printed:** eight parts on the head, about 70 g of PETG, plus an optional bench mount.
 - **Checks:** no parts overlap. The mirror turns a full circle with at least 0.5 mm to spare. The head clears the wrist at every roll angle (1.2 mm closest) and through ±95° of wrist flex.
-- **Watch out:** with the arm stretched out level, the shoulder servo has to hold 1.52 N·m, which is 94% of its stall torque. The stock gripper needs 0.86 N·m there. The scanning pose in the render needs only 0.41 N·m. See [Arm load](#arm-load).
+- **Watch out:** with the arm stretched out level, the shoulder servo has to hold 1.52 N·m, which is 94% of its stall torque. The stock gripper needs 0.86 N·m there. The scanning pose in the render needs only 0.41 N·m. A build option with a NEMA 8 stepper brings the head to 188 g and the worst case to 75%. See [Arm load](#arm-load).
 
 ## Files
 
@@ -106,7 +106,7 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | 2 | M2 × 5 | objective's M12 holder to its carrier, self-tapping into the printed pilot holes |
 | 2 | M2 × 6 | collimator's M12 holder to the back of the slit block, self-tapping |
 
-Plus CA glue for the magnet, mirror and slit blades, and Kapton tape for the grating film.
+Plus CA glue for the magnet, mirror and slit blades, and Kapton tape for the grating film. The [NEMA 8 build](#the-nema-8-option) swaps the two M3 × 6 motor screws for four M2 × 4 and puts an M3 washer and nut on the end of each long bolt (the same M3 × 35 reach).
 
 ## Measure these first
 
@@ -146,10 +146,23 @@ Gravity torque on each joint, from the link masses in the SO-101 URDF, with the 
 |---|---|---|---|
 | Stock gripper | | 0.13 / 0.38 | 0.86 (53%) / 0.45 (28%) |
 | **Head as modelled** | **281 g** | **0.41 (25%) / 0.78 (48%)** | **1.52 (94%) / 0.91 (56%)** |
-| NEMA 8 scan stepper (about 60 g) instead | 191 g | 0.30 (18%) / 0.61 (37%) | 1.22 (75%) / 0.71 (43%) |
+| NEMA 8 scan stepper (`RIG_MOTOR=8HS11`) | 188 g | 0.30 (18%) / 0.61 (37%) | 1.21 (75%) / 0.70 (43%) |
 | No scan motor, the arm sweeps the line | 131 g | 0.22 (13%) / 0.50 (30%) | 1.03 (63%) / 0.58 (35%) |
 
 The 12 V version of the STS3215 (30 kg·cm) would bring the worst case down to 52%, but it means swapping all six servos and the power supply. In practice: keep the arm folded the way the render shows, and if the shoulder runs hot, the stepper is the part to make lighter.
+
+### The NEMA 8 option
+
+The scan stepper is a build option. The housing and every optic stay where they are; only the lid, the mirror clamp and the motor change.
+
+| | 17HM08-1204S (default) | 8HS11-0204S |
+|---|---|---|
+| Motor | NEMA 17 pancake, 0.9°, 150 g | NEMA 8, 1.8°, 60 g |
+| Head | 281 g | 188 g |
+| Motor to lid | 2× M3 × 6 from inside; the long bolts thread into its lower holes | 4× M2 × 4 from inside; the long bolts end in washers and nuts on the lid |
+| Microstepping for 0.29 mm lines at 150 mm | 1/16 | 1/32 |
+
+The NEMA 8's 10 mm shaft reaches 5.5 mm into the clamp, with the pinch screw over it. Every check passes for it too, and the wrist-roll gap grows to 1.4 mm. Build it with `RIG_MOTOR=8HS11 freecadcmd cad/build_rig.py`.
 
 ## Optics as built
 

@@ -65,7 +65,7 @@
     "source": "PETG, 1.2 cm3 at 80%"
    },
    {
-    "part": "Stepper 17HM08-1204S (0.9 deg, 150 g)",
+    "part": "Stepper 17HM08-1204S (NEMA 17 pancake, 0.9 deg, 150 g)",
     "g": 150.0,
     "source": "listing"
    },

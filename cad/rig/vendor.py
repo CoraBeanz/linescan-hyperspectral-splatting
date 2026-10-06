@@ -12,6 +12,7 @@ renderer use.
 import FreeCAD as App
 
 from .expr import E, Builder, Frame
+from .params import MOTOR, MOTORS
 
 MATERIAL_RGB = {
     "printed": (0.16, 0.16, 0.17),      # black PETG
@@ -35,7 +36,7 @@ MATERIAL_RGB = {
 
 # Listed or estimated masses (g) of the bought parts, for the mass budget
 MASS_G = {
-    "HSI_stepper": (150.0, "listing"),
+    "HSI_stepper": (MOTORS[MOTOR]["mass_g"], "listing"),
     "HSI_objective": (5.0, "listing"),
     "HSI_collimator": (8.0, "listing"),
     "HSI_cam_lens": (7.0, "listing"),
@@ -122,24 +123,27 @@ def m12_holder(doc, parent, name, label, frame, P, flip=False):
 
 
 def stepper(doc, parent, P):
-    """17HM08-1204S pancake NEMA17 bolted to the outside of the lid, shaft +X."""
+    """Scan stepper (RIG_MOTOR) bolted to the outside of the lid, shaft +X."""
     x_face = -P.x_in - P.lid_motor_t
     f = Frame((x_face, P.y_shaft, P.z_shaft))
-    c = container(doc, parent, "HSI_stepper", "Stepper 17HM08-1204S (0.9 deg, 150 g)", f)
+    c = container(doc, parent, "HSI_stepper", MOTORS[MOTOR]["label"], f)
     b = Part(doc, c, "stepper").m("anodized_black")
     w, L = P.mot_w, P.mot_len
     body = b.box("body", -L, -w / 2, -w / 2, L, w, w)
     corners = []
     for i, (sy, sz) in enumerate(((-1, -1), (-1, 1), (1, -1), (1, 1))):
-        # a diamond prism along X on each corner cuts a 4 mm chamfer
-        corners.append(b.prism("corner%d" % i, "x", (-L - 1, sy * w / 2, sz * w / 2), 4, 4.0, L + 2))
-    holes = [b.cyl("thread%d" % i, "-x", (0.01, sy * P.mot_hole_pitch / 2, sz * P.mot_hole_pitch / 2), 1.25, 3.0)
+        # a diamond prism along X on each corner cuts the chamfer
+        corners.append(b.prism("corner%d" % i, "x", (-L - 1, sy * w / 2, sz * w / 2), 4, P.mot_chamfer, L + 2))
+    thread_r = 1.25 if MOTORS[MOTOR]["bolts_into_motor"] else 0.8      # M3 / M2 tap drill
+    holes = [b.cyl("thread%d" % i, "-x", (0.01, sy * P.mot_hole_pitch / 2, sz * P.mot_hole_pitch / 2), thread_r,
+                   P.mot_hole_depth)
              for i, (sy, sz) in enumerate(((-1, -1), (-1, 1), (1, -1), (1, 1)))]
     b.cut("housing", body, corners + holes)
     b.m("steel").cyl("boss", "x", (0, 0, 0), P.mot_boss_d / 2, P.mot_boss_h)
     b.cyl("shaft", "x", (0, 0, 0), P.mot_shaft_d / 2, P.mot_shaft_len)
-    # lead strain relief on the +Z flat, 1.5-6 mm from the rear face
-    b.m("connector").box("strain_relief", -L + 1.5, -3.6, w / 2 - 0.5, 4.5, 7.2, 3.5)
+    # lead strain relief on the +Z flat, near the rear face
+    x0, rl, rw, rh = MOTORS[MOTOR]["relief"]
+    b.m("connector").box("strain_relief", -L + x0, -rw / 2, w / 2 - 0.5, rl, rw, rh)
     return c
 
 
