@@ -75,161 +75,178 @@ double render_backward_cpu(const GaussianScene& scene, const std::vector<LineCam
   if (bands_out) bands_out->assign(size_t(L) * W * B, T(0));
 
   std::vector<GaussianGeomT<T>> geom(static_cast<size_t>(N));
-  for (int i = 0; i < N; ++i) geom[size_t(i)] = gaussian_geometry<T>(scene, i);
   std::vector<T> basis(scene.basis.begin(), scene.basis.end());
   std::vector<T> bg(scene.background.begin(), scene.background.end());
 
-  std::vector<Partial<T>> part(static_cast<size_t>(max_threads()));
-  for (auto& p : part) p.init(size_t(N), size_t(K));
+  // Each thread sums into its own copy of the gradients, so every thread
+  // costs zeroing and adding up a copy the size of the scene, about as much
+  // as projecting the scene for one line. The threads share that work out,
+  // and each gets at least four lines so it stays a small part.
+  const int threads = std::max(1, std::min(max_threads(), (L + 3) / 4));
+  std::vector<Partial<T>> part(static_cast<size_t>(threads));
 
-#pragma omp parallel for schedule(dynamic, 2)
-  for (int l = 0; l < L; ++l) {
+#pragma omp parallel num_threads(threads)
+  {
     Partial<T>& A = part[size_t(thread_id())];
-    const LineCameraT<T>& cam = cams[size_t(l)];
+    A.init(size_t(N), size_t(K));
 
-    // Project and sort front to back (stable, like the renderers).
-    std::vector<std::pair<LineSplatT<T>, int>> hits;
-    LineSplatT<T> sp;
-    for (int i = 0; i < N; ++i)
-      if (project_to_line(cam, geom[size_t(i)], &sp)) hits.emplace_back(sp, i);
-    std::stable_sort(hits.begin(), hits.end(),
-                     [](const std::pair<LineSplatT<T>, int>& a, const std::pair<LineSplatT<T>, int>& b) {
-                       return a.first.depth < b.first.depth;
-                     });
-    const int H = int(hits.size());
-    std::vector<int> start(size_t(W) + 1, 0);
-    for (const auto& h : hits)
-      for (int p = h.first.p0; p < h.first.p1; ++p) ++start[size_t(p) + 1];
-    for (int p = 0; p < W; ++p) start[size_t(p) + 1] += start[size_t(p)];
-    std::vector<int> fill(start.begin(), start.end() - 1);
-    std::vector<int> bucket(static_cast<size_t>(start[size_t(W)]));
-    for (int h = 0; h < H; ++h)
-      for (int p = hits[size_t(h)].first.p0; p < hits[size_t(h)].first.p1; ++p)
-        bucket[size_t(fill[size_t(p)]++)] = h;
+#pragma omp for schedule(static)
+    for (int i = 0; i < N; ++i) geom[size_t(i)] = gaussian_geometry<T>(scene, i);
 
-    // Forward: features per pixel, the final transmittance, and where each
-    // pixel stopped in its list.
-    std::vector<T> feat(size_t(W) * K), trans_final(static_cast<size_t>(W));
-    std::vector<int> stop(static_cast<size_t>(W));
-    for (int p = 0; p < W; ++p) {
-      T* acc = &feat[size_t(p) * K];
-      std::fill(acc, acc + K, T(0));
-      T trans = T(1);
-      int b = start[size_t(p)];
-      for (; b < start[size_t(p) + 1]; ++b) {
-        const auto& h = hits[size_t(bucket[size_t(b)])];
-        const T a = splat_alpha_at(h.first.u, h.first.inv_var, h.first.alpha, p);
-        if (a < T(kMinAlpha)) continue;
-        const T next = trans * (T(1) - a);
-        if (next < T(kMinTransmittance)) break;
-        const float* f = &scene.features[size_t(h.second) * K];
-        const T w = a * trans;
-        for (int c = 0; c < K; ++c) acc[c] += T(f[c]) * w;
-        trans = next;
-      }
-      for (int c = 0; c < K; ++c) acc[c] += trans * bg[size_t(c)];
-      trans_final[size_t(p)] = trans;
-      stop[size_t(p)] = b;
-    }
+#pragma omp for schedule(dynamic, 2)
+    for (int l = 0; l < L; ++l) {
+      const LineCameraT<T>& cam = cams[size_t(l)];
 
-    // Bands, the loss, and dL/dfeatures = basis^T dL/dbands.
-    std::vector<T> bands(size_t(W) * B, T(0)), g_bands(size_t(W) * B, T(0)), g_feat(size_t(W) * K, T(0));
-    for (int p = 0; p < W; ++p)
-      for (int b = 0; b < B; ++b) {
-        T s = T(0);
-        for (int c = 0; c < K; ++c) s += basis[size_t(b) * K + c] * feat[size_t(p) * K + c];
-        bands[size_t(p) * B + b] = s;
-      }
-    A.loss += loss(l, bands.data(), g_bands.data());
-    if (bands_out) std::copy(bands.begin(), bands.end(), bands_out->begin() + std::ptrdiff_t(size_t(l) * W * B));
-    for (int p = 0; p < W; ++p)
-      for (int b = 0; b < B; ++b) {
-        const T g = g_bands[size_t(p) * B + b];
-        if (g == T(0)) continue;
-        for (int c = 0; c < K; ++c) g_feat[size_t(p) * K + c] += basis[size_t(b) * K + c] * g;
-      }
+      // Project and sort front to back (stable, like the renderers).
+      std::vector<std::pair<LineSplatT<T>, int>> hits;
+      LineSplatT<T> sp;
+      for (int i = 0; i < N; ++i)
+        if (project_to_line(cam, geom[size_t(i)], &sp)) hits.emplace_back(sp, i);
+      std::stable_sort(hits.begin(), hits.end(),
+                       [](const std::pair<LineSplatT<T>, int>& a, const std::pair<LineSplatT<T>, int>& b) {
+                         return a.first.depth < b.first.depth;
+                       });
+      const int H = int(hits.size());
+      std::vector<int> start(size_t(W) + 1, 0);
+      for (const auto& h : hits)
+        for (int p = h.first.p0; p < h.first.p1; ++p) ++start[size_t(p) + 1];
+      for (int p = 0; p < W; ++p) start[size_t(p) + 1] += start[size_t(p)];
+      std::vector<int> fill(start.begin(), start.end() - 1);
+      std::vector<int> bucket(static_cast<size_t>(start[size_t(W)]));
+      for (int h = 0; h < H; ++h)
+        for (int p = hits[size_t(h)].first.p0; p < hits[size_t(h)].first.p1; ++p)
+          bucket[size_t(fill[size_t(p)]++)] = h;
 
-    // Backward per pixel, back to front.
-    std::vector<T> g_u(size_t(H), T(0)), g_iv(size_t(H), T(0)), g_al(size_t(H), T(0));
-    std::vector<char> drew(size_t(H), 0);
-    std::vector<T> behind(static_cast<size_t>(K));
-    for (int p = 0; p < W; ++p) {
-      const T* gC = &g_feat[size_t(p) * K];
-      T tr = trans_final[size_t(p)];
-      for (int c = 0; c < K; ++c) {
-        A.background[size_t(c)] += tr * gC[c];
-        behind[size_t(c)] = bg[size_t(c)];
-      }
-      for (int b = stop[size_t(p)] - 1; b >= start[size_t(p)]; --b) {
-        const int h = bucket[size_t(b)];
-        const LineSplatT<T>& s = hits[size_t(h)].first;
-        const int gid = hits[size_t(h)].second;
-        const T a = splat_alpha_at(s.u, s.inv_var, s.alpha, p);
-        if (a < T(kMinAlpha)) continue;
-        const T t_i = tr / (T(1) - a);
-        const float* f = &scene.features[size_t(gid) * K];
-        T* gf = &A.features[size_t(gid) * K];
-        T g_a = T(0);
-        for (int c = 0; c < K; ++c) {
-          gf[c] += a * t_i * gC[c];
-          g_a += gC[c] * (T(f[c]) - behind[size_t(c)]);
-          behind[size_t(c)] = a * T(f[c]) + (T(1) - a) * behind[size_t(c)];
+      // Forward: features per pixel, the final transmittance, and where each
+      // pixel stopped in its list.
+      std::vector<T> feat(size_t(W) * K), trans_final(static_cast<size_t>(W));
+      std::vector<int> stop(static_cast<size_t>(W));
+      for (int p = 0; p < W; ++p) {
+        T* acc = &feat[size_t(p) * K];
+        std::fill(acc, acc + K, T(0));
+        T trans = T(1);
+        int b = start[size_t(p)];
+        for (; b < start[size_t(p) + 1]; ++b) {
+          const auto& h = hits[size_t(bucket[size_t(b)])];
+          const T a = splat_alpha_at(h.first.u, h.first.inv_var, h.first.alpha, p);
+          if (a < T(kMinAlpha)) continue;
+          const T next = trans * (T(1) - a);
+          if (next < T(kMinTransmittance)) break;
+          const float* f = &scene.features[size_t(h.second) * K];
+          const T w = a * trans;
+          for (int c = 0; c < K; ++c) acc[c] += T(f[c]) * w;
+          trans = next;
         }
-        g_a *= t_i;
-        tr = t_i;
-        splat_alpha_backward(s.u, s.inv_var, s.alpha, p, g_a, &g_u[size_t(h)], &g_iv[size_t(h)], &g_al[size_t(h)]);
-        drew[size_t(h)] = 1;
+        for (int c = 0; c < K; ++c) acc[c] += trans * bg[size_t(c)];
+        trans_final[size_t(p)] = trans;
+        stop[size_t(p)] = b;
       }
+
+      // Bands, the loss, and dL/dfeatures = basis^T dL/dbands.
+      std::vector<T> bands(size_t(W) * B, T(0)), g_bands(size_t(W) * B, T(0)), g_feat(size_t(W) * K, T(0));
+      for (int p = 0; p < W; ++p)
+        for (int b = 0; b < B; ++b) {
+          T s = T(0);
+          for (int c = 0; c < K; ++c) s += basis[size_t(b) * K + c] * feat[size_t(p) * K + c];
+          bands[size_t(p) * B + b] = s;
+        }
+      A.loss += loss(l, bands.data(), g_bands.data());
+      if (bands_out) std::copy(bands.begin(), bands.end(), bands_out->begin() + std::ptrdiff_t(size_t(l) * W * B));
+      for (int p = 0; p < W; ++p)
+        for (int b = 0; b < B; ++b) {
+          const T g = g_bands[size_t(p) * B + b];
+          if (g == T(0)) continue;
+          for (int c = 0; c < K; ++c) g_feat[size_t(p) * K + c] += basis[size_t(b) * K + c] * g;
+        }
+
+      // Backward per pixel, back to front.
+      std::vector<T> g_u(size_t(H), T(0)), g_iv(size_t(H), T(0)), g_al(size_t(H), T(0));
+      std::vector<char> drew(size_t(H), 0);
+      std::vector<T> behind(static_cast<size_t>(K));
+      for (int p = 0; p < W; ++p) {
+        const T* gC = &g_feat[size_t(p) * K];
+        T tr = trans_final[size_t(p)];
+        for (int c = 0; c < K; ++c) {
+          A.background[size_t(c)] += tr * gC[c];
+          behind[size_t(c)] = bg[size_t(c)];
+        }
+        for (int b = stop[size_t(p)] - 1; b >= start[size_t(p)]; --b) {
+          const int h = bucket[size_t(b)];
+          const LineSplatT<T>& s = hits[size_t(h)].first;
+          const int gid = hits[size_t(h)].second;
+          const T a = splat_alpha_at(s.u, s.inv_var, s.alpha, p);
+          if (a < T(kMinAlpha)) continue;
+          const T t_i = tr / (T(1) - a);
+          const float* f = &scene.features[size_t(gid) * K];
+          T* gf = &A.features[size_t(gid) * K];
+          T g_a = T(0);
+          for (int c = 0; c < K; ++c) {
+            gf[c] += a * t_i * gC[c];
+            g_a += gC[c] * (T(f[c]) - behind[size_t(c)]);
+            behind[size_t(c)] = a * T(f[c]) + (T(1) - a) * behind[size_t(c)];
+          }
+          g_a *= t_i;
+          tr = t_i;
+          splat_alpha_backward(s.u, s.inv_var, s.alpha, p, g_a, &g_u[size_t(h)], &g_iv[size_t(h)], &g_al[size_t(h)]);
+          drew[size_t(h)] = 1;
+        }
+      }
+
+      // Through the projection, into the Gaussians and this line's camera.
+      CameraGradT<T> cg{};
+      for (int h = 0; h < H; ++h) {
+        if (!drew[size_t(h)]) continue;
+        const int gid = hits[size_t(h)].second;
+        ProjectionGradT<T> pg;
+        project_to_line_backward(cam, geom[size_t(gid)], g_u[size_t(h)], g_iv[size_t(h)], g_al[size_t(h)], &pg);
+        T* m = &A.mean[3 * size_t(gid)];
+        m[0] += pg.mean.x;
+        m[1] += pg.mean.y;
+        m[2] += pg.mean.z;
+        T* cv = &A.cov[6 * size_t(gid)];
+        cv[0] += pg.cov.xx;
+        cv[1] += pg.cov.xy;
+        cv[2] += pg.cov.xz;
+        cv[3] += pg.cov.yy;
+        cv[4] += pg.cov.yz;
+        cv[5] += pg.cov.zz;
+        A.opacity[size_t(gid)] += pg.opacity;
+        A.screen[size_t(gid)] += std::sqrt(pg.mu_u * pg.mu_u + pg.mu_v * pg.mu_v);
+        A.pairs[size_t(gid)] += 1;
+        for (int i = 0; i < 9; ++i) cg.R[i] += pg.R[i];
+        for (int i = 0; i < 3; ++i) cg.t[i] += pg.t[i];
+      }
+      if (cam_grad) (*cam_grad)[size_t(l)] = cg;
     }
 
-    // Through the projection, into the Gaussians and this line's camera.
-    CameraGradT<T> cg{};
-    for (int h = 0; h < H; ++h) {
-      if (!drew[size_t(h)]) continue;
-      const int gid = hits[size_t(h)].second;
-      ProjectionGradT<T> pg;
-      project_to_line_backward(cam, geom[size_t(gid)], g_u[size_t(h)], g_iv[size_t(h)], g_al[size_t(h)], &pg);
-      T* m = &A.mean[3 * size_t(gid)];
-      m[0] += pg.mean.x;
-      m[1] += pg.mean.y;
-      m[2] += pg.mean.z;
-      T* cv = &A.cov[6 * size_t(gid)];
-      cv[0] += pg.cov.xx;
-      cv[1] += pg.cov.xy;
-      cv[2] += pg.cov.xz;
-      cv[3] += pg.cov.yy;
-      cv[4] += pg.cov.yz;
-      cv[5] += pg.cov.zz;
-      A.opacity[size_t(gid)] += pg.opacity;
-      A.screen[size_t(gid)] += std::sqrt(pg.mu_u * pg.mu_u + pg.mu_v * pg.mu_v);
-      A.pairs[size_t(gid)] += 1;
-      for (int i = 0; i < 9; ++i) cg.R[i] += pg.R[i];
-      for (int i = 0; i < 3; ++i) cg.t[i] += pg.t[i];
+    // Sum the threads' copies, each thread taking a share of the Gaussians,
+    // then go from covariance and opacity to the stored log scales,
+    // quaternions and logits. A copy only has gradients for the Gaussians its
+    // lines drew, which are the ones it counted pairs for.
+#pragma omp for schedule(static)
+    for (int i = 0; i < N; ++i) {
+      T cov[6] = {T(0), T(0), T(0), T(0), T(0), T(0)}, opacity = T(0);
+      for (const Partial<T>& P : part) {
+        if (P.pairs.empty() || P.pairs[size_t(i)] == 0) continue;
+        for (size_t j = 3 * size_t(i); j < 3 * size_t(i) + 3; ++j) grad->means[j] += P.mean[j];
+        for (int j = 0; j < 6; ++j) cov[j] += P.cov[6 * size_t(i) + size_t(j)];
+        opacity += P.opacity[size_t(i)];
+        for (size_t j = size_t(i) * K; j < size_t(i + 1) * K; ++j) grad->features[j] += P.features[j];
+        grad->screen_grad[size_t(i)] += P.screen[size_t(i)];
+        grad->pairs[size_t(i)] += P.pairs[size_t(i)];
+      }
+      if (grad->pairs[size_t(i)] == 0) continue;
+      const Sym3<T> gc{cov[0], cov[1], cov[2], cov[3], cov[4], cov[5]};
+      gaussian_geometry_backward(&scene.log_scales[3 * size_t(i)], &scene.rotations[4 * size_t(i)],
+                                 scene.opacity_logits[size_t(i)], gc, opacity, &grad->log_scales[3 * size_t(i)],
+                                 &grad->rotations[4 * size_t(i)], &grad->opacity_logits[size_t(i)]);
     }
-    if (cam_grad) (*cam_grad)[size_t(l)] = cg;
-  }
+  }  // omp parallel
 
-  // Sum the threads, then go from covariance and opacity to the stored
-  // log scales, quaternions and logits.
   double total = 0.0;
-  std::vector<T> cov(6 * size_t(N), T(0)), opacity(size_t(N), T(0));
   for (const auto& A : part) {
     total += A.loss;
-    for (size_t i = 0; i < A.mean.size(); ++i) grad->means[i] += A.mean[i];
-    for (size_t i = 0; i < A.cov.size(); ++i) cov[i] += A.cov[i];
-    for (size_t i = 0; i < A.opacity.size(); ++i) opacity[i] += A.opacity[i];
-    for (size_t i = 0; i < A.features.size(); ++i) grad->features[i] += A.features[i];
-    for (size_t i = 0; i < A.background.size(); ++i) grad->background[i] += A.background[i];
-    for (size_t i = 0; i < A.screen.size(); ++i) grad->screen_grad[i] += A.screen[i];
-    for (size_t i = 0; i < A.pairs.size(); ++i) grad->pairs[i] += A.pairs[i];
-  }
-  for (int i = 0; i < N; ++i) {
-    const T* c = &cov[6 * size_t(i)];
-    const Sym3<T> gc{c[0], c[1], c[2], c[3], c[4], c[5]};
-    gaussian_geometry_backward(&scene.log_scales[3 * size_t(i)], &scene.rotations[4 * size_t(i)],
-                               scene.opacity_logits[size_t(i)], gc, opacity[size_t(i)],
-                               &grad->log_scales[3 * size_t(i)], &grad->rotations[4 * size_t(i)],
-                               &grad->opacity_logits[size_t(i)]);
+    for (size_t c = 0; c < A.background.size(); ++c) grad->background[c] += A.background[c];
   }
   return total;
 }
