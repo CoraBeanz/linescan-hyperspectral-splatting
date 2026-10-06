@@ -153,7 +153,7 @@
   <text x="892" y="284" class="small" text-anchor="end">from the</text>
   <text x="892" y="300" class="small" text-anchor="end">object</text>
   <text x="832" y="92" class="ls">scan mirror on a</text>
-  <text x="832" y="110" class="ls">0.9° NEMA17</text>
+  <text x="832" y="110" class="ls">NEMA 8 stepper</text>
   <line x1="936" y1="152" x2="1118" y2="152" stroke="#fff" stroke-opacity="0.7" stroke-width="1.4"/>
   <rect x="942" y="136" width="4" height="32" fill="#f6c46b" fill-opacity="0.85"/>
   <ellipse cx="968" cy="152" rx="4" ry="16" fill="#7dd3fc" fill-opacity="0.18" stroke="#7dd3fc" stroke-width="1.5"/>

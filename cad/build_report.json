@@ -7,7 +7,7 @@
   ],
   "HSI_lid": [
    0.5,
-   350
+   0
   ],
   "HSI_filter_cap": [
    3.42,
@@ -31,13 +31,13 @@
    },
    {
     "part": "Lid with motor mount (printed)",
-    "g": 16.7,
-    "source": "PETG, 16.5 cm3 at 80%"
+    "g": 13.1,
+    "source": "PETG, 12.9 cm3 at 80%"
    },
    {
     "part": "Mirror clamp (printed)",
-    "g": 1.8,
-    "source": "PETG, 1.8 cm3 at 80%"
+    "g": 1.7,
+    "source": "PETG, 1.7 cm3 at 80%"
    },
    {
     "part": "Wrist puck with dovetail rail (printed)",
@@ -65,8 +65,8 @@
     "source": "PETG, 1.2 cm3 at 80%"
    },
    {
-    "part": "Stepper 17HM08-1204S (NEMA 17 pancake, 0.9 deg, 150 g)",
-    "g": 150.0,
+    "part": "Stepper 8HS11-0204S (NEMA 8, 1.8 deg, 60 g)",
+    "g": 60.0,
     "source": "listing"
    },
    {
@@ -145,18 +145,18 @@
     "source": "est"
    }
   ],
-  "total_g": 281.2,
+  "total_g": 187.5,
   "com_head_mm": [
-   -16.8,
-   -1.7,
-   44.4
+   -10.7,
+   -1.4,
+   55.2
   ]
  },
  "roll_clearance": {
-  "min_gap_mm": 1.22,
-  "at_radius_mm": 22.5,
+  "min_gap_mm": 1.42,
+  "at_radius_mm": 12.5,
   "by_radius": {
-   "0.0": 23.18,
+   "0.0": 40.7,
    "2.5": 1.83,
    "5.0": 3.0,
    "7.5": 3.0,
@@ -165,13 +165,10 @@
    "15.0": 3.26,
    "17.5": 3.97,
    "20.0": 3.47,
-   "22.5": 1.22,
+   "22.5": 3.47,
    "25.0": 24.9,
-   "27.5": 4.65,
-   "30.0": 6.9,
-   "32.5": 46.45,
-   "35.0": 46.45,
-   "37.5": 46.52
+   "27.5": 6.9,
+   "30.0": 113.88
   }
  },
  "flex_free_deg_by_roll": {
@@ -244,10 +241,10 @@
   },
   "with_head": {
    "shoulder_pan": 0.0,
-   "shoulder_lift": 0.41,
-   "elbow_flex": 0.785,
-   "wrist_flex": 0.329,
-   "wrist_roll": 0.046
+   "shoulder_lift": 0.295,
+   "elbow_flex": 0.607,
+   "wrist_flex": 0.249,
+   "wrist_roll": 0.019
   },
   "worst_stock": {
    "shoulder_pan": [
@@ -297,35 +294,35 @@
     [
      75,
      -75,
-     -15
+     0
     ]
    ],
    "shoulder_lift": [
-    1.525,
+    1.214,
     [
      75,
      -75,
-     -15
+     0
     ]
    ],
    "elbow_flex": [
-    0.907,
+    0.702,
     [
-     0,
-     0,
-     -15
+     -15,
+     15,
+     0
     ]
    ],
    "wrist_flex": [
-    0.33,
+    0.249,
     [
-     60,
-     -15,
-     -60
+     0,
+     30,
+     -30
     ]
    ],
    "wrist_roll": [
-    0.007,
+    0.004,
     [
      15,
      -90,
@@ -370,11 +367,11 @@
    "part": "Lid",
    "qty": 1,
    "print": "inner (flat) face on the bed; 0.2 mm layers, 4 perimeters around the motor holes",
-   "volume_cm3": 16.5,
+   "volume_cm3": 12.9,
    "size_mm": [
     124.0,
     47.0,
-    6.0
+    4.0
    ]
   },
   {
@@ -382,7 +379,7 @@
    "part": "Mirror clamp",
    "qty": 1,
    "print": "mirror pad face on the bed; 0.15 mm layers, 100% infill; M3x8 pinch screw + nut",
-   "volume_cm3": 1.8,
+   "volume_cm3": 1.7,
    "size_mm": [
     25.5,
     17.0,

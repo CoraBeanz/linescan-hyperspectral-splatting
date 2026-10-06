@@ -13,7 +13,7 @@ Writes:
     cad/build_report.json       mass budget, servo torques, clearances
 
 Environment variables:
-    RIG_MOTOR=8HS11             NEMA 8 scan stepper instead of the 17HM08 (see rig/params.py)
+    RIG_MOTOR=17HM08            NEMA 17 pancake scan stepper instead of the NEMA 8 (see rig/params.py)
     RIG_NO_EXPORT=1             only build and save the .FCStd
     RIG_RENDER_DIR=<dir>        also write per-part OBJ meshes + manifest for cad/render
 """

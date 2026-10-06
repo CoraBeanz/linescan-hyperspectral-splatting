@@ -175,7 +175,7 @@ def tick(x, y0, y1):
     return f'<line x1="{f(x)}" y1="{f(y0)}" x2="{f(x)}" y2="{f(y1)}" stroke="#3b4a7a" stroke-width="1.2"/>'
 
 LABELS = "".join([
-    lab(XM - 8, 160, "Scan mirror", [("spec", "0.9° NEMA17 stepper"), ("ls", "steps the line"), ("ls", "across the object")]),
+    lab(XM - 8, 160, "Scan mirror", [("spec", "NEMA 8 stepper"), ("ls", "steps the line"), ("ls", "across the object")]),
     lab(XO + 8, 160, "Objective", [("spec", "16 mm f/4"), ("ls", "images the object"), ("ls", "onto the slit")]),
     lab(XC, 160, "Collimator", [("spec", "25 mm, used backward"), ("ls", "turns each slit point"), ("ls", "into a parallel beam")]),
     lab(XF + 26, 404, "Long-pass", [("spec", "≥ 500 nm"), ("ls", "blocks 2nd-order"), ("ls", "overlap")]),
