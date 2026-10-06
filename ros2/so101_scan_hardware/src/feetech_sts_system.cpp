@@ -216,6 +216,7 @@ bool FeetechStsSystem::configure_servo(const Joint & j)
 
 CallbackReturn FeetechStsSystem::on_configure(const rclcpp_lifecycle::State &)
 {
+  std::lock_guard<std::mutex> lock(bus_mutex_);
   try {
     bus_.open(port_, baud_rate_, timeout_ms_);
   } catch (const std::exception & e) {
@@ -298,6 +299,7 @@ void FeetechStsSystem::set_torque(bool on)
 
 CallbackReturn FeetechStsSystem::on_activate(const rclcpp_lifecycle::State &)
 {
+  std::lock_guard<std::mutex> lock(bus_mutex_);
   try {
     if (!read_all(true)) {
       RCLCPP_ERROR(logger_, "Can't read every servo, not activating");
@@ -348,6 +350,7 @@ CallbackReturn FeetechStsSystem::on_activate(const rclcpp_lifecycle::State &)
 
 CallbackReturn FeetechStsSystem::on_deactivate(const rclcpp_lifecycle::State &)
 {
+  std::lock_guard<std::mutex> lock(bus_mutex_);
   try {
     if (torque_enabled_ && disable_torque_on_deactivate_) {
       set_torque(false);
@@ -364,12 +367,14 @@ CallbackReturn FeetechStsSystem::on_deactivate(const rclcpp_lifecycle::State &)
 
 CallbackReturn FeetechStsSystem::on_cleanup(const rclcpp_lifecycle::State &)
 {
+  std::lock_guard<std::mutex> lock(bus_mutex_);
   bus_.close();
   return CallbackReturn::SUCCESS;
 }
 
 CallbackReturn FeetechStsSystem::on_shutdown(const rclcpp_lifecycle::State &)
 {
+  std::lock_guard<std::mutex> lock(bus_mutex_);
   try {
     if (bus_.is_open() && torque_enabled_ && disable_torque_on_deactivate_) {
       set_torque(false);
@@ -383,6 +388,7 @@ CallbackReturn FeetechStsSystem::on_shutdown(const rclcpp_lifecycle::State &)
 
 CallbackReturn FeetechStsSystem::on_error(const rclcpp_lifecycle::State &)
 {
+  std::lock_guard<std::mutex> lock(bus_mutex_);
   // The servos keep their last goal and torque: dropping the arm is worse than
   // leaving it where it is.
   RCLCPP_ERROR(logger_, "Stopped after an error; the servos keep their last goal until their power is cut");
@@ -392,6 +398,7 @@ CallbackReturn FeetechStsSystem::on_error(const rclcpp_lifecycle::State &)
 
 hardware_interface::return_type FeetechStsSystem::read(const rclcpp::Time &, const rclcpp::Duration &)
 {
+  std::lock_guard<std::mutex> lock(bus_mutex_);
   try {
     read_all(false);
   } catch (const std::exception & e) {
@@ -409,6 +416,7 @@ hardware_interface::return_type FeetechStsSystem::read(const rclcpp::Time &, con
 
 hardware_interface::return_type FeetechStsSystem::write(const rclcpp::Time &, const rclcpp::Duration & period)
 {
+  std::lock_guard<std::mutex> lock(bus_mutex_);
   if (!torque_enabled_) {
     return hardware_interface::return_type::OK;
   }
