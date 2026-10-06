@@ -225,9 +225,10 @@ class ScanSweep(Node):
     # --- the plan ---------------------------------------------------------------------------
 
     def move_arm(self, goal_joints, plan):
-        now = self.joints.at(self.joints.latest_ns)[0] if self.joints.latest_ns else None
-        if now is None:
-            raise ScanError("no arm joints on /joint_states; is scan_arm.launch.py running?")
+        # right after the launch starts, the joint state broadcaster may not be publishing yet
+        self.wait_for(lambda: self.joints.latest_ns is not None, 5.0,
+                      "the arm joints on /joint_states (is scan_arm.launch.py running?)")
+        now = self.joints.at(self.joints.latest_ns)[0]
         if not self.arm.wait_for_server(timeout_sec=5.0):
             raise ScanError("arm_controller is not running (with torque:=false it isn't started)")
         furthest = max(abs(goal_joints[j] - now[j]) for j in ARM_JOINTS)
