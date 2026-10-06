@@ -74,6 +74,7 @@ else()
 endif()
 
 add_library(linesplat_core STATIC
+  src/backward_cpu.cpp
   src/dataset.cpp
   src/npy.cpp
   src/png.cpp
@@ -131,7 +132,8 @@ if(LINESPLAT_TESTS)
     tests/test_render_cpu.cpp
     tests/test_io.cpp
     tests/test_synthetic.cpp
-    tests/test_cuda.cpp)
+    tests/test_cuda.cpp
+    tests/test_gradients.cpp)
   target_link_libraries(splat_tests PRIVATE linesplat)
   target_compile_options(splat_tests PRIVATE ${_warn})
   # Scratch files go in the build tree, wherever the tests are run from.
