@@ -1,0 +1,4 @@
+# PlatformIO build output and editor files it generates
+.pio/
+.vscode/
+__pycache__/
