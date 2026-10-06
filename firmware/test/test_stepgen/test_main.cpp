@@ -107,6 +107,30 @@ void test_reverse_mid_move() {
   TEST_ASSERT_TRUE(peak - at <= 260);
 }
 
+void test_retarget_inside_braking_distance_comes_back() {
+  // Braking from 3200/s to 1600/s at 20000/s^2 takes 192 steps. A new target
+  // 20 steps ahead is passed while braking and reached from the far side,
+  // rather than stopping dead at full speed.
+  Stepgen g;
+  const Profile p = prof(3200, 1600, 20000);
+  g.moveTo(3000, p);
+  for (long i = 0; i < 1000000 && g.position() < 1000; ++i) g.tick();
+  TEST_ASSERT_EQUAL_UINT32(p.v_max, g.speed());
+  const int32_t at = g.position();
+  g.moveTo(at + 20, p);
+  int32_t peak = at;
+  uint32_t last_v = g.speed();
+  for (long i = 0; i < 2000000 && g.busy(); ++i) {
+    g.tick();
+    if (g.position() > peak) peak = g.position();
+    if (g.speed() == 0) TEST_ASSERT_TRUE(last_v < sm::velocityQ32(1650));  // only ever stops from about vstart
+    last_v = g.speed();
+  }
+  TEST_ASSERT_FALSE(g.busy());
+  TEST_ASSERT_EQUAL_INT32(at + 20, g.position());
+  TEST_ASSERT_INT_WITHIN(5, at + 192, peak);
+}
+
 void test_stop_brakes_and_halt_is_instant() {
   Stepgen g;
   g.moveTo(100000, prof(3200, 400, 20000));
@@ -207,6 +231,7 @@ int main(int, char**) {
   RUN_TEST(test_speed_never_exceeds_vmax);
   RUN_TEST(test_ramp_takes_expected_time);
   RUN_TEST(test_reverse_mid_move);
+  RUN_TEST(test_retarget_inside_braking_distance_comes_back);
   RUN_TEST(test_stop_brakes_and_halt_is_instant);
   RUN_TEST(test_velocity_mode_is_a_straight_line);
   RUN_TEST(test_set_position_only_when_idle);

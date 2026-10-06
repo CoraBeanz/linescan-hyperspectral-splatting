@@ -138,6 +138,26 @@ void test_new_move_replaces_the_old_one() {
   TEST_ASSERT_EQUAL_INT32(-100, r.rotor);
 }
 
+void test_move_inside_braking_distance_comes_back() {
+  SimRig r;
+  enable(r);
+  r.ask("MOVE pos=3000");
+  r.run(200000);  // cruising at vmax, which takes 192 steps to brake from
+  const int32_t target = r.pos() + 10;
+  const size_t m = r.mark();
+  askf(r, "MOVE pos=%lld", target);
+  int32_t peak = r.rotor;
+  for (int ms = 0; ms < 3000 && r.linesWith("EV MOVED", m).empty(); ++ms) {
+    r.run(1000);
+    if (r.rotor > peak) peak = r.rotor;
+  }
+  TEST_ASSERT_TRUE(peak > target + 150);  // braked past it at the usual rate
+  const std::vector<std::string> moved = r.linesWith("EV MOVED", m);
+  TEST_ASSERT_EQUAL(1, (int)moved.size());
+  ASSERT_FIELD(target, moved[0], "pos");
+  TEST_ASSERT_EQUAL_INT32(target, r.rotor);
+}
+
 void test_stop_slows_down_and_reports() {
   SimRig r;
   enable(r);
@@ -662,6 +682,7 @@ int main(int, char**) {
   RUN_TEST(test_help_drv_and_reboot);
   RUN_TEST(test_move_arrives_settles_and_reports);
   RUN_TEST(test_new_move_replaces_the_old_one);
+  RUN_TEST(test_move_inside_braking_distance_comes_back);
   RUN_TEST(test_stop_slows_down_and_reports);
   RUN_TEST(test_disable_stops_dead);
   RUN_TEST(test_zero_and_dir_invert);
