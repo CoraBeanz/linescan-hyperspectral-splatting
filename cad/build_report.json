@@ -2,7 +2,7 @@
  "interference_mm3": [],
  "rotor_full_turn_min_gap_mm": {
   "HSI_shell": [
-   0.89,
+   0.94,
    300
   ],
   "HSI_lid": [
@@ -10,29 +10,29 @@
    0
   ],
   "HSI_filter_cap": [
-   3.42,
-   100
+   2.06,
+   350
   ],
   "HSI_hall": [
    1.1,
    0
   ],
   "HSI_objective": [
-   6.12,
-   100
+   6.26,
+   350
   ]
  },
  "mass": {
   "rows": [
    {
     "part": "Housing (printed)",
-    "g": 35.9,
-    "source": "PETG, 35.3 cm3 at 80%"
+    "g": 36.2,
+    "source": "PETG, 35.7 cm3 at 80%"
    },
    {
     "part": "Lid with motor mount (printed)",
-    "g": 13.1,
-    "source": "PETG, 12.9 cm3 at 80%"
+    "g": 13.4,
+    "source": "PETG, 13.2 cm3 at 80%"
    },
    {
     "part": "Mirror clamp (printed)",
@@ -47,22 +47,22 @@
    {
     "part": "Objective carrier (printed)",
     "g": 2.4,
-    "source": "PETG, 2.3 cm3 at 80%"
+    "source": "PETG, 2.4 cm3 at 80%"
    },
    {
     "part": "Slit block (printed)",
-    "g": 3.6,
-    "source": "PETG, 3.6 cm3 at 80%"
+    "g": 3.7,
+    "source": "PETG, 3.7 cm3 at 80%"
    },
    {
     "part": "Grating carrier (printed)",
     "g": 2.2,
-    "source": "PETG, 2.1 cm3 at 80%"
+    "source": "PETG, 2.2 cm3 at 80%"
    },
    {
     "part": "Filter cap and stop (printed)",
-    "g": 1.2,
-    "source": "PETG, 1.2 cm3 at 80%"
+    "g": 0.8,
+    "source": "PETG, 0.8 cm3 at 80%"
    },
    {
     "part": "Stepper 8HS11-0204S (NEMA 8, 1.8 deg, 60 g)",
@@ -70,8 +70,8 @@
     "source": "listing"
    },
    {
-    "part": "Scan mirror 25 x 20 x 2 mm, front surface",
-    "g": 2.5,
+    "part": "Scan mirror: Edmund #43-872, 20 x 20 x 3 mm",
+    "g": 3.0,
     "source": "est"
    },
    {
@@ -85,8 +85,8 @@
     "source": "est"
    },
    {
-    "part": "510 nm long-pass, 17 mm disc",
-    "g": 0.9,
+    "part": "Long-pass filter: Edmund #54-652, GG-495, 12.5 mm",
+    "g": 1.0,
     "source": "est"
    },
    {
@@ -105,8 +105,8 @@
     "source": "est"
    },
    {
-    "part": "Field lens, N-BK7 PCX 12.7 mm, f = 15 mm",
-    "g": 1.5,
+    "part": "Field lens: Edmund #49-840, PCX 12.7 mm, f = 15 mm",
+    "g": 1.2,
     "source": "est"
    },
    {
@@ -145,18 +145,18 @@
     "source": "est"
    }
   ],
-  "total_g": 187.5,
+  "total_g": 188.2,
   "com_head_mm": [
-   -10.7,
-   -1.4,
-   55.2
+   -10.6,
+   -1.1,
+   55.5
   ]
  },
  "roll_clearance": {
   "min_gap_mm": 1.42,
   "at_radius_mm": 12.5,
   "by_radius": {
-   "0.0": 40.7,
+   "0.0": 39.91,
    "2.5": 1.83,
    "5.0": 3.0,
    "7.5": 3.0,
@@ -164,11 +164,11 @@
    "12.5": 1.42,
    "15.0": 3.26,
    "17.5": 3.97,
-   "20.0": 3.47,
+   "20.0": 3.97,
    "22.5": 3.47,
    "25.0": 24.9,
    "27.5": 6.9,
-   "30.0": 113.88
+   "30.0": 114.58
   }
  },
  "flex_free_deg_by_roll": {
@@ -241,10 +241,10 @@
   },
   "with_head": {
    "shoulder_pan": 0.0,
-   "shoulder_lift": 0.295,
-   "elbow_flex": 0.607,
-   "wrist_flex": 0.249,
-   "wrist_roll": 0.019
+   "shoulder_lift": 0.297,
+   "elbow_flex": 0.609,
+   "wrist_flex": 0.251,
+   "wrist_roll": 0.02
   },
   "worst_stock": {
    "shoulder_pan": [
@@ -298,7 +298,7 @@
     ]
    ],
    "shoulder_lift": [
-    1.214,
+    1.217,
     [
      75,
      -75,
@@ -306,7 +306,7 @@
     ]
    ],
    "elbow_flex": [
-    0.702,
+    0.704,
     [
      -15,
      15,
@@ -314,7 +314,7 @@
     ]
    ],
    "wrist_flex": [
-    0.249,
+    0.251,
     [
      0,
      30,
@@ -322,7 +322,7 @@
     ]
    ],
    "wrist_roll": [
-    0.004,
+    0.003,
     [
      15,
      -90,
@@ -332,21 +332,21 @@
   }
  },
  "stations_mm": {
-  "z_mirror": 28.41,
-  "z_obj": 49.41,
-  "z_slit": 67.32,
-  "z_coll": 92.32,
-  "z_grat": 114.32,
-  "z_film": 98.32,
+  "z_mirror": 29.12,
+  "z_obj": 50.12,
+  "z_slit": 68.03,
+  "z_coll": 93.03,
+  "z_grat": 115.03,
+  "z_film": 99.03,
   "g2c": 16.03,
-  "z_cam": 113.19,
-  "y_cam": -4.01,
-  "z_sensor": 124.31,
-  "y_sensor": -8.51,
+  "z_cam": 113.89,
+  "y_cam": -3.29,
+  "z_sensor": 125.02,
+  "y_sensor": -7.79,
   "theta": 22.02,
-  "hall_y": -10.28,
+  "hall_y": -10.27,
   "hall_z": 23.4,
-  "y_shaft": -2.31,
+  "y_shaft": -2.3,
   "z_shaft": 24.1
  },
  "stl": [
@@ -355,11 +355,11 @@
    "part": "Housing",
    "qty": 1,
    "print": "floor (dovetail side) on the bed, camera end up; 0.2 mm layers, 3 perimeters, 20% gyroid; supports only under the camera flange",
-   "volume_cm3": 35.3,
+   "volume_cm3": 35.7,
    "size_mm": [
     35.5,
     48.3,
-    127.5
+    128.2
    ]
   },
   {
@@ -367,10 +367,10 @@
    "part": "Lid",
    "qty": 1,
    "print": "inner (flat) face on the bed; 0.2 mm layers, 4 perimeters around the motor holes",
-   "volume_cm3": 12.9,
+   "volume_cm3": 13.2,
    "size_mm": [
-    124.0,
-    47.0,
+    124.7,
+    47.7,
     4.0
    ]
   },
@@ -403,10 +403,10 @@
    "part": "Objective carrier",
    "qty": 1,
    "print": "flat; M12 holder on the face toward the mirror with 2x M2x5",
-   "volume_cm3": 2.3,
+   "volume_cm3": 2.4,
    "size_mm": [
     26.5,
-    32.5,
+    33.2,
     3.0
    ]
   },
@@ -415,10 +415,10 @@
    "part": "Slit block",
    "qty": 1,
    "print": "back face on the bed so the blade recess prints flat; 0.12 mm layers for the recess",
-   "volume_cm3": 3.6,
+   "volume_cm3": 3.7,
    "size_mm": [
     26.5,
-    32.5,
+    33.2,
     5.0
    ]
   },
@@ -427,10 +427,10 @@
    "part": "Grating carrier",
    "qty": 1,
    "print": "flat, film recess up; tape the film in with its grooves along X",
-   "volume_cm3": 2.1,
+   "volume_cm3": 2.2,
    "size_mm": [
     26.5,
-    32.5,
+    33.2,
     3.0
    ]
   },
@@ -439,11 +439,11 @@
    "part": "Filter cap",
    "qty": 1,
    "print": "stop face on the bed; check the sleeve is a snug push fit on the lens",
-   "volume_cm3": 1.2,
+   "volume_cm3": 0.8,
    "size_mm": [
-    19.8,
-    19.8,
-    7.7
+    16.7,
+    16.7,
+    9.2
    ]
   },
   {
