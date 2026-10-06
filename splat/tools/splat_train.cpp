@@ -2,11 +2,12 @@
 //
 //   splat_train DATASET OUT_DIR [--iterations N] [--batch N] [--spacing MM]
 //               [--no-poses] [--pose-from N] [--densify-grad X] [--log-every N]
-//               [--seed N]
+//               [--seed N] [--cpu]
 //
-// Starts from Gaussians on the board plane (z = 0), trains on the CPU, and
-// writes OUT_DIR/scene/ (the Gaussians), OUT_DIR/sweep_head_pose.npy (the
-// refined head poses), OUT_DIR/log.csv and previews: per sweep, the measured
+// Starts from Gaussians on the board plane (z = 0), trains (rendering and
+// backpropagating on the GPU if there is one, unless --cpu), and writes
+// OUT_DIR/scene/ (the Gaussians), OUT_DIR/sweep_head_pose.npy (the refined
+// head poses), OUT_DIR/log.csv and previews: per sweep, the measured
 // lines next to the trained scene's, and the scene from the overview camera.
 // For a synthetic dataset it also reports how far the line cameras are from
 // the true ones, in pixels, before and after.
@@ -14,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -37,7 +39,7 @@ void usage() {
   std::fprintf(stderr,
                "usage: splat_train DATASET OUT_DIR [--iterations N] [--batch N] [--spacing MM]\n"
                "                   [--no-poses] [--pose-from N] [--densify-grad X] [--log-every N]\n"
-               "                   [--seed N]\n");
+               "                   [--seed N] [--cpu]\n");
   std::exit(2);
 }
 
@@ -73,6 +75,7 @@ int main(int argc, char** argv) {
   TrainOptions o;
   double spacing_mm = 1.0;
   int log_every = 100;
+  bool cpu = false;
   for (int i = 3; i < argc; ++i) {
     const std::string a = argv[i];
     auto next = [&]() -> const char* {
@@ -87,6 +90,7 @@ int main(int argc, char** argv) {
     else if (a == "--densify-grad") o.densify_grad = std::atof(next());
     else if (a == "--log-every") log_every = std::max(1, std::atoi(next()));
     else if (a == "--seed") o.seed = std::strtoull(next(), nullptr, 10);
+    else if (a == "--cpu") cpu = true;
     else usage();
   }
 
@@ -106,7 +110,24 @@ int main(int argc, char** argv) {
 
     std::printf("dataset   %d sweeps, %d lines of %d px x %d bands\n", d.num_sweeps(), d.num_lines(), d.width(),
                 d.num_bands());
-    Trainer t(d, init_on_plane(d, spacing_mm * 1e-3), o);
+    BatchBackwardFn backward;  // empty: the CPU reference
+    std::string device = "the CPU";
+#ifdef LINESPLAT_WITH_CUDA
+    if (!cpu && cuda_device_available()) {
+      // The measured lines go to the GPU once; the scene goes every step.
+      auto gpu = std::make_shared<CudaRasterizer>();
+      gpu->set_targets(d.lines.data(), d.num_lines(), d.width(), d.num_bands());
+      backward = [gpu](const GaussianScene& s, const std::vector<LineCamera>& cams, const std::vector<int>& lines,
+                       SceneGradT<float>* g, std::vector<CameraGradT<float>>* cg) {
+        gpu->set_scene(s);
+        return gpu->mse_backward(cams, lines, g, cg);
+      };
+      device = cuda_device_name();
+    }
+#endif
+    (void)cpu;  // read only when built with CUDA
+    Trainer t(d, init_on_plane(d, spacing_mm * 1e-3), o, backward);
+    std::printf("device    %s\n", device.c_str());
     std::printf("start     %d Gaussians on the board plane, %.2f mm apart\n", t.scene().size(), spacing_mm);
     if (!truth.empty())
       std::printf("pose err  %s at the recorded poses\n", pose_text(line_pose_error_px(t.cameras(), truth)).c_str());
