@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<!-- SO-101 follower arm with the hyperspectral line-scan head in place of the gripper.
+
+     xacro arguments:
+       ros2_control       include the <ros2_control> block (default true)
+       use_mock_hardware  ros2_control's mock hardware instead of the servos (default false)
+       port               servo bus adapter (default /dev/so101, see ros2/udev)
+       calibration_file   YAML from sts_calibrate; required unless use_mock_hardware
+       torque             false: motors stay off, positions are only read (default true)
+
+     Check it with:
+       xacro so101_scan.urdf.xacro use_mock_hardware:=true > /tmp/so101_scan.urdf && check_urdf /tmp/so101_scan.urdf -->
+<robot name="so101_scan" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="ros2_control" default="true"/>
+  <xacro:arg name="use_mock_hardware" default="false"/>
+  <xacro:arg name="port" default="/dev/so101"/>
+  <xacro:arg name="calibration_file" default=""/>
+  <xacro:arg name="torque" default="true"/>
+
+  <xacro:include filename="$(find so101_scan_description)/urdf/so101_arm.xacro"/>
+  <xacro:include filename="$(find so101_scan_description)/urdf/scan_head.xacro"/>
+  <xacro:include filename="$(find so101_scan_description)/urdf/so101_scan.ros2_control.xacro"/>
+
+  <xacro:so101_arm/>
+  <xacro:scan_head parent="wrist_roll_link"/>
+
+  <xacro:if value="$(arg ros2_control)">
+    <xacro:so101_scan_ros2_control use_mock_hardware="$(arg use_mock_hardware)" port="$(arg port)"
+                                   calibration_file="$(arg calibration_file)" torque="$(arg torque)"/>
+  </xacro:if>
+</robot>
