@@ -14,7 +14,64 @@ Source tags used in the last column:
   design    a choice made for this head
 """
 
+import os
+
 from .optics_link import read_layout
+
+# Scan stepper options; pick one with RIG_MOTOR (default 17HM08). The housing
+# is the same for both: two long M3 bolts from the +X face clamp the lid on,
+# threading into the 17HM08's lower holes, or into nuts on the lid for the
+# NEMA 8. Rows: alias, value, what, source.
+MOTORS = {
+    "17HM08": {
+        "label": "Stepper 17HM08-1204S (NEMA 17 pancake, 0.9 deg, 150 g)",
+        "mass_g": 150.0,
+        "bolts_into_motor": True,
+        "relief": (1.5, 4.5, 7.2, 3.5),     # lead strain relief: from rear, length, width, height
+        "rows": [
+            ("mot_w", 42.3, "body square", "ds"),
+            ("mot_len", 21.0, "body length (vendor STEP: 20)", "listing"),
+            ("mot_chamfer", 4.0, "body corner chamfer", "ds"),
+            ("mot_boss_d", 22.0, "pilot boss diameter", "ds"),
+            ("mot_boss_h", 2.0, "pilot boss height", "ds"),
+            ("mot_shaft_d", 5.0, "shaft diameter (round, no flat)", "ds"),
+            ("mot_shaft_len", 17.0, "shaft length past the mounting face", "ds"),
+            ("mot_hole_pitch", 31.0, "screw spacing, M3", "ds"),
+            ("mot_hole_depth", 3.0, "M3 thread depth", "ds"),
+            ("mot_screw_clear", "=m3_clear", "screw clearance in the lid", "design"),
+            ("mot_head_d", "=m3_head", "screw head counterbore in the lid", "design"),
+            ("mot_head_h", 3.0, "counterbore depth: M3 x 6 heads flush inside", "design"),
+            ("lid_motor_t", 6.0, "lid thickness where the stepper bolts on", "design"),
+            ("lid_pad_half", "=mot_w / 2 + 0.5", "half-size of the lid's motor pad", "design"),
+        ],
+    },
+    "8HS11": {
+        "label": "Stepper 8HS11-0204S (NEMA 8, 1.8 deg, 60 g)",
+        "mass_g": 60.0,
+        "bolts_into_motor": False,
+        "relief": (1.0, 3.0, 5.0, 2.0),
+        "rows": [
+            ("mot_w", 20.3, "body square", "listing"),
+            ("mot_len", 28.0, "body length", "listing"),
+            ("mot_chamfer", 1.5, "body corner chamfer", "est"),
+            ("mot_boss_d", 15.0, "pilot boss diameter", "est"),
+            ("mot_boss_h", 1.5, "pilot boss height", "est"),
+            ("mot_shaft_d", 4.0, "shaft diameter (7 mm D flat at the end)", "listing"),
+            ("mot_shaft_len", 10.0, "shaft length past the mounting face", "listing"),
+            ("mot_hole_pitch", 16.0, "screw spacing, M2", "listing"),
+            ("mot_hole_depth", 2.5, "M2 thread depth", "est"),
+            ("mot_screw_clear", 2.4, "screw clearance in the lid", "design"),
+            ("mot_head_d", 4.2, "screw head counterbore in the lid", "design"),
+            ("mot_head_h", 2.2, "counterbore depth: M2 x 4 heads flush inside", "design"),
+            ("lid_motor_t", 4.0, "lid thickness where the stepper bolts on", "design"),
+            ("lid_pad_half", "=bolt_pitch / 2 + 4",
+             "half-size of the lid's motor pad (the long bolts' nuts sit on it)", "design"),
+        ],
+    },
+}
+MOTOR = os.environ.get("RIG_MOTOR", "17HM08")
+if MOTOR not in MOTORS:
+    raise ValueError("RIG_MOTOR must be one of %s, not %r" % (", ".join(MOTORS), MOTOR))
 
 
 def rows():
@@ -54,9 +111,11 @@ def rows():
     sec("Head layout (head frame: origin at the wrist-roll horn face, +Z away from the wrist, +Y toward the scene)")
     p("y_axis", 2.0, "mm", "optical axis offset in Y from the roll axis", "design")
     p("z_shell", "=puck_top + 0.2", "mm", "underside of the housing", "design")
-    p("z_shaft", "=(z_shell + z_floor) / 2 + mot_hole_pitch / 2", "mm",
-      "mirror shaft height: puts the motor's two lower screws mid-floor", "design")
-    p("mirror_e", "=mot_shaft_d / 2 + 1.6 + mirror_t", "mm", "mirror face offset from the shaft axis (1.5 mm of hub under the glass)", "design")
+    p("bolt_pitch", 31.0, "mm", "spacing of the two long lid bolts (the NEMA 17 hole pattern)", "design")
+    p("z_shaft", "=(z_shell + z_floor) / 2 + bolt_pitch / 2", "mm",
+      "mirror shaft height: puts the two long lid bolts mid-floor", "design")
+    p("mirror_e", "=2.5 + 1.6 + mirror_t", "mm",
+      "mirror face offset from the shaft axis (1.6 mm of hub under the glass on a 5 mm shaft)", "design")
     p("mirror_to_obj", 21, "mm", "mirror centre to objective principal plane", "design")
     p("mirror_scan", 0, "deg", "scan mirror angle away from its 45 deg rest (scan is +/- scan_half / 2)", "design")
     p("mirror_home", -40, "deg", "mirror angle where the magnet faces the hall sensor", "design")
@@ -115,13 +174,9 @@ def rows():
     p("brd_holder_h", 10.0, "mm", "B0152 M12 holder height above the PCB", "est")
     p("brd_holder_w", 14.0, "mm", "B0152 M12 holder body width", "est")
     p("sensor_above_pcb", 1.0, "mm", "sensor surface above the PCB", "est")
-    p("mot_w", 42.3, "mm", "17HM08-1204S body square", "ds")
-    p("mot_len", 21.0, "mm", "17HM08-1204S body length (vendor STEP: 20)", "listing")
-    p("mot_boss_d", 22.0, "mm", "motor pilot boss diameter", "ds")
-    p("mot_boss_h", 2.0, "mm", "motor pilot boss height", "ds")
-    p("mot_shaft_d", 5.0, "mm", "motor shaft diameter (round, no flat)", "ds")
-    p("mot_shaft_len", 17.0, "mm", "motor shaft length past the mounting face", "ds")
-    p("mot_hole_pitch", 31.0, "mm", "NEMA17 screw spacing (M3, 3 mm deep)", "ds")
+    part_no = MOTORS[MOTOR]["label"].split()[1]
+    for alias, value, what, src in MOTORS[MOTOR]["rows"]:
+        p(alias, value, "mm", "%s: %s" % (part_no, what), src)
     p("mirror_l", 25.0, "mm", "scan mirror, along the shaft", "listing")
     p("mirror_w", 20.0, "mm", "scan mirror, across the shaft", "listing")
     p("mirror_t", 2.0, "mm", "scan mirror thickness", "listing")
@@ -156,7 +211,9 @@ def rows():
     p("y_in_pos", 13.0, "mm", "interior extent toward the scene (+Y) from the axis", "design")
     p("y_in_neg", 20.0, "mm", "interior extent away from the scene (-Y) from the axis", "design")
     p("lid_t", 2.5, "mm", "lid plate thickness", "design")
-    p("lid_motor_t", 6.0, "mm", "lid thickness where the stepper bolts on (M3x6 heads flush inside)", "design")
+    p("hub_len", "=max(mot_shaft_len - lid_motor_t; 9)", "mm", "mirror clamp hub length along the shaft", "design")
+    p("pinch_dx", "=max(3.6; (mot_shaft_len - lid_motor_t) / 2)", "mm",
+      "mirror clamp pinch screw, from the hub's motor end (over the shaft, nut trap inside the hub)", "design")
     p("z_floor", 12.0, "mm", "top of the housing floor (interior starts here)", "design")
     p("sweep_r", 12.6, "mm", "clearance radius around the shaft for a full mirror turn", "design")
     p("puck_d", 29.0, "mm", "wrist puck diameter (clears the wrist bracket's lug at r = 15 mm)", "design")

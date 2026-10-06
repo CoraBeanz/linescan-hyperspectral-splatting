@@ -24,6 +24,7 @@ how to lay it on the print bed; build_rig.py exports STLs from these.
 import FreeCAD as App
 
 from .expr import E, Frame, tan
+from .params import MOTOR, MOTORS
 from .vendor import Part, container
 
 
@@ -120,10 +121,11 @@ def shell(doc, parent, P):
     w1 = P.rail_w / 2 + hs * tf + P.fit
     cuts.append(b.wedge("dovetail_slot", (-xi - 1, 0, zb - 0.01), -w0, w0, -w1, w1,
                         hs - h0 + 0.01, xo + xi - 1, axis="yzx"))
-    # two long M3x35 through-bolts: +X face -> floor -> lid -> motor's lower holes
-    zl = P.z_shaft - P.mot_hole_pitch / 2
+    # two long M3x35 through-bolts: +X face -> floor -> lid -> the NEMA 17's
+    # lower holes, or nuts on the lid for a smaller motor
+    zl = P.z_shaft - P.bolt_pitch / 2
     for i, s in enumerate((-1, 1)):
-        y = P.y_shaft + s * P.mot_hole_pitch / 2
+        y = P.y_shaft + s * P.bolt_pitch / 2
         cuts.append(b.cyl("bolt%d" % i, "x", (-xi - 1, y, zl), P.m3_clear / 2, xo + xi + 2))
         cuts.append(b.cyl("bolt_head%d" % i, "x", (xo - 3, y, zl), P.m3_head / 2, 4))
     # hall sensor pocket and lead slot in the +X wall
@@ -151,7 +153,7 @@ def lid(doc, parent, P):
     cont = container(doc, parent, "HSI_lid", "Lid with motor mount (printed)")
     b = Part(doc, cont, "lid")
     plate = b.box("plate", -xi - P.lid_t, ylo, zb, P.lid_t, yhi - ylo, L)
-    half = P.mot_w / 2 + 0.5
+    half = P.lid_pad_half
     pad = b.box("motor_pad", -xi - P.lid_motor_t, P.y_shaft - half, zb, P.lid_motor_t, 2 * half,
                 P.z_shaft + half - zb)
     ears = [b.cyl("ear%d" % i, "x", (-xi - P.lid_t, y, P.z_lid_screw), 3.5, P.lid_t)
@@ -159,15 +161,27 @@ def lid(doc, parent, P):
     body = b.fuse("body", [plate, pad] + ears)
     cuts = [b.box("past_wall", -60, -80, zw_in - P.fit, 120, 160, 100, cf)]
     x_out = -xi - P.lid_motor_t - 0.1
-    cuts.append(b.cyl("shaft_hole", "x", (x_out, P.y_shaft, P.z_shaft), 3.5, P.lid_motor_t + 0.2))
+    cuts.append(b.cyl("shaft_hole", "x", (x_out, P.y_shaft, P.z_shaft), P.mot_shaft_d / 2 + 1,
+                      P.lid_motor_t + 0.2))
     cuts.append(b.cyl("boss_pocket", "x", (x_out, P.y_shaft, P.z_shaft), P.mot_boss_d / 2 + 0.25,
                       P.mot_boss_h + 0.3))
+    into_motor = MOTORS[MOTOR]["bolts_into_motor"]
     for i, (sy, sz) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1))):
         y = P.y_shaft + sy * P.mot_hole_pitch / 2
         z = P.z_shaft + sz * P.mot_hole_pitch / 2
-        cuts.append(b.cyl("mot_hole%d" % i, "x", (x_out, y, z), P.m3_clear / 2, P.lid_motor_t + 0.2))
-        if sz > 0:   # upper pair: M3x6 from inside, heads flush with the inner face
-            cuts.append(b.cyl("mot_cbore%d" % i, "x", (-xi - 3.0, y, z), P.m3_head / 2, 3.1))
+        cuts.append(b.cyl("mot_hole%d" % i, "x", (x_out, y, z), P.mot_screw_clear / 2, P.lid_motor_t + 0.2))
+        # screws from inside, heads flush with the inner face; on the NEMA 17
+        # the lower pair are the long bolts instead
+        if sz > 0 or not into_motor:
+            cuts.append(b.cyl("mot_cbore%d" % i, "x", (-xi - P.mot_head_h, y, z), P.mot_head_d / 2,
+                              P.mot_head_h + 0.1))
+    if not into_motor:
+        # the long bolts pass beside the motor and end in a washer and nut on the
+        # pad (a nut trap would leave half a millimetre at the pad's bottom edge)
+        for i, s in enumerate((-1, 1)):
+            y = P.y_shaft + s * P.bolt_pitch / 2
+            z = P.z_shaft - P.bolt_pitch / 2
+            cuts.append(b.cyl("bolt_hole%d" % i, "x", (x_out, y, z), P.m3_clear / 2, P.lid_motor_t + 0.2))
     for i, y in enumerate((yhi + 1, ylo - 1)):
         cuts.append(b.cyl("ear_hole%d" % i, "x", (-xi - P.lid_t - 0.1, y, P.z_lid_screw), P.m3_clear / 2,
                           P.lid_t + 0.2))
@@ -187,14 +201,13 @@ def rotor(doc, parent, P):
     cont = container(doc, parent, "HSI_rotor", "Mirror clamp (printed)", rotor_frame(P))
     b = Part(doc, cont, "rotor").m("printed_accent")
     x0 = -xi + 0.5
-    tip = -xi - P.lid_motor_t + P.mot_shaft_len       # shaft end, X
-    x1 = tip + 0.5
+    x1 = x0 + P.hub_len                               # at or past the shaft end
     back = P.mirror_e - P.mirror_t                    # mirror back = pad face (local y)
     hub = b.box("hub", x0, -8.5, -5, x1 - x0, back + 8.5, 10)
     pad = b.box("pad", x0, back - 2, -8.5, P.mirror_l / 2 - x0, 2, 17)
     tab = b.box("tab", P.mirror_l / 2 - 3, -P.mag_r - 3, -3.5, 3, back - 2 + P.mag_r + 3, 7)
     solid = b.fuse("body", [hub, pad, tab])
-    xm = (x0 + x1) / 2
+    xm = x0 + P.pinch_dx
     cuts = [
         b.cyl("bore", "x", (x0 - 1, 0, 0), P.mot_shaft_d / 2 + 0.05, x1 - x0 + 1.1),
         b.box("split", x0 - 1, -9, -0.6, x1 - x0 + 2, 9, 1.2),
