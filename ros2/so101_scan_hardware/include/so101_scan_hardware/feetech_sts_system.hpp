@@ -16,6 +16,7 @@
 #pragma once
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -91,6 +92,9 @@ private:
 
   rclcpp::Logger logger_ = rclcpp::get_logger("FeetechStsSystem");
   StsBus bus_;
+  // read() and write() run on the control loop's thread and the lifecycle callbacks on the
+  // controller manager's executor, so a state change by hand could otherwise share the bus
+  std::mutex bus_mutex_;
   std::vector<Joint> joints_;
 
   std::string port_;

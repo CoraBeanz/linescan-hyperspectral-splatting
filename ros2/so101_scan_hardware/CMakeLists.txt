@@ -54,14 +54,14 @@ if(BUILD_TESTING)
 
   # The C++ driver against the Python fake bus
   ament_add_gtest(test_driver_fake_bus test/test_driver_fake_bus.cpp
-    ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
     TIMEOUT 60)
   target_link_libraries(test_driver_fake_bus ${PROJECT_NAME})
   ament_target_dependencies(test_driver_fake_bus lifecycle_msgs)
   target_compile_definitions(test_driver_fake_bus PRIVATE PYTHON_EXECUTABLE="${Python3_EXECUTABLE}")
 
   ament_add_pytest_test(test_sts_tools test/test_sts_tools.py
-    ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
     TIMEOUT 60)
 endif()
 

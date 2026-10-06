@@ -141,11 +141,13 @@ the motors holding the arm where it is; `torque:=false` or that switch lets it g
 3. **Check the calibration with the motors off:**
    `ros2 launch so101_scan_bringup scan_arm.launch.py torque:=false mirror:=fake foxglove:=true`.
    The motors switch off as it starts, so hold the arm. Move it by hand: the model in Foxglove
-   should follow joint for joint. A joint that turns the wrong way needs its sign fixed
-   (`sts_calibrate --joints <name>`).
+   should follow joint for joint. A joint that turns the wrong way needs its sign fixed: stop
+   the launch first (the driver and `sts_calibrate` can't share the servo port), then run
+   `sts_calibrate --joints <name>`.
 4. **First move, slowly:** launch again without `torque:=false`. The motors switch on holding
    the arm where it is; if a joint is well outside its calibrated range, the driver leaves them
-   off and names the joint (recalibrate it, or move it into range with `torque:=false`). Then
+   off and names the joint (stop the launch and recalibrate it, or move it into range with
+   `torque:=false`). Then
    `ros2 run so101_scan_sweep move_arm --plan <plans>/one_view.yaml` moves at 20°/s to the
    view that looks straight down at the table.
 5. **A scan with the simulated mirror:** `ros2 run so101_scan_sweep scan_sweep --plan <plans>/one_view.yaml`.
