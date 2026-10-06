@@ -109,7 +109,9 @@ def rows():
     p("field_half", "=atan(half_line / scene_dist) / 1 deg", "deg", "field half-angle along the slit", "model")
 
     sec("Head layout (head frame: origin at the wrist-roll horn face, +Z away from the wrist, +Y toward the scene)")
-    p("y_axis", 2.0, "mm", "optical axis offset in Y from the roll axis", "design")
+    p("y_shaft", -2.3, "mm",
+      "mirror shaft Y; the long lid bolts go either side of it, clear of the dovetail slot and the -Y face", "design")
+    p("y_axis", "=y_shaft + mirror_e / sqrt(2)", "mm", "optical axis offset in Y from the roll axis", "design")
     p("z_shell", "=puck_top + 0.2", "mm", "underside of the housing", "design")
     p("bolt_pitch", 31.0, "mm", "spacing of the two long lid bolts (the NEMA 17 hole pattern)", "design")
     p("z_shaft", "=(z_shell + z_floor) / 2 + bolt_pitch / 2", "mm",
@@ -120,7 +122,6 @@ def rows():
     p("mirror_scan", 0, "deg", "scan mirror angle away from its 45 deg rest (scan is +/- scan_half / 2)", "design")
     p("mirror_home", -40, "deg", "mirror angle where the magnet faces the hall sensor", "design")
     p("mag_r", 8.0, "mm", "magnet radius from the shaft axis", "design")
-    p("y_shaft", "=y_axis - mirror_e / sqrt(2)", "mm", "shaft axis Y (behind the mirror face)", "design")
     p("z_mirror", "=z_shaft + mirror_e / sqrt(2)", "mm", "mirror centre on the optical axis", "design")
     p("hall_y", "=y_shaft - mag_r * cos(45 + mirror_home)", "mm", "hall sensor Y (magnet at home)", "design")
     p("hall_z", "=z_shaft - mag_r * sin(45 + mirror_home)", "mm", "hall sensor Z (magnet at home)", "design")
@@ -177,14 +178,16 @@ def rows():
     part_no = MOTORS[MOTOR]["label"].split()[1]
     for alias, value, what, src in MOTORS[MOTOR]["rows"]:
         p(alias, value, "mm", "%s: %s" % (part_no, what), src)
-    p("mirror_l", 25.0, "mm", "scan mirror, along the shaft", "listing")
-    p("mirror_w", 20.0, "mm", "scan mirror, across the shaft", "listing")
-    p("mirror_t", 2.0, "mm", "scan mirror thickness", "listing")
-    p("filt_d", 17.0, "mm", "510 nm long-pass disc diameter", "listing")
-    p("filt_t", 1.5, "mm", "long-pass disc thickness", "listing")
-    p("fl_d", 12.7, "mm", "field lens diameter (PCX f=15)", "ds")
-    p("fl_ct", 5.1, "mm", "field lens centre thickness", "ds")
-    p("fl_et", 1.8, "mm", "field lens edge thickness", "ds")
+    p("mirror_l", 20.0, "mm", "scan mirror (Edmund #43-872), along the shaft (+/-0.25)", "listing")
+    p("mirror_w", 20.0, "mm", "scan mirror, across the shaft (+/-0.25)", "listing")
+    p("mirror_t", 3.0, "mm", "scan mirror thickness", "listing")
+    p("filt_d", 12.5, "mm", "long-pass disc (Edmund #54-652, SCHOTT GG-495) diameter", "listing")
+    p("filt_tol", 0.38, "mm", "long-pass disc diameter tolerance (+/-)", "listing")
+    p("filt_t", 3.0, "mm", "long-pass disc thickness (+/-0.2)", "listing")
+    p("fl_d", 12.7, "mm", "field lens (Edmund #49-840, PCX f = 15) diameter", "ds")
+    p("fl_ct", 5.25, "mm", "field lens centre thickness (+/-0.1)", "ds")
+    p("fl_et", 1.94, "mm", "field lens edge thickness", "ds")
+    p("fl_r", 7.75, "mm", "field lens convex radius", "ds")
     p("grat_w", 15.0, "mm", "grating film piece, square", "design")
     p("grat_t", 0.25, "mm", "grating film thickness", "est")
     p("blade_l", 20.0, "mm", "slit blade piece length (along the slit)", "design")
@@ -209,13 +212,19 @@ def rows():
     p("rib_w", 1.6, "mm", "slot rib width", "design")
     p("x_in", 13.5, "mm", "housing interior half-width in X", "design")
     p("y_in_pos", 13.0, "mm", "interior extent toward the scene (+Y) from the axis", "design")
-    p("y_in_neg", 20.0, "mm", "interior extent away from the scene (-Y) from the axis", "design")
+    p("y_in_neg", 20.7, "mm", "interior extent away from the scene (-Y) from the axis", "design")
     p("lid_t", 2.5, "mm", "lid plate thickness", "design")
     p("hub_len", "=max(mot_shaft_len - lid_motor_t; 9)", "mm", "mirror clamp hub length along the shaft", "design")
     p("pinch_dx", "=max(3.6; (mot_shaft_len - lid_motor_t) / 2)", "mm",
       "mirror clamp pinch screw, from the hub's motor end (over the shaft, nut trap inside the hub)", "design")
+    p("pad_x1", 12.5, "mm", "mirror clamp: +X end of the pad and the magnet tab (takes mirrors 20 to 25 mm long)",
+      "design")
+    p("fl_ap_r", 5.0, "mm", "slit block aperture behind the field lens, radius", "design")
+    p("fl_seat", "=fl_ct + 0.1 - fl_r + sqrt(fl_r * fl_r - fl_ap_r * fl_ap_r)", "mm",
+      "field lens pocket depth: convex face on the aperture edge, flat face level with the blades at +0.1 mm CT",
+      "design")
     p("z_floor", 12.0, "mm", "top of the housing floor (interior starts here)", "design")
-    p("sweep_r", 12.6, "mm", "clearance radius around the shaft for a full mirror turn", "design")
+    p("sweep_r", 13.2, "mm", "clearance radius around the shaft for a full mirror turn", "design")
     p("puck_d", 29.0, "mm", "wrist puck diameter (clears the wrist bracket's lug at r = 15 mm)", "design")
     p("puck_top", 5.0, "mm", "puck top face height", "design")
     p("puck_rim", 1.0, "mm", "puck rim depth around the horn disc", "design")

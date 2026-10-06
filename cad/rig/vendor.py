@@ -44,9 +44,9 @@ MASS_G = {
     "HSI_coll_holder": (3.5, "est"),
     "HSI_camera": (14.0, "est"),
     "HSI_pose_camera": (3.0, "ds"),
-    "HSI_mirror": (2.5, "est"),
-    "HSI_filter": (0.9, "est"),
-    "HSI_field_lens": (1.5, "est"),
+    "HSI_mirror": (3.0, "est"),
+    "HSI_filter": (1.0, "est"),
+    "HSI_field_lens": (1.2, "est"),
     "HSI_slit_blades": (1.0, "est"),
     "HSI_grating": (0.1, "est"),
     "HSI_magnet": (0.3, "est"),
@@ -149,7 +149,7 @@ def stepper(doc, parent, P):
 
 def scan_mirror(doc, parent, P, rotor_frame):
     """Front-surface mirror; its frame turns with the shaft (angle in the sheet)."""
-    c = container(doc, parent, "HSI_mirror", "Scan mirror 25 x 20 x 2 mm, front surface", rotor_frame)
+    c = container(doc, parent, "HSI_mirror", "Scan mirror: Edmund #43-872, 20 x 20 x 3 mm", rotor_frame)
     b = Part(doc, c, "mirror")
     b.m("mirror").box("glass", -P.mirror_l / 2, P.mirror_e - P.mirror_t, -P.mirror_w / 2,
                       P.mirror_l, P.mirror_t, P.mirror_w)
@@ -159,13 +159,13 @@ def scan_mirror(doc, parent, P, rotor_frame):
 def magnet(doc, parent, P, rotor_frame):
     c = container(doc, parent, "HSI_magnet", "Home magnet 5 x 2 mm", rotor_frame)
     b = Part(doc, c, "magnet").m("magnet")
-    b.cyl("disc", "x", (P.mirror_l / 2 - P.mag_t, -P.mag_r, 0), P.mag_d / 2, P.mag_t)
+    b.cyl("disc", "x", (P.pad_x1 - P.mag_t, -P.mag_r, 0), P.mag_d / 2, P.mag_t)
     return c
 
 
 def filter_disc(doc, parent, P, z_front):
     f = Frame((0, P.y_axis, z_front))
-    c = container(doc, parent, "HSI_filter", "510 nm long-pass, 17 mm disc", f)
+    c = container(doc, parent, "HSI_filter", "Long-pass filter: Edmund #54-652, GG-495, 12.5 mm", f)
     Part(doc, c, "filter").m("filter_glass").cyl("disc", "z", (0, 0, 0), P.filt_d / 2, P.filt_t)
     return c
 
@@ -173,7 +173,7 @@ def filter_disc(doc, parent, P, z_front):
 def field_lens(doc, parent, P, z_flat):
     """Plano-convex, flat face toward the slit at z_flat; modelled as flat + cone cap."""
     f = Frame((0, P.y_axis, z_flat))
-    c = container(doc, parent, "HSI_field_lens", "Field lens, N-BK7 PCX 12.7 mm, f = 15 mm", f)
+    c = container(doc, parent, "HSI_field_lens", "Field lens: Edmund #49-840, PCX 12.7 mm, f = 15 mm", f)
     b = Part(doc, c, "field_lens").m("glass")
     edge = b.cyl("edge", "z", (0, 0, 0), P.fl_d / 2, P.fl_et)
     dome = b.cone("dome", "z", (0, 0, P.fl_et), P.fl_d / 2, P.fl_d / 2 * 0.25, P.fl_ct - P.fl_et)
