@@ -145,6 +145,7 @@ The line-camera renderer, and a synthetic scan with known poses to develop it ag
 - [ ] **3D:** arm viewpoints, AprilTag poses and the line-camera splat renderer
 
 Details for each step are in the [build order](docs/parts_list_and_design.md#4-build-order).
+The ROS 2 side (arm driver, URDF, mirror bridge, scan sweeps) is in [ros2/](ros2/README.md).
 
 ## Stack
 

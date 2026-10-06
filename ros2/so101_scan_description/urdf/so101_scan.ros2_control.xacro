@@ -1,0 +1,76 @@
+<?xml version="1.0"?>
+<!-- How ros2_control drives the five arm joints: through so101_scan_hardware's STS3215
+     driver, or through ros2_control's mock hardware (commands become states instantly)
+     for running without the arm. The scan mirror is not here: the ESP32 drives it, and
+     scan_mirror_bridge publishes its angle. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="arm_joints" value="${['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll']}"/>
+
+  <xacro:macro name="so101_scan_joint" params="name mock calibration">
+    <joint name="${name}">
+      <xacro:unless value="${mock}">
+        <xacro:property name="c" value="${calibration['joints'][name]}"/>
+        <param name="id">${c['id']}</param>
+        <param name="zero_ticks">${c['zero_ticks']}</param>
+        <param name="sign">${c['sign']}</param>
+        <param name="min_ticks">${c['min_ticks']}</param>
+        <param name="max_ticks">${c['max_ticks']}</param>
+      </xacro:unless>
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+      <xacro:unless value="${mock}">
+        <state_interface name="load"/>
+        <state_interface name="voltage"/>
+        <state_interface name="temperature"/>
+      </xacro:unless>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="so101_scan_joints" params="names mock calibration">
+    <xacro:if value="${len(names) > 0}">
+      <xacro:so101_scan_joint name="${names[0]}" mock="${mock}" calibration="${calibration}"/>
+      <xacro:so101_scan_joints names="${names[1:]}" mock="${mock}" calibration="${calibration}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- calibration_file: YAML from `ros2 run so101_scan_hardware sts_calibrate`; not needed with mock hardware.
+       torque: false switches the motors off and only reads, so the arm can be moved by hand (hold it:
+       it goes limp). -->
+  <xacro:macro name="so101_scan_ros2_control" params="use_mock_hardware port calibration_file torque">
+    <xacro:property name="mock" value="${use_mock_hardware in (True, 'true', 'True', '1')}"/>
+    <xacro:if value="${not mock and not calibration_file}">
+      ${xacro.fatal('so101_scan: the real arm needs calibration_file:=... (from sts_calibrate); '
+                    'or use use_mock_hardware:=true')}
+    </xacro:if>
+    <xacro:property name="calibration" value="${xacro.load_yaml(calibration_file) if not mock else None}"/>
+    <ros2_control name="so101_scan_arm" type="system">
+      <hardware>
+        <xacro:if value="${mock}">
+          <plugin>mock_components/GenericSystem</plugin>
+        </xacro:if>
+        <xacro:unless value="${mock}">
+          <plugin>so101_scan_hardware/FeetechStsSystem</plugin>
+          <param name="port">${port}</param>
+          <param name="baud_rate">1000000</param>
+          <param name="timeout_ms">10</param>
+          <param name="torque">${'true' if torque in (True, 'true', 'True', '1') else 'false'}</param>
+          <!-- false: stopping the launch leaves the servos holding the arm instead of dropping it -->
+          <param name="disable_torque_on_deactivate">false</param>
+          <!-- the servos' own acceleration limit; 254 is the fastest, as LeRobot sets it -->
+          <param name="acceleration">254</param>
+          <!-- the driver never moves a joint faster than this, whatever a controller asks -->
+          <param name="max_velocity">2.0</param>
+          <!-- EEPROM values LeRobot uses for the SO-101, written only when they differ -->
+          <param name="return_delay_time">0</param>
+          <param name="p_coefficient">16</param>
+          <param name="d_coefficient">32</param>
+          <param name="i_coefficient">0</param>
+        </xacro:unless>
+      </hardware>
+      <xacro:so101_scan_joints names="${arm_joints}" mock="${mock}" calibration="${calibration}"/>
+    </ros2_control>
+  </xacro:macro>
+</robot>

@@ -1,0 +1,26 @@
+# Views of one spot 26 cm in front of the base: straight down, then 25 deg off vertical from the
+# arm's right (az 90, looking toward +Y), from beyond the spot (az 180, looking back at the base)
+# and from the arm's left (az 270). The fifth, from the base side (az 0), is out of reach. Written by
+#   ros2 run so101_scan_sweep make_plan --target 0.26 0 -0.0024 --tilts 0 25 --azimuths 0 90 180 270 --name ring
+# slit_heading_deg says which way the slit runs across the table (base_link compass angle).
+name: ring
+target_m: [0.26, 0.0, -0.0024]
+move: {max_joint_speed_deg: 30.0, min_move_s: 1.0, settle_s: 0.5}
+sweep: {start_angle_deg: -6.0, steps_per_line: 2, n_lines: 107, line_period_s: 0.0333}
+viewpoints:
+- name: down
+  joints_deg: {shoulder_pan: -0.05, shoulder_lift: -8.98, elbow_flex: 60.81, wrist_flex: -51.83,
+    wrist_roll: -87.21}
+  slit_heading_deg: -90.0
+- name: tilt25_az90
+  joints_deg: {shoulder_pan: 14.08, shoulder_lift: -4.79, elbow_flex: 57.13, wrist_flex: -45.87,
+    wrist_roll: -111.41}
+  slit_heading_deg: -107.0
+- name: tilt25_az180
+  joints_deg: {shoulder_pan: -0.04, shoulder_lift: 8.78, elbow_flex: 23.28, wrist_flex: -7.06,
+    wrist_roll: -87.23}
+  slit_heading_deg: -90.0
+- name: tilt25_az270
+  joints_deg: {shoulder_pan: -14.17, shoulder_lift: -4.82, elbow_flex: 57.12, wrist_flex: -45.79,
+    wrist_roll: -63.02}
+  slit_heading_deg: -72.9

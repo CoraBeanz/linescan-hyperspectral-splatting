@@ -1,0 +1,6 @@
+# Turn the scan mirror to an angle and wait until it gets there (between sweeps, e.g. to aim).
+float64 angle          # rad, same convention as ScanLine.angle; rounded to a whole microstep
+---
+bool success
+string message         # why not, on failure (not homed, busy, out of range, timeout)
+float64 angle          # where it stopped

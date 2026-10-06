@@ -1,0 +1,13 @@
+# scan_mirror_bridge. Angles in rad; 0 is the mirror's 45 deg rest, + turns the view from the
+# head's +Y toward +Z. Microsteps per turn come from the ESP32 (its INFO reply), and the rest of
+# the mirror's settings live in the firmware (CFG, SAVE): the hall sensor's angle (home_pos),
+# which way the motor turns (dir_inv), speeds, currents and the settle time.
+scan_mirror:
+  ros__parameters:
+    port: /dev/scan_mirror
+    baud: 921600
+    # the bridge refuses moves and sweeps outside these
+    min_angle: -0.8
+    max_angle: 0.8
+    ping_period: 1.0
+    status_period: 0.1

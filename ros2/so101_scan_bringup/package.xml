@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>so101_scan_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Launch files and controller settings that bring up the SO-101 scan arm: the URDF,
+    ros2_control with the STS3215 driver (or mock hardware), the scan mirror bridge, and
+    optionally Foxglove or RViz.
+  </description>
+  <maintainer email="vincentryanbaker@gmail.com">CoraBeanz</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>so101_scan_description</exec_depend>
+  <exec_depend>so101_scan_hardware</exec_depend>
+  <exec_depend>so101_scan_sweep</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <!-- optional, only with foxglove:=true -->
+  <exec_depend>foxglove_bridge</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>control_msgs</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>tf2_ros_py</test_depend>
+  <test_depend>trajectory_msgs</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

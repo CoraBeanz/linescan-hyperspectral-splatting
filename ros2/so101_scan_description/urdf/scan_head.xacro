@@ -1,0 +1,166 @@
+<?xml version="1.0"?>
+<!-- The hyperspectral line-scan head, bolted to the wrist-roll horn in place of the gripper.
+     Numbers come from the CAD model through scan_head_params.xacro; see cad/README.md for the
+     head itself.
+
+     Frames (all children of scan_head_link):
+       scan_head_link              head frame from the CAD: origin on the horn face, +Z away from
+                                   the wrist, +Y toward the scene, X along the slit and mirror shaft
+       scan_mirror_link            turns with scan_mirror_joint about the shaft (+X). Joint zero is
+                                   the 45 deg rest, where the instrument looks straight out along +Y
+       spectrograph_optical_frame  the objective as built, looking into the mirror (-Z of the head)
+       line_camera_optical_frame   the objective as the scene sees it, reflected in the mirror: a
+                                   pinhole for one scan line. z looks at the scene, x runs along the
+                                   slit. A reflection flips handedness, so y is flipped to keep the
+                                   frame right-handed; pixel order along the slit is unchanged.
+                                   It moves with the mirror through a mimic joint (below).
+       scan_line_frame             centre of the in-focus scan line, scene_distance along z
+       pose_camera_optical_frame   the Pi NoIR v2 that reads the AprilTag board (nominal; hand-eye
+                                   calibration replaces it)
+
+     How the reflected objective follows the mirror. With the shaft at s, the mirror face e in
+     front of it along its normal n (n = n0 turned by the joint angle t), and the objective at p,
+     reflecting p in the mirror gives
+         p'(t) = s + R(t) 2e n0 + R(2t) Refl(n0) (p - s)
+     and the reflected frame turns by R(2t): the view moves twice as fast as the mirror. That is
+     a two-joint chain: scan_mirror_joint (t), an offset of 2e along the mirror normal, a second
+     joint that mimics the first (another t, 2t in all), then a fixed offset Refl(n0)(p - s). -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find so101_scan_description)/urdf/scan_head_params.xacro"/>
+
+  <material name="scan_head_printed"><color rgba="0.16 0.16 0.17 1.0"/></material>
+  <material name="scan_head_dark"><color rgba="0.08 0.08 0.09 1.0"/></material>
+  <material name="scan_head_metal"><color rgba="0.62 0.63 0.65 1.0"/></material>
+  <material name="scan_head_glass"><color rgba="0.70 0.85 0.90 0.6"/></material>
+  <material name="scan_head_filter"><color rgba="0.85 0.35 0.10 0.8"/></material>
+  <material name="scan_head_pcb"><color rgba="0.10 0.40 0.20 1.0"/></material>
+  <material name="scan_head_accent"><color rgba="0.95 0.45 0.10 1.0"/></material>
+  <material name="scan_head_mirror"><color rgba="0.92 0.93 0.95 1.0"/></material>
+  <material name="scan_head_view"><color rgba="0.20 0.90 1.00 0.5"/></material>
+
+  <xacro:macro name="scan_head_mesh" params="name material">
+    <visual>
+      <geometry>
+        <mesh filename="package://so101_scan_description/meshes/scan_head/${name}.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="${material}"/>
+    </visual>
+  </xacro:macro>
+
+  <xacro:macro name="scan_head" params="parent">
+    <!-- wrist_roll_link's -Z points away from the wrist, so the head frame is that frame
+         turned 180 deg about X, on the horn face -->
+    <joint name="scan_head_mount" type="fixed">
+      <parent link="${parent}"/>
+      <child link="scan_head_link"/>
+      <origin xyz="0 0 ${head_mount_z}" rpy="${pi} 0 0"/>
+    </joint>
+
+    <link name="scan_head_link">
+      <inertial>
+        <origin xyz="${head_com_x} ${head_com_y} ${head_com_z}" rpy="0 0 0"/>
+        <mass value="${head_mass}"/>
+        <inertia ixx="${head_ixx}" ixy="0" ixz="0" iyy="${head_iyy}" iyz="0" izz="${head_izz}"/>
+      </inertial>
+      <xacro:scan_head_mesh name="head_printed" material="scan_head_printed"/>
+      <xacro:scan_head_mesh name="head_dark" material="scan_head_dark"/>
+      <xacro:scan_head_mesh name="head_metal" material="scan_head_metal"/>
+      <xacro:scan_head_mesh name="head_glass" material="scan_head_glass"/>
+      <xacro:scan_head_mesh name="head_filter" material="scan_head_filter"/>
+      <xacro:scan_head_mesh name="head_pcb" material="scan_head_pcb"/>
+      <collision>
+        <!-- the housing's envelope, enough for planning around it -->
+        <origin xyz="${head_com_x} ${head_com_y} ${head_com_z}" rpy="0 0 0"/>
+        <geometry><box size="0.066 0.053 0.134"/></geometry>
+      </collision>
+    </link>
+
+    <!-- The scan mirror. The ESP32 drives it; scan_mirror_bridge publishes its angle on
+         /joint_states. The clamp clears a full turn, so the limits only bound the slider. -->
+    <joint name="scan_mirror_joint" type="revolute">
+      <parent link="scan_head_link"/>
+      <child link="scan_mirror_link"/>
+      <origin xyz="0 ${mirror_shaft_y} ${mirror_shaft_z}" rpy="${mirror_rest} 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${-pi}" upper="${pi}" effort="0.014" velocity="20.0"/>
+    </joint>
+
+    <link name="scan_mirror_link">
+      <xacro:scan_head_mesh name="mirror_clamp" material="scan_head_accent"/>
+      <xacro:scan_head_mesh name="mirror_glass" material="scan_head_mirror"/>
+    </link>
+
+    <!-- front surface of the mirror, z along its normal -->
+    <joint name="scan_mirror_face_joint" type="fixed">
+      <parent link="scan_mirror_link"/>
+      <child link="scan_mirror_face"/>
+      <origin xyz="0 ${mirror_face_offset} 0" rpy="${-pi/2} 0 0"/>
+    </joint>
+    <link name="scan_mirror_face"/>
+
+    <!-- the objective as built, looking into the mirror: z = -Z of the head, x along the slit -->
+    <joint name="spectrograph_optical_joint" type="fixed">
+      <parent link="scan_head_link"/>
+      <child link="spectrograph_optical_frame"/>
+      <origin xyz="0 ${objective_y} ${objective_z}" rpy="${pi} 0 0"/>
+    </joint>
+    <link name="spectrograph_optical_frame"/>
+
+    <!-- the objective reflected in the mirror (see the note at the top) -->
+    <xacro:property name="obj_dy" value="${objective_y - mirror_shaft_y}"/>
+    <xacro:property name="obj_dz" value="${objective_z - mirror_shaft_z}"/>
+    <xacro:property name="obj_dn" value="${obj_dy * cos(mirror_rest) + obj_dz * sin(mirror_rest)}"/>
+    <joint name="line_camera_fold_joint" type="revolute">
+      <parent link="scan_mirror_link"/>
+      <child link="line_camera_fold_link"/>
+      <origin xyz="0 ${2 * mirror_face_offset} 0" rpy="${-mirror_rest} 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${-pi}" upper="${pi}" effort="0" velocity="20.0"/>
+      <mimic joint="scan_mirror_joint" multiplier="1" offset="0"/>
+    </joint>
+    <link name="line_camera_fold_link"/>
+
+    <joint name="line_camera_optical_joint" type="fixed">
+      <parent link="line_camera_fold_link"/>
+      <child link="line_camera_optical_frame"/>
+      <origin xyz="0 ${obj_dy - 2 * obj_dn * cos(mirror_rest)} ${obj_dz - 2 * obj_dn * sin(mirror_rest)}"
+              rpy="${2 * mirror_rest + pi} 0 0"/>
+    </joint>
+    <!-- no collision: the thin cylinder only shows in RViz where the instrument looks -->
+    <link name="line_camera_optical_frame">
+      <visual>
+        <origin xyz="0 0 ${scene_distance / 2}" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.0004" length="${scene_distance}"/></geometry>
+        <material name="scan_head_view"/>
+      </visual>
+    </link>
+
+    <joint name="scan_line_joint" type="fixed">
+      <parent link="line_camera_optical_frame"/>
+      <child link="scan_line_frame"/>
+      <origin xyz="0 0 ${scene_distance}" rpy="0 0 0"/>
+    </joint>
+    <!-- the in-focus scan line on the scene, x along the slit (shown in RViz, no collision) -->
+    <link name="scan_line_frame">
+      <visual>
+        <geometry><box size="${2 * scan_line_half_length} 0.0015 0.0015"/></geometry>
+        <material name="scan_head_view"/>
+      </visual>
+    </link>
+
+    <!-- pose camera: board frame from the CAD, optical frame on the lens -->
+    <joint name="pose_camera_joint" type="fixed">
+      <parent link="scan_head_link"/>
+      <child link="pose_camera_link"/>
+      <origin xyz="${pose_camera_x} ${pose_camera_y} ${pose_camera_z}" rpy="${pose_camera_roll} 0 0"/>
+    </joint>
+    <link name="pose_camera_link"/>
+
+    <joint name="pose_camera_optical_joint" type="fixed">
+      <parent link="pose_camera_link"/>
+      <child link="pose_camera_optical_frame"/>
+      <origin xyz="0 0 ${pose_camera_lens}" rpy="0 0 0"/>
+    </joint>
+    <link name="pose_camera_optical_frame"/>
+  </xacro:macro>
+</robot>
