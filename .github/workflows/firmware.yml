@@ -1,4 +1,5 @@
-# Scan-mirror firmware: unit tests on a simulated rig, then the ESP32 build.
+# Scan-mirror firmware: unit tests on a simulated rig, then the ESP32 build, and
+# the same tests again under the address and undefined-behaviour sanitizers.
 name: firmware
 
 on:
@@ -9,8 +10,16 @@ on:
     paths: ["firmware/**", ".github/workflows/firmware.yml"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   firmware:
+    name: Native tests and ESP32 build (PlatformIO)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -32,3 +41,37 @@ jobs:
         run: pio run -e esp32dev
       - name: Check the host tool
         run: python -m py_compile tools/mirrorctl.py && python tools/mirrorctl.py --help > /dev/null
+
+  sanitizers:
+    # The unit tests built with plain g++ and AddressSanitizer + UndefinedBehavior-
+    # Sanitizer, which stop on out-of-bounds access, overflow, use after free and
+    # leaks that the normal build lets pass. -Wmaybe-uninitialized is off because
+    # GCC raises it falsely on sanitized code.
+    name: Native tests under ASan and UBSan
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch Unity
+        run: |
+          mkdir -p "$RUNNER_TEMP/unity"
+          for f in unity.c unity.h unity_internals.h; do
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/unity/$f" \
+              "https://raw.githubusercontent.com/ThrowTheSwitch/Unity/v2.6.1/src/$f"
+          done
+      - name: Build and run each test
+        run: |
+          flags=(-g -O1 -fno-omit-frame-pointer "-fsanitize=address,undefined" -fno-sanitize-recover=all
+                 -DUNITY_INCLUDE_DOUBLE -DUNITY_SUPPORT_64)
+          gcc "${flags[@]}" -c "$RUNNER_TEMP/unity/unity.c" -o "$RUNNER_TEMP/unity.o"
+          for t in test/test_*/; do
+            name=$(basename "$t")
+            echo "::group::$name"
+            g++ -std=gnu++17 -Wall -Wextra -Wno-maybe-uninitialized "${flags[@]}" \
+                -I"$RUNNER_TEMP/unity" -Ilib/scanmirror/src -Iinclude -Itest \
+                "$t/test_main.cpp" lib/scanmirror/src/*.cpp "$RUNNER_TEMP/unity.o" -o "$RUNNER_TEMP/$name"
+            "$RUNNER_TEMP/$name"
+            echo "::endgroup::"
+          done

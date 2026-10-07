@@ -1,0 +1,44 @@
+# Jetson Nano build: splat with the Nano's toolchain, the way jetson/check.sh
+# checks it from a PC. cuda builds it on Ubuntu 18.04 with CUDA 10.2 and gcc 7.5
+# for sm_53, checks that every kernel fits the Nano's registers and shared
+# memory, and runs the tests (the GPU ones skip: the runners have no GPU). arm64
+# builds and tests the CPU side on arm64 Ubuntu 18.04, natively on GitHub's arm64
+# runner, which public repositories get for free.
+name: jetson
+
+on:
+  push:
+    branches: [main]
+    paths: ["jetson/**", "splat/**", ".github/workflows/jetson.yml"]
+  pull_request:
+    paths: ["jetson/**", "splat/**", ".github/workflows/jetson.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  cuda:
+    name: CUDA 10.2 and gcc 7.5 for sm_53
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Make room for the CUDA 10.2 image
+        # The toolkit comes out of a 4.6 GB PyTorch image (jetson/check/cuda102.Dockerfile).
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v4
+      - name: Build, check the kernels and run the tests
+        run: jetson/check.sh cuda
+
+  arm64:
+    name: arm64 Ubuntu 18.04, CPU build and tests
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the tests
+        run: jetson/check.sh arm64
