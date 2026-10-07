@@ -134,6 +134,7 @@ Published hyperspectral splatting, such as [HyperGS](https://openaccess.thecvf.c
 Splatting through a non-pinhole camera has precedent in satellite imagery ([RPC-GS](https://arxiv.org/abs/2606.06690)), and close-range pushbroom cameras have been calibrated for plant phenotyping ([Behmann et al. 2015](https://doi.org/10.1016/j.isprsjprs.2015.05.010)). This project puts the two together on hobby hardware.
 
 The line-camera renderer, and a synthetic scan with known poses to develop it against, are in [`splat/`](splat/).
+A browser viewer for the trained splats, one wavelength at a time with the spectrum of any point, is in [`viewer/`](viewer/).
 
 ## Roadmap
 

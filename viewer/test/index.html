@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Viewer checks</title>
+<style>
+  body { margin: 24px; background: #0b0d10; color: #e8e6e1; font: 14px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  ul { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 4px; }
+  .pass { color: #8fd19e; }
+  .fail { color: #ff9b8f; }
+  canvas.gpu { display: block; margin-top: 16px; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<h1>Viewer checks against the C++ renderer</h1>
+<div id="summary">Running…</div>
+<ul id="results"></ul>
+<script type="module" src="tests.js"></script>
+</body>
+</html>

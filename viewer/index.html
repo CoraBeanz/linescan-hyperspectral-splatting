@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hyperspectral Splat Viewer</title>
+<meta name="description" content="A Gaussian splat trained from pushbroom spectrograph scan lines, 46 bands from 500 to 950 nm, viewed one wavelength at a time.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&family=Martian+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one screen. The rendered image fills the left like a lab monitor;
+   the instrument's controls run down a panel on the right, which drops below
+   the image on narrow screens. Dark on purpose: colors are judged against a
+   neutral dark surround, as in imaging software. */
+:root {
+  --ground: #0b0d10;
+  --panel: #16191e;
+  --raise: #1f242b;
+  --line: #2a3038;
+  --ink: #e8e6e1;
+  --ink-2: #aeb2b8;
+  --ink-3: #80868f;
+  --accent: #d9d4c7;
+  --focus: #8ab8ff;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "Martian Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 15px/1.45 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+button, select, input { font: inherit; color: inherit; }
+a { color: var(--ink); text-underline-offset: 3px; text-decoration-color: var(--ink-3); }
+a:hover { text-decoration-color: var(--ink); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  height: 100%;
+}
+
+/* The image */
+.stage { position: relative; min-width: 0; overflow: hidden; background: var(--ground); }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#view { cursor: grab; touch-action: none; }
+#view:active { cursor: grabbing; }
+#view:focus-visible { outline-offset: -3px; }
+#overlay { pointer-events: none; }
+.readout {
+  position: absolute; left: 20px; top: 18px;
+  display: grid; gap: 6px; max-width: min(360px, calc(100% - 40px));
+  padding: 12px 14px 12px; border-radius: 6px;
+  background: color-mix(in srgb, var(--ground) 72%, transparent);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+.kicker {
+  font: 600 12px/1 var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3);
+}
+.readout-main { font: 500 22px/1.15 var(--font-display); letter-spacing: 0.01em; }
+.readout-main.number { font: 500 34px/1.05 var(--font-data); letter-spacing: -0.02em; }
+.readout-main .unit { font-size: 0.5em; color: var(--ink-2); margin-left: 0.35em; letter-spacing: 0; }
+.swatch { height: 4px; width: 132px; border-radius: 2px; background: var(--accent); }
+.scale { display: grid; gap: 3px; width: 200px; }
+.scale-bar { height: 8px; border-radius: 2px; }
+.scale-ticks { display: flex; justify-content: space-between; font: 11px/1 var(--font-data); color: var(--ink-3); }
+.caption { font-size: 13px; color: var(--ink-2); }
+.hint {
+  position: absolute; left: 20px; bottom: 14px; right: 20px; margin: 0;
+  font-size: 13px; color: var(--ink-3); pointer-events: none; text-shadow: 0 1px 3px rgb(0 0 0 / 0.9);
+}
+.status {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  max-width: min(440px, calc(100% - 40px)); padding: 14px 18px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--ink-2); text-align: center;
+}
+.toast {
+  position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%);
+  padding: 8px 14px; border-radius: 6px; background: var(--raise); color: var(--ink); font-size: 14px;
+  pointer-events: none;
+}
+.drop {
+  position: absolute; inset: 12px; display: grid; place-items: center;
+  border: 2px dashed var(--ink-3); border-radius: 10px;
+  background: color-mix(in srgb, var(--ground) 80%, transparent);
+  font: 600 18px/1.2 var(--font-display); letter-spacing: 0.04em; color: var(--ink);
+}
+
+/* The instrument panel */
+.panel {
+  display: flex; flex-direction: column; gap: 22px; min-width: 0;
+  overflow-y: auto; padding: 22px 22px 28px;
+  background: var(--panel); border-left: 1px solid var(--line);
+}
+h1 {
+  margin: 0; font: 600 26px/1.05 var(--font-display); letter-spacing: 0.01em; text-wrap: balance;
+}
+.lede { margin: 8px 0 0; color: var(--ink-2); font-size: 14px; }
+h2, legend, .label {
+  margin: 0; padding: 0;
+  font: 600 12px/1 var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3);
+}
+section { display: grid; gap: 10px; min-width: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.stats { margin: 0; font: 12px/1.5 var(--font-data); color: var(--ink-3); }
+select, .button {
+  min-height: 34px; padding: 6px 12px; border-radius: 6px;
+  background: var(--raise); border: 1px solid var(--line); cursor: pointer;
+}
+select { flex: 1 1 160px; min-width: 0; }
+.button:hover, select:hover { border-color: var(--ink-3); }
+.button.quiet { background: none; }
+
+.modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; border: 0; margin: 0; padding: 0; }
+.modes legend { margin-bottom: 10px; }
+.modes input { position: absolute; opacity: 0; pointer-events: none; }
+.modes label {
+  display: block; padding: 8px 10px; border-radius: 6px; cursor: pointer;
+  background: var(--raise); border: 1px solid var(--line);
+  font: 500 15px/1.2 var(--font-display); letter-spacing: 0.02em; color: var(--ink-2);
+}
+.modes label:hover { color: var(--ink); border-color: var(--ink-3); }
+.modes input:checked + label { color: var(--ink); border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+.modes input:focus-visible + label { outline: 2px solid var(--focus); outline-offset: 2px; }
+.note { margin: 0; font-size: 14px; color: var(--ink-2); }
+
+.control { display: grid; gap: 6px; }
+.control-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+output { font: 13px/1 var(--font-data); color: var(--ink); }
+input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 28px; margin: 0; background: none; cursor: pointer;
+  --track: var(--line);
+}
+input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--track); }
+input[type="range"]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--track); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 22px; margin-top: -8px; border-radius: 4px;
+  background: var(--ink); border: 3px solid var(--panel); box-shadow: 0 0 0 1px var(--ink-3);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 10px; height: 16px; border-radius: 4px; background: var(--ink); border: 3px solid var(--panel); box-shadow: 0 0 0 1px var(--ink-3);
+}
+input[type="range"].spectral { height: 34px; }
+input[type="range"].spectral::-webkit-slider-runnable-track { height: 12px; border-radius: 2px; }
+input[type="range"].spectral::-moz-range-track { height: 12px; border-radius: 2px; }
+input[type="range"].spectral::-webkit-slider-thumb { margin-top: -5px; }
+.ticks { display: flex; justify-content: space-between; font: 11px/1 var(--font-data); color: var(--ink-3); margin-top: -2px; }
+.check { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; color: var(--ink-2); }
+.check input { width: 16px; height: 16px; accent-color: var(--ink); margin: 0; }
+
+/* Spectra */
+.chart { position: relative; min-width: 0; }
+.chart-svg { display: block; width: 100%; height: auto; cursor: crosshair; }
+.chart-grid { stroke: #232830; stroke-width: 1; }
+.chart-axis { stroke: #3a414b; stroke-width: 1; }
+.chart-tick { fill: var(--ink-3); font: 11px var(--font-data); }
+.chart-note { fill: var(--ink-3); font: 11px var(--font-body); }
+.chart-empty { fill: var(--ink-3); font: 14px var(--font-body); }
+.chart-band { fill: var(--ink); fill-opacity: 0.08; }
+.chart-marker { stroke: var(--ink-2); stroke-width: 1; }
+.chart-marker-label { fill: var(--ink-2); font: 11px var(--font-data); }
+.chart-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dot { stroke: var(--panel); stroke-width: 2; }
+.chart-end { fill: var(--ink-2); font: 11px var(--font-data); }
+.chart-cross { stroke: var(--ink-2); stroke-width: 1; }
+.chart-tip {
+  position: absolute; top: 4px; z-index: 2; min-width: 150px; padding: 8px 10px; border-radius: 6px;
+  background: var(--raise); border: 1px solid var(--line); box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+  font-size: 13px; color: var(--ink-2); pointer-events: none;
+}
+.chart-tip-head { font: 12px/1.6 var(--font-data); color: var(--ink-3); }
+.chart-tip-row { display: grid; grid-template-columns: 14px auto 1fr; gap: 8px; align-items: center; line-height: 1.6; }
+.chart-tip-row strong { font: 500 13px var(--font-data); color: var(--ink); }
+.line-key { display: block; width: 14px; height: 2px; border-radius: 1px; }
+.legend { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.legend li {
+  display: grid; grid-template-columns: 18px 1fr auto auto; gap: 10px; align-items: center;
+  padding: 6px 4px 6px 8px; border-radius: 6px; background: var(--raise);
+}
+.legend .line-key { width: 18px; height: 3px; }
+.legend .name { min-width: 0; overflow-wrap: anywhere; }
+.legend .num { color: var(--ink-3); font: 12px var(--font-data); margin-right: 4px; }
+.legend .value { font: 13px var(--font-data); color: var(--ink); font-variant-numeric: tabular-nums; }
+.legend button {
+  width: 28px; height: 28px; border: 0; border-radius: 4px; background: none; color: var(--ink-3); cursor: pointer; font-size: 18px; line-height: 1;
+}
+.legend button:hover { color: var(--ink); background: var(--line); }
+details { color: var(--ink-2); font-size: 14px; }
+summary { cursor: pointer; }
+.table-wrap { overflow-x: auto; margin-top: 8px; max-height: 280px; overflow-y: auto; }
+table { border-collapse: collapse; font: 12px/1.5 var(--font-data); font-variant-numeric: tabular-nums; width: 100%; }
+th, td { padding: 2px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--ink-3); font-weight: 400; position: sticky; top: 0; background: var(--panel); }
+
+.about { font-size: 14px; color: var(--ink-2); display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 18px; }
+.about p { margin: 0; }
+code { font: 12px var(--font-data); color: var(--ink); }
+
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .stage { height: 62svh; min-height: 320px; }
+  .panel { overflow: visible; border-left: 0; border-top: 1px solid var(--line); padding: 20px 16px 28px; }
+  .readout { left: 12px; top: 12px; padding: 10px 12px; }
+  .readout-main.number { font-size: 28px; }
+  .hint { left: 12px; right: 12px; bottom: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="stage" id="stage">
+    <canvas id="view" tabindex="0" aria-label="The rendered splat. Drag or use the arrow keys to turn it, scroll or use plus and minus to zoom, click to sample a spectrum."></canvas>
+    <canvas id="overlay" aria-hidden="true"></canvas>
+    <div class="readout" id="readout">
+      <span class="kicker" id="readout-kicker">Showing</span>
+      <div class="readout-main" id="readout-main">True color</div>
+      <div class="swatch" id="readout-swatch" hidden></div>
+      <div class="scale" id="readout-scale" hidden>
+        <div class="scale-bar" id="readout-scale-bar"></div>
+        <div class="scale-ticks" id="readout-scale-ticks"></div>
+      </div>
+      <div class="caption" id="readout-caption"></div>
+    </div>
+    <p class="hint" id="hint">Drag to turn · Shift-drag to pan · Scroll to zoom · Click to sample a spectrum</p>
+    <div class="toast" id="toast" role="status" hidden></div>
+    <div class="status" id="status" role="status">Loading the sample splat…</div>
+    <div class="drop" id="drop" hidden>Drop a .lsplat file to view it</div>
+  </main>
+
+  <aside class="panel" aria-label="Controls">
+    <header>
+      <h1>Hyperspectral Splat Viewer</h1>
+      <p class="lede">A 3D Gaussian splat trained straight from pushbroom spectrograph scan lines. Every Gaussian carries a spectrum, so the scene can be seen at any wavelength the spectrograph recorded: 500 to 950&nbsp;nm on this rig.</p>
+    </header>
+
+    <section aria-labelledby="scene-label">
+      <h2 id="scene-label">Scene</h2>
+      <div class="row">
+        <select id="scene-select" aria-labelledby="scene-label"></select>
+        <button class="button" id="open-file" type="button">Open file…</button>
+        <input type="file" id="file-input" accept=".lsplat,.gz" hidden>
+      </div>
+      <p class="stats" id="stats"></p>
+    </section>
+
+    <section>
+      <fieldset class="modes" id="modes">
+        <legend>Show</legend>
+        <input type="radio" name="mode" id="mode-true" value="true" checked><label for="mode-true">True color</label>
+        <input type="radio" name="mode" id="mode-band" value="band"><label for="mode-band">Wavelength</label>
+        <input type="radio" name="mode" id="mode-cir" value="cir"><label for="mode-cir">Color infrared</label>
+        <input type="radio" name="mode" id="mode-index" value="index"><label for="mode-index">Band index</label>
+      </fieldset>
+      <p class="note" id="mode-note"></p>
+
+      <div class="control" id="ctl-wavelength">
+        <div class="control-head"><label class="label" for="wavelength">Wavelength</label><output id="wavelength-out" for="wavelength"></output></div>
+        <input type="range" class="spectral" id="wavelength" min="500" max="950" step="1" value="800">
+        <div class="ticks" aria-hidden="true"><span>500</span><span>600</span><span>700</span><span>800</span><span>900</span></div>
+      </div>
+      <div class="control" id="ctl-bandwidth">
+        <div class="control-head"><label class="label" for="bandwidth">Band width</label><output id="bandwidth-out" for="bandwidth"></output></div>
+        <input type="range" id="bandwidth" min="0" max="100" step="5" value="0">
+      </div>
+      <div class="control" id="ctl-index-a">
+        <div class="control-head"><label class="label" for="index-a">Band A</label><output id="index-a-out" for="index-a"></output></div>
+        <input type="range" class="spectral" id="index-a" min="500" max="950" step="1" value="800">
+      </div>
+      <div class="control" id="ctl-index-b">
+        <div class="control-head"><label class="label" for="index-b">Band B</label><output id="index-b-out" for="index-b"></output></div>
+        <input type="range" class="spectral" id="index-b" min="500" max="950" step="1" value="670">
+      </div>
+      <div class="control" id="ctl-exposure">
+        <div class="control-head"><label class="label" for="exposure">Exposure</label><output id="exposure-out" for="exposure"></output></div>
+        <input type="range" id="exposure" min="-2" max="2" step="0.25" value="0">
+      </div>
+      <div class="row">
+        <button class="button" id="play" type="button">Sweep 500 to 950 nm</button>
+        <button class="button quiet" id="reset-view" type="button">Reset view</button>
+        <label class="check"><input type="checkbox" id="show-sweeps"> Scan sweeps</label>
+      </div>
+    </section>
+
+    <section aria-labelledby="spectra-label">
+      <div class="row" style="justify-content: space-between">
+        <h2 id="spectra-label">Spectra</h2>
+        <button class="button quiet" id="clear-probes" type="button">Clear</button>
+      </div>
+      <div class="chart" id="chart"></div>
+      <ul class="legend" id="legend"></ul>
+      <details>
+        <summary>Values by band</summary>
+        <div class="table-wrap"><table id="values"></table></div>
+      </details>
+    </section>
+
+    <footer class="about">
+      <p id="about-sample"></p>
+      <p>The viewer draws each Gaussian as a screen-space splat with the same projection, blur and cutoffs as the C++ renderer, blends three channels per Gaussian in WebGL2, and composites clicked pixels band by band on the CPU.</p>
+      <p><a href="https://github.com/CoraBeanz/linescan-hyperspectral-splatting/tree/main/viewer" target="_blank" rel="noopener">Source and file format on GitHub</a></p>
+    </footer>
+  </aside>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
