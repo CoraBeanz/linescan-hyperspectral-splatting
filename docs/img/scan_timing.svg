@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="672" viewBox="0 0 1280 672" role="img" aria-labelledby="t d">
+  <title id="t">Timing of a stare scan</title>
+  <desc id="d">Timing diagram of three scan lines. A line clock ticks once per camera frame period, 33.3 ms at 30 frames per second. At each tick the ESP32 sends two step pulses 0.65 ms apart, so the mirror moves two microsteps; the MOVING pin stays high until the mirror has been still for 3 ms, then the TRIG pin pulses and the ESP32 reports the line as ready. Each camera frame, drawn as a rolling-shutter exposure from first row to last, fits in the hold between ready and the next tick. An inset zooms in on one tick.</desc>
+  <style>
+    text { font-family: ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    .h1 { font-size: 32px; font-weight: 800; fill: #f1f5ff; }
+    .sub { font-size: 17px; fill: #a3acc9; }
+    .lt { font-size: 18px; font-weight: 700; fill: #e6e9f2; }
+    .ls { font-size: 15px; fill: #8b93b0; }
+    .tag { font-size: 14px; font-weight: 700; fill: #c9d3f5; }
+    .small { font-size: 14px; fill: #8b93b0; font-style: italic; }
+    .mono { font-size: 13.5px; fill: #e6e9f2; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+  </style>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101a3a"/><stop offset="0.55" stop-color="#0a1024"/><stop offset="1" stop-color="#060914"/>
+    </linearGradient>
+    <pattern id="holes" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="14" cy="14" r="1.7" fill="#1d2955"/></pattern>
+    <radialGradient id="fade" cx="0.5" cy="0.55" r="0.75"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <mask id="holesMask"><rect width="1280" height="672" fill="url(#fade)"/></mask>
+    <marker id="ahm" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#8b93b0"/></marker>
+  </defs>
+
+  <rect width="1280" height="672" rx="26" fill="url(#bg)"/>
+  <rect width="1280" height="672" rx="26" fill="url(#holes)" mask="url(#holesMask)"/>
+
+  <text x="48" y="68" class="h1">Frame sync</text>
+  <text x="48" y="102" class="sub">The ESP32 runs a line clock that follows the camera's frames.</text>
+  <text x="48" y="127" class="sub">On each tick it steps the mirror to the next line, waits for it</text>
+  <text x="48" y="152" class="sub">to settle, then holds it still while the camera takes the frame.</text>
+  <text x="48" y="196" class="ls">Stare scan, 2 microsteps per line at 30 fps.</text>
+  <text x="48" y="217" class="ls">NUDGE and PERIOD keep the ticks between exposures.</text>
+
+  <text x="232" y="304" text-anchor="end" class="lt">Line clock</text><text x="232" y="323" text-anchor="end" class="ls">ESP32 time</text>
+  <text x="232" y="380" text-anchor="end" class="lt">Mirror</text><text x="232" y="399" text-anchor="end" class="ls">position, 1/32 steps</text>
+  <text x="232" y="434" text-anchor="end" class="lt">STEP</text><text x="232" y="453" text-anchor="end" class="ls">to the TMC2209</text>
+  <text x="232" y="480" text-anchor="end" class="lt">MOVING pin</text><text x="232" y="499" text-anchor="end" class="ls">moving or settling</text>
+  <text x="232" y="526" text-anchor="end" class="lt">TRIG pin</text><text x="232" y="545" text-anchor="end" class="ls">line ready</text>
+  <text x="232" y="590" text-anchor="end" class="lt">Camera</text><text x="232" y="609" text-anchor="end" class="ls">first row to last</text>
+
+  <line x1="262.0" y1="306" x2="1232.0" y2="306" stroke="#2a3358" stroke-width="2"/><line x1="306.1" y1="290" x2="306.1" y2="618" stroke="#c4b5fd" stroke-opacity="0.22" stroke-dasharray="3 5"/><circle cx="306.1" cy="306" r="6" fill="#0b1020" stroke="#c4b5fd" stroke-width="2.2"/><text x="306.1" y="292" text-anchor="middle" class="tag">line 0</text><text x="306.1" y="330" text-anchor="middle" class="mono">t0</text><line x1="600" y1="290" x2="600" y2="618" stroke="#c4b5fd" stroke-opacity="0.22" stroke-dasharray="3 5"/><circle cx="600" cy="306" r="6" fill="#0b1020" stroke="#c4b5fd" stroke-width="2.2"/><text x="600" y="292" text-anchor="middle" class="tag">line 1</text><text x="600" y="330" text-anchor="middle" class="mono">t0 + P</text><line x1="894" y1="290" x2="894" y2="618" stroke="#c4b5fd" stroke-opacity="0.22" stroke-dasharray="3 5"/><circle cx="894" cy="306" r="6" fill="#0b1020" stroke="#c4b5fd" stroke-width="2.2"/><text x="894" y="292" text-anchor="middle" class="tag">line 2</text><text x="894" y="330" text-anchor="middle" class="mono">t0 + 2P</text><line x1="1187.9" y1="290" x2="1187.9" y2="618" stroke="#c4b5fd" stroke-opacity="0.22" stroke-dasharray="3 5"/><circle cx="1187.9" cy="306" r="6" fill="#0b1020" stroke="#c4b5fd" stroke-width="2.2"/><text x="1187.9" y="292" text-anchor="middle" class="tag">line 3</text><text x="1187.9" y="330" text-anchor="middle" class="mono">t0 + 3P</text><path d="M600 262 L894 262" stroke="#8b93b0" stroke-width="1.3" marker-start="url(#ahm)" marker-end="url(#ahm)"/><text x="747" y="253" text-anchor="middle" class="small">period P = 33 333.333 µs</text>
+  <path d="M262 398 L600 398 L605.8 384 L894 384 L899.7 370 L1187.9 370 L1193.6 356 L1232 356" fill="none" stroke="#7dd3fc" stroke-width="2.4" stroke-linejoin="round"/><text x="453.1" y="390" text-anchor="middle" class="mono">-20</text><text x="763.1" y="376" text-anchor="middle" class="mono">-18</text><text x="1057" y="362" text-anchor="middle" class="mono">-16</text><text x="1232" y="348" text-anchor="end" class="mono">-14</text>
+  <path d="M262 436 L600 436 L600 421 L602.5 421 L602.5 436 L605.8 436 L605.8 421 L608.3 421 L608.3 436 L894 436 L894 421 L896.5 421 L896.5 436 L899.7 436 L899.7 421 L902.2 421 L902.2 436 L1187.9 436 L1187.9 421 L1190.4 421 L1190.4 436 L1193.6 436 L1193.6 421 L1196.1 421 L1196.1 436 L1232 436" fill="none" stroke="#e6e9f2" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="600" y="467" width="32.2" height="15" fill="#fbbf24" fill-opacity="0.22"/><rect x="894" y="467" width="32.2" height="15" fill="#fbbf24" fill-opacity="0.22"/><rect x="1187.9" y="467" width="32.2" height="15" fill="#fbbf24" fill-opacity="0.22"/><path d="M262 482 L600 482 L600 467 L632.2 467 L632.2 482 L894 482 L894 467 L926.2 467 L926.2 482 L1187.9 482 L1187.9 467 L1220.1 467 L1220.1 482 L1232 482" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M262 528 L306.1 528 L306.1 513 L308.6 513 L308.6 528 L632.2 528 L632.2 513 L634.7 513 L634.7 528 L926.2 528 L926.2 513 L928.7 513 L928.7 528 L1220.1 528 L1220.1 513 L1222.6 513 L1222.6 528 L1232 528" fill="none" stroke="#f472b6" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M318.4 570 L441.9 570 L556.5 614 L433.1 614Z" fill="#34d399" fill-opacity="0.16" stroke="#34d399" stroke-width="1.6"/><text x="437.5" y="597" text-anchor="middle" class="tag" style="fill:#34d399">frame for line 0</text><path d="M644.6 570 L768 570 L882.7 614 L759.2 614Z" fill="#34d399" fill-opacity="0.16" stroke="#34d399" stroke-width="1.6"/><text x="763.6" y="597" text-anchor="middle" class="tag" style="fill:#34d399">frame for line 1</text><path d="M938.5 570 L1062 570 L1176.6 614 L1053.1 614Z" fill="#34d399" fill-opacity="0.16" stroke="#34d399" stroke-width="1.6"/><text x="1057.5" y="597" text-anchor="middle" class="tag" style="fill:#34d399">frame for line 2</text><path d="M632.2 626 L632.2 632 L894 632 L894 626" fill="none" stroke="#8b93b0" stroke-width="1.3"/><text x="763.1" y="652" text-anchor="middle" class="small">the mirror holds still from ready to the next tick</text>
+  <rect x="812" y="30" width="420" height="200" rx="16" fill="#0e1631" fill-opacity="0.96" stroke="#2c3b6e"/>
+  <text x="832" y="60" class="lt">One tick, close up</text>
+  <text x="1212" y="60" text-anchor="end" class="ls">line 1, from t0 + P</text>
+  <line x1="944.6" y1="82" x2="944.6" y2="212" stroke="#c4b5fd" stroke-opacity="0.5" stroke-dasharray="3 4"/>
+  <text x="832" y="110" class="tag" style="fill:#e6e9f2">STEP</text>
+  <text x="832" y="156" class="tag" style="fill:#fbbf24">MOVING</text>
+  <text x="832" y="202" class="tag" style="fill:#f472b6">TRIG</text>
+  <path d="M916 112 L944.6 112 L944.6 98 L947.1 98 L947.1 112 L981.8 112 L981.8 98 L984.3 98 L984.3 112 L1208 112" fill="none" stroke="#e6e9f2" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="944.6" y="144" width="209" height="14" fill="#fbbf24" fill-opacity="0.22"/><path d="M916 158 L944.6 158 L944.6 144 L1153.6 144 L1153.6 158 L1208 158" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M916 204 L1153.6 204 L1153.6 190 L1159.3 190 L1159.3 204 L1208 204" fill="none" stroke="#f472b6" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M944.6 90 L981.8 90" stroke="#8b93b0" stroke-width="1.2" marker-start="url(#ahm)" marker-end="url(#ahm)"/>
+  <text x="989.8" y="95" class="small">0.65 ms: 2 microsteps</text>
+  <path d="M981.8 136 L1153.6 136" stroke="#8b93b0" stroke-width="1.2" marker-start="url(#ahm)" marker-end="url(#ahm)"/>
+  <text x="1067.7" y="130" text-anchor="middle" class="small">settle 3 ms</text>
+  <text x="1145.6" y="186" text-anchor="end" class="small">ready: TRIG and EV LINE</text>
+</svg>

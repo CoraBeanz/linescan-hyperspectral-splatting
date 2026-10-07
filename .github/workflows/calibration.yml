@@ -1,0 +1,86 @@
+# Calibration kit: the self-test and the unit tests on the PC side, and the
+# Jetson's capture commands on JetPack 4's Python 3.6 and numpy 1.13, with a
+# stand-in for v4l2-ctl that writes frames the way the IMX219 driver does.
+name: calibration
+
+on:
+  push:
+    branches: [main]
+    paths: ["calibration/**", ".github/scripts/fake_v4l2_ctl.py", ".github/workflows/calibration.yml"]
+  pull_request:
+    paths: ["calibration/**", ".github/scripts/fake_v4l2_ctl.py", ".github/workflows/calibration.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pc:
+    name: PC side, Python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the oldest that passes: the numpy and scipy that pip picks
+        # for 3.8 and 3.9 find fewer lamp lines than the tests require.
+        python: ["3.10", "3.13"]
+    defaults:
+      run:
+        working-directory: calibration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: calibration/requirements.txt
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Self-test (render a session, calibrate it, compare with the truth)
+        run: python -m hsical selftest
+      - name: Unit tests
+        run: python -m pytest -v
+
+  jetson:
+    name: Jetson side, Python 3.6 and numpy 1.13
+    runs-on: ubuntu-24.04
+    container: python:3.6-slim
+    defaults:
+      run:
+        shell: bash
+        working-directory: calibration
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install numpy 1.13.3 (JetPack 4's python3-numpy)
+        run: pip install "numpy==1.13.3"
+      - name: First-light plan, dry run
+        run: |
+          python -c "print('\n' * 200)" > /tmp/answers   # Enter at every prompt
+          python -m hsical plan /tmp/dry --dry-run < /tmp/answers
+      - name: Capture and focus through the stand-in v4l2-ctl
+        run: |
+          mkdir -p /tmp/bin
+          printf '#!/bin/sh\nexec python3 %s "$@"\n' "$GITHUB_WORKSPACE/.github/scripts/fake_v4l2_ctl.py" > /tmp/bin/v4l2-ctl
+          chmod +x /tmp/bin/v4l2-ctl
+          export PATH="/tmp/bin:$PATH"
+          cam=(--backend v4l2 --width 656 --height 480)
+          python -m hsical probe "${cam[@]}"
+          python -m hsical capture /tmp/session cfl --kind lamp --source cfl --auto 0.75 "${cam[@]}"
+          python -m hsical capture /tmp/session dark_10000us --kind dark --frames 4 "${cam[@]}"
+          python -m hsical focus --count 3 --scratch /tmp/focus "${cam[@]}"
+      - name: Check what the capture wrote
+        run: |
+          python - <<'EOF'
+          import json
+          m = json.load(open("/tmp/session/cfl/meta.json"))
+          print(json.dumps(m, indent=1))
+          assert m["frames"] == 8 and m["stride_bytes"] == 1344 and m["raw_shift"] == 0, m
+          assert m["exposure_us"] > 10000, "the exposure helper never adjusted the exposure"
+          assert 0.45 <= m["levels"]["peak_frac"] <= 0.95, m["levels"]
+          EOF

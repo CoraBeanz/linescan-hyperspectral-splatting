@@ -192,8 +192,8 @@ def setup_render(path, w, h):
     sc.cycles.sample_clamp_indirect = 3.0
     sc.render.resolution_x, sc.render.resolution_y = int(w * SCALE), int(h * SCALE)
     sc.render.film_transparent = False
-    sc.view_settings.view_transform = "AgX" if "AgX" in [i.identifier for i in
-                                                           sc.view_settings.bl_rna.properties["view_transform"].enum_items] else "Filmic"
+    transforms = [i.identifier for i in sc.view_settings.bl_rna.properties["view_transform"].enum_items]
+    sc.view_settings.view_transform = "AgX" if "AgX" in transforms else "Filmic"
     sc.view_settings.look = "None"
     sc.render.filepath = str(path)
     world = bpy.data.worlds.new("w")

@@ -1,0 +1,32 @@
+# CAD model scripts: lint them with ruff (pyflakes and pycodestyle errors, 120
+# columns). FreeCAD itself doesn't run here; cad/README.md says how to rebuild.
+name: cad
+
+on:
+  push:
+    branches: [main]
+    paths: ["cad/**.py", ".github/workflows/cad.yml"]
+  pull_request:
+    paths: ["cad/**.py", ".github/workflows/cad.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install "ruff==0.16.8"
+      - name: Lint cad/
+        run: ruff check --isolated --select E,F,W --line-length 120 --output-format github cad/

@@ -103,7 +103,8 @@ def rows():
 
     sec("Derived optics")
     p("s_img", "=1 / (1 / f_obj - 1 / scene_dist)", "mm", "objective to slit (thin lens)", "model")
-    p("theta", "=asin(wl_center_um * lines_per_mm / 1000) / 1 deg", "deg", "1st-order angle at wl_center = camera tilt", "model")
+    p("theta", "=asin(wl_center_um * lines_per_mm / 1000) / 1 deg", "deg",
+      "1st-order angle at wl_center = camera tilt", "model")
     p("pupil_d", "=f_obj / fno_obj", "mm", "entrance pupil = stop diameter", "model")
     p("half_line", "=0.5 * slit_len * scene_dist / s_img", "mm", "half length of the scan line on the scene", "model")
     p("field_half", "=atan(half_line / scene_dist) / 1 deg", "deg", "field half-angle along the slit", "model")
@@ -247,7 +248,8 @@ def rows():
     p("insert_m2_d", 2.85, "mm", "hole for M2 heat-set inserts (Pofsnnx: knurl 3.0, lead-in 2.7)", "design")
     p("insert_m2_l", 4.0, "mm", "M2 heat-set insert length", "listing")
 
-    sec("Arm pose (degrees from the URDF zero: upper arm up, forearm level). Shown: scanning a table 150 mm below the objective")
+    sec("Arm pose (degrees from the URDF zero: upper arm up, forearm level). "
+        "Shown: scanning a table 150 mm below the objective")
     p("q_shoulder_pan", 0, "deg", "base rotation", "design")
     p("q_shoulder_lift", -50, "deg", "shoulder", "design")
     p("q_elbow_flex", 90, "deg", "elbow", "design")

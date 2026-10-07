@@ -1,0 +1,61 @@
+# Line-camera splat renderer: the CPU build and its tests, a run of the tools on
+# a tiny synthetic scan, and a build of the CUDA rasterizer for a desktop GPU.
+# The jetson workflow builds it for the Nano, with CUDA 10.2.
+name: splat
+
+on:
+  push:
+    branches: [main]
+    paths: ["splat/**", ".github/workflows/splat.yml"]
+  pull_request:
+    paths: ["splat/**", ".github/workflows/splat.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  cpu:
+    name: CPU build, tests and tools
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nlohmann/json
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nlohmann-json3-dev
+      - name: Configure
+        run: cmake -S splat -B build/splat -DCMAKE_BUILD_TYPE=Release -DLINESPLAT_CUDA=OFF
+      - name: Build
+        run: cmake --build build/splat -j "$(nproc)"
+      - name: Unit tests
+        run: ctest --test-dir build/splat --output-on-failure
+      - name: Make, train and render a tiny synthetic scan
+        working-directory: build/splat
+        run: |
+          ./splat_synth synth --preset tiny
+          ./splat_train synth synth/train --iterations 300 --log-every 100
+          ./splat_render residual synth synth/train/scene
+          ./splat_render view synth/train/scene synth/view
+
+  cuda:
+    # The newest toolkit, for an RTX 40-series card (sm_89) like the desktop the
+    # splat trains on. The runners have no GPU, so this checks that the CUDA code
+    # compiles and links; the GPU tests skip.
+    name: CUDA 13.4 build for a desktop GPU (sm_89)
+    runs-on: ubuntu-24.04
+    container: nvidia/cuda:13.4.2-devel-ubuntu24.04
+    steps:
+      - name: Install CMake, git and nlohmann/json
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake git nlohmann-json3-dev
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S splat -B build/splat -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=89
+      - name: Build
+        run: cmake --build build/splat -j "$(nproc)"
+      - name: Unit tests (the GPU ones skip)
+        run: ctest --test-dir build/splat --output-on-failure

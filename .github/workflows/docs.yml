@@ -1,0 +1,38 @@
+# README and docs: the diagrams in docs/img match the scripts that draw them, and
+# every relative link and image in the repo's Markdown files resolves. Runs on
+# every change, since moving or renaming any file can break a link to it.
+name: docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  docs:
+    name: Diagrams and links
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The SVG diagrams match docs/img/src
+        run: |
+          for script in docs/img/src/*.py; do
+            [ "$(basename "$script")" = common.py ] || python "$script"
+          done
+          git diff --exit-code --stat -- docs/img || {
+            echo "::error::docs/img is out of date: run the scripts in docs/img/src and commit the SVGs"
+            exit 1
+          }
+      - name: Relative links and anchors resolve
+        run: python .github/scripts/check_links.py

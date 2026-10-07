@@ -35,7 +35,8 @@ def parse_inertials(path):
             "parent": j.find("parent").get("link"),
             "child": j.find("child").get("link"),
             "placement": _origin(j),
-            "axis": App.Vector(*[float(a) for a in axis.get("xyz").split()]) if axis is not None else App.Vector(0, 0, 1),
+            "axis": (App.Vector(*[float(a) for a in axis.get("xyz").split()]) if axis is not None
+                     else App.Vector(0, 0, 1)),
         })
     return out, joints
 

@@ -1,0 +1,48 @@
+# Splat viewer: its checks in headless Chromium, which compare the page's file
+# reader, colour weights, CPU probe and WebGL2 image with the C++ renderer's,
+# then drive the page itself at a desktop and a phone size. The runners have no
+# GPU, so WebGL2 runs on Chromium's software renderer.
+name: viewer
+
+on:
+  push:
+    branches: [main]
+    paths: ["viewer/**", ".github/workflows/viewer.yml"]
+  pull_request:
+    paths: ["viewer/**", ".github/workflows/viewer.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Checks in headless Chromium
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - name: Install Playwright and its Chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Checks
+        run: node test/run.mjs --screenshots "$RUNNER_TEMP/screenshots"
+      - name: Keep the screenshots of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: viewer-screenshots
+          path: ${{ runner.temp }}/screenshots
+          if-no-files-found: ignore

@@ -1,0 +1,71 @@
+# Optiland model: it still runs, and the numbers other parts of the repo took from
+# it are current: optics/model_output/results.txt, the as-built trace in
+# cad/optics_as_built.txt and the calibration kit's design map.
+name: optics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "optics/**"
+      - "cad/optics_check.py"
+      - "cad/optics_as_built.txt"
+      - "cad/build_report.json"
+      - "calibration/tools/export_optiland_map.py"
+      - "calibration/hsical/data/optiland_map.json"
+      - ".github/workflows/optics.yml"
+  pull_request:
+    paths:
+      - "optics/**"
+      - "cad/optics_check.py"
+      - "cad/optics_as_built.txt"
+      - "cad/build_report.json"
+      - "calibration/tools/export_optiland_map.py"
+      - "calibration/hsical/data/optiland_map.json"
+      - ".github/workflows/optics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  model:
+    name: Optiland model and its outputs
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/workflows/optics.yml
+      - name: Install Optiland
+        run: pip install "optiland==0.6.2"
+      - name: Spectrograph model, configs A to C
+        run: |
+          python optics/spectrograph_model.py
+          git diff --exit-code -- optics/model_output/results.txt || {
+            echo "::error file=optics/model_output/results.txt::Out of date: run python optics/spectrograph_model.py and commit it"
+            exit 1
+          }
+      - name: The CAD's as-built optics
+        run: |
+          python cad/optics_check.py > "$RUNNER_TEMP/optics_as_built.txt"
+          diff -u -B cad/optics_as_built.txt "$RUNNER_TEMP/optics_as_built.txt" || {
+            echo "::error file=cad/optics_as_built.txt::Out of date: run python cad/optics_check.py > cad/optics_as_built.txt"
+            exit 1
+          }
+      - name: The calibration kit's design map
+        run: |
+          python calibration/tools/export_optiland_map.py
+          git diff --exit-code -I'"generated":' -- calibration/hsical/data/optiland_map.json || {
+            echo "::error file=calibration/hsical/data/optiland_map.json::Out of date: run python calibration/tools/export_optiland_map.py"
+            exit 1
+          }
