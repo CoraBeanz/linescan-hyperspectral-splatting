@@ -1,0 +1,8 @@
+# Python 3.8 or newer, on any PC (the simulator doesn't need ROS or the Jetson).
+numpy>=1.20
+scipy>=1.7
+pyyaml>=5.3                  # scan plans
+xacro>=2.0                   # builds robot.urdf from ros2/so101_scan_description's xacro files
+matplotlib>=3.3              # previews and hsical's report (optional)
+opencv-python-headless>=4.5  # faster rectification in hsical (optional)
+pytest>=7                    # tests (optional)
