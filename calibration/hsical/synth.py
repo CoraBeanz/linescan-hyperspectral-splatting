@@ -264,15 +264,22 @@ class Instrument:
                 out += [(ln.nm + s * kk, rel * ww / w.sum()) for kk, ww in zip(k, w)]
         return out
 
+    def slit_image_widths(self):
+        """Width (px) of the slit's image along x at every column, at the middle row's wavelengths."""
+        return self.design.slit_image_px(0.0, self.nm_map[int(self.H // 2)] * self.t.grating_scale)
+
+    def blur(self, img):
+        """The camera lens blur, along x and along the slit."""
+        img = gaussian_filter1d(img, self.t.blur_px / self.t.scale, axis=1)
+        return gaussian_filter1d(img, self.t.blur_y_px / self.t.scale, axis=0)
+
     def render(self, kind):
         """Expected signal (arbitrary units) on every pixel for one kind of frame."""
         H, W = self.H, self.W
-        widths = self.design.slit_image_px(0.0, self.nm_map[int(H // 2)] * self.t.grating_scale)
+        widths = self.slit_image_widths()
 
         def spread(img):  # slit image width, then lens blur
-            img = box_filter_var(img, widths)
-            img = gaussian_filter1d(img, self.t.blur_px / self.t.scale, axis=1)
-            return gaussian_filter1d(img, self.t.blur_y_px / self.t.scale, axis=0)
+            return self.blur(box_filter_var(img, widths))
 
         out = np.zeros((H, W))
         cont = self.continuum(kind, self.nm_map)
@@ -335,15 +342,18 @@ def _splat(img, rows, cols, w):
             flat += np.bincount(rr[ok] * W + cc[ok], weights=(w * wr * wc)[ok], minlength=H * W)
 
 
-def box_filter_var(img, widths):
+def box_filter_var(img, widths, offset=0.0):
     """Mean over a box of ``widths[x]`` pixels (fractional allowed) centred on each column.
 
-    Uses the running integral, so a 23.4 px slit image is exactly that wide."""
+    Uses the running integral, so a 23.4 px slit image is exactly that wide.
+    ``offset`` (px, per column allowed) moves each box's centre to the right of
+    its column, which shifts the result left by as much."""
     H, W = img.shape
     F = np.zeros((H, W + 1))
     np.cumsum(img, axis=1, out=F[:, 1:])
     x = np.arange(W, dtype=float)
     w = np.broadcast_to(np.asarray(widths, float), (W,))
+    c = x + 0.5 + np.broadcast_to(np.asarray(offset, float), (W,))
 
     def at(t):  # F at fractional boundary index t (boundary j sits at x = j - 0.5)
         t = np.clip(t, 0.0, W)
@@ -351,7 +361,7 @@ def box_filter_var(img, widths):
         f = t - i
         return F[:, i] * (1 - f) + F[:, i + 1] * f
 
-    return (at(x + 0.5 + w / 2) - at(x + 0.5 - w / 2)) / w
+    return (at(c + w / 2) - at(c - w / 2)) / w
 
 
 def write_session(out_dir, truth: Truth | None = None, kinds=None, log=print):

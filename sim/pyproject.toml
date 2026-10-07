@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hsisim"
+version = "0.1.0"
+description = "Digital twin of the line-scan hyperspectral spectrograph on the SO-101: scan sessions with known truth"
+requires-python = ">=3.8"
+dependencies = ["numpy>=1.20", "scipy>=1.7", "pyyaml>=5.3", "xacro>=2.0"]
+
+[project.optional-dependencies]
+preview = ["matplotlib>=3.3"]
+test = ["pytest>=7", "matplotlib>=3.3"]
+
+# hsisim imports calibration/ and ros2/ from this repo, so install it editable (pip install -e .)
+# or run it from this folder.
+[tool.setuptools]
+packages = ["hsisim"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
