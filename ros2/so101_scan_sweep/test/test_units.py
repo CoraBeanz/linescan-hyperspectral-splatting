@@ -12,6 +12,7 @@ import xacro
 import yaml
 
 from so101_scan_description.kinematics import Robot
+from so101_scan_sweep import frame_lock as fl
 from so101_scan_sweep import make_plan as planner
 from so101_scan_sweep import mirror_protocol as mp
 from so101_scan_sweep import plan as plan_mod
@@ -99,6 +100,9 @@ def test_clock_sync_follows_offset_and_drift():
     for later_s in (0.0, 5.0):                   # now and 5 s after the last ping
         truth = ros + int(later_s * 1e9)
         assert abs(sync.to_ros_ns(esp(truth)) - truth) < 0.6e6  # well under a millisecond
+        assert abs(sync.to_esp_us(truth) - esp(truth)) < 600    # and back
+    assert sync.to_esp_us(sync.to_ros_ns(987_654_321)) == pytest.approx(987_654_321, abs=0.01)
+    assert sync.ns_per_us == pytest.approx(1000 / (1 + drift), rel=5e-6)   # the crystals' rate difference
 
 
 def test_clock_sync_resets_when_esp32_reboots():
@@ -107,6 +111,67 @@ def test_clock_sync_resets_when_esp32_reboots():
     sync.add(1_000_000_000, 1_001_000_000, 1_000)   # its clock went back to zero
     assert len(sync.samples) == 1
     assert abs(sync.to_ros_ns(1_000) - 1_000_500_000) < 1000
+
+
+# --- locking lines to the camera's frames --------------------------------------------------
+
+def frame_clock(period_ns=33_334_000.0, n=150, jitter_ns=30_000, drop=(40, 41, 97), window=(-5e6, 20e6), seed=4):
+    """A FrameClock fed n frames from a camera at period_ns, a few of them lost."""
+    rng = np.random.default_rng(seed)
+    clock = fl.FrameClock()
+    t0 = 1_700_000_000_000_000_000
+    for k in range(n):
+        if k in drop:
+            continue
+        sof = t0 + int(k * period_ns + rng.normal(0, jitter_ns))
+        clock.add(sof, sof + int(window[0]), sof + int(window[1]))
+    return clock, t0
+
+
+def test_frame_clock_fits_period_and_phase():
+    clock, t0 = frame_clock()
+    fit = clock.fit()
+    assert fit.frames == 147
+    assert fit.period_ns == pytest.approx(33_334_000.0, abs=200)      # 6 ppm from 30 us of jitter
+    assert fit.nearest_offset_ns(t0 + 200 * 33_334_000) == pytest.approx(0, abs=20_000)
+    assert (fit.window_start_ns, fit.window_end_ns) == (-5e6, 20e6)
+    assert fit.nearest_offset_ns(t0 + 10 * 33_334_000 + 4_000_000) == pytest.approx(4e6, abs=20_000)
+    latest = clock.latest_ns()
+    assert clock.fit(now_ns=latest + 100_000_000) is fit                # still fresh
+    assert clock.fit(now_ns=latest + 600_000_000) is None               # the camera stopped
+    few, _ = frame_clock(n=10)
+    assert few.fit() is None
+
+
+def test_plan_lock_puts_moves_between_exposures():
+    clock, t0 = frame_clock(jitter_ns=0, drop=())
+    fit = clock.fit()
+    p = fit.period_ns
+    busy = fl.busy_ns(2, 1600, 3000, 50)
+    assert busy == pytest.approx(4.35e6)
+    margin = 1e6
+    for asked_s, want_m in ((0.0333, 1), (0.034, 1), (0.05, 2), (0.1, 3), (0.001, 1)):
+        plan = fl.plan_lock(fit, asked_s * 1e9, busy, margin)
+        assert plan.frames_per_line == want_m, asked_s
+        assert plan.line_period_ns == pytest.approx(want_m * p)
+        # one line: tick, move and settle, then the good frames' windows, then the next tick
+        tick = fl.first_tick_ns(fit, plan, t0 + int(50 * p))
+        assert isinstance(tick, int) and t0 + 50 * p <= tick < t0 + 51 * p
+        assert fl.phase_error_ns(fit, plan, tick) == pytest.approx(0, abs=1)
+        rel = tick - fit.t_ref_ns          # times from here on are from the fit's reference frame
+        still_from, still_to = rel + busy, rel + plan.line_period_ns
+        k = round((rel - plan.phase_ns) / p)
+        windows = [((k + j) * p + fit.window_start_ns, (k + j) * p + fit.window_end_ns) for j in range(-1, want_m + 1)]
+        inside = [w for w in windows if w[0] >= still_from + margin - 1 and w[1] <= still_to - margin + 1]
+        assert len(inside) == plan.good_frames >= 1
+        assert inside[0][0] - still_from == pytest.approx(still_to - inside[-1][1], abs=1)   # centred
+    # a window too long for a move in between: two frames a line, one of them still
+    long = fl.FrameFit(fit.t_ref_ns, p, 0.0, 150, -10e6, 20e6)
+    plan = fl.plan_lock(long, 0.0333e9, busy, margin)
+    assert (plan.frames_per_line, plan.good_frames) == (2, 1)
+    assert fl.phase_error_ns(fit, plan, fl.first_tick_ns(fit, plan, t0) + 200_000) == pytest.approx(2e5, abs=1)
+    late = fl.first_tick_ns(fit, plan, t0) - int(p) - 300_000
+    assert fl.phase_error_ns(fit, plan, late) == pytest.approx(-3e5, abs=1)
 
 
 # --- plans --------------------------------------------------------------------------------

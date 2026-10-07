@@ -2,6 +2,10 @@
 # and publish a ScanLine on /scan_mirror/line for each. Returns as soon as the ESP32 accepts the
 # sweep. The ScanLine with last = true marks the end; a sweep cut short (~/stop, a driver fault)
 # shows up as MirrorState with this sweep_id and busy = false.
+#
+# While line_camera is publishing frames, the bridge locks the sweep to them: the line period
+# becomes a whole number of frame periods (at least line_period, and long enough for a move
+# between exposures), and every move falls between two exposures.
 float64 start_angle    # rad, same convention as ScanLine.angle; rounded to a whole microstep
 int32 steps_per_line   # microsteps between lines; the sign sets the direction
 uint32 n_lines
@@ -12,3 +16,6 @@ string message         # why not, when rejected (not homed, busy, out of range)
 uint32 sweep_id
 float64 start_angle    # the angle actually used, after rounding
 float64 rad_per_step   # mirror rad per microstep
+float64 line_period    # s, the period actually used
+bool frame_locked      # the lines are locked to the camera's frames
+uint32 frames_per_line # camera frames per line period when locked, else 0

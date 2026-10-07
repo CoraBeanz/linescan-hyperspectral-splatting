@@ -50,7 +50,7 @@ class ClockSync:
         de = (esp - e0).astype(np.float64)
         dr = (ros - r0).astype(np.float64)
         if de.max() - de.min() >= self.min_fit_span_us:
-            slope, intercept = np.polyfit(de, dr, 1)
+            slope, intercept = (float(v) for v in np.polyfit(de, dr, 1))
         else:
             slope = float(US)  # too short to see the drift: assume the clocks run at the same rate
             intercept = float(np.median(dr - US * de))
@@ -63,6 +63,21 @@ class ClockSync:
             raise RuntimeError("no clock samples yet")
         e0, r0, slope, intercept = self._fit or self._solve()
         return r0 + int(round(intercept + slope * (t_esp_us - e0)))
+
+    def to_esp_us(self, t_ros_ns):
+        """The ESP32 clock reading (us) at a ROS time (ns): to_ros_ns backwards. Needs `ready`."""
+        if not self.ready:
+            raise RuntimeError("no clock samples yet")
+        e0, r0, slope, intercept = self._fit or self._solve()
+        return e0 + (t_ros_ns - r0 - intercept) / slope
+
+    @property
+    def ns_per_us(self):
+        """How many ROS ns pass per ESP32 us: 1000, less the crystals' rate difference once the
+        samples span long enough to see it."""
+        if not self.ready:
+            return float(US)
+        return (self._fit or self._solve())[2]
 
     def uncertainty_ns(self):
         """Half the shortest round trip: how far off the mapping can be, at best."""
