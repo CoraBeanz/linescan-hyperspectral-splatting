@@ -41,7 +41,7 @@ The parts haven't arrived yet, so the kit is built and tested on synthetic frame
 
 ## Install
 
-**PC** (Windows, Linux or macOS, Python 3.8 or newer), from this folder:
+**PC** (Windows, Linux or macOS, Python 3.10 or newer), from this folder:
 
 ```bash
 pip install -r requirements.txt
@@ -230,7 +230,7 @@ The synthetic instrument is deliberately not the design. Its spectrum is shifted
 
 The largest wavelength errors sit beyond the outermost lamp lines, where the curve is extrapolated.
 
-A real M12 lens will likely be softer than this synthetic one, so the tests also run a session with twice the blur, where lines come out about 6 nm wide; it stays within the same limits. `pytest` runs 21 tests in about a minute: the whole chain on quarter-size sessions (as designed, with the soft lens, and with the camera turned sideways and mirrored), plus the building blocks.
+A real M12 lens will likely be softer than this synthetic one, so the tests also run a session with twice the blur, where lines come out about 6 nm wide; it stays within the same limits. `pytest` runs 21 tests in about a minute: the whole chain on quarter-size sessions (as designed, with the soft lens, and with the camera turned sideways and mirrored), plus the building blocks. They need numpy 2 and scipy 1.15 or newer, which is what pip installs on Python 3.10 and up: with older versions the wavelength fit finds fewer near-infrared lines or fits them less closely, and a few tests miss their limits.
 
 ## Limits
 
@@ -268,4 +268,4 @@ calibration/
 └── img/                    figures for this page, from a synthetic full-resolution run
 ```
 
-`capture.py`, `__init__.py` and `__main__.py` run on Python 3.6 with only numpy, so the capture commands work on a stock Jetson; everything else needs Python 3.8 and scipy.
+`capture.py`, `__init__.py` and `__main__.py` run on Python 3.6 with only numpy, so the capture commands work on a stock Jetson; everything else needs Python 3.10 or newer, with numpy 2 and scipy 1.15.

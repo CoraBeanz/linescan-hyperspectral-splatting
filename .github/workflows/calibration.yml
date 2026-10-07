@@ -25,8 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.10 is the oldest that passes: the numpy and scipy that pip picks
-        # for 3.8 and 3.9 find fewer lamp lines than the tests require.
+        # 3.10 is the oldest Python with numpy 2 and scipy 1.15, the oldest
+        # versions the tests pass with (see calibration/requirements.txt).
         python: ["3.10", "3.13"]
     defaults:
       run:

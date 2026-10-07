@@ -1,7 +1,7 @@
 """Command line: python -m hsical <command> --help
 
 On the Jetson (Python 3.6 is fine):   capture, plan, focus, probe
-On the PC (Python 3.8+, scipy):       inspect, calibrate, apply, synth, selftest
+On the PC (Python 3.10+, scipy):      inspect, calibrate, apply, synth, selftest
 
 Each command imports only what it needs, so the capture commands work on a
 Jetson that has nothing but numpy.
