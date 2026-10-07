@@ -79,13 +79,13 @@ def build(doc):
     vendor.filter_disc(doc, head, P, zf - P.filt_t)
     vendor.m12_lens(doc, head, "HSI_objective", "Objective: Commonlands CIL161 16 mm (at f/4)",
                     Frame((0, P.y_axis, P.obj_back)), P.obj_od, P.obj_len, P.obj_thread)
-    vendor.m12_holder(doc, head, "HSI_obj_holder", "M12 holder U0756M10 (objective)",
-                      Frame((0, P.y_axis, P.z_obj_plate)), P)
+    vendor.m12_holder(doc, head, "HSI_obj_holder", "M12 holder: uxcell, cut down (objective)",
+                      Frame((0, P.y_axis, P.z_obj_plate)), P, P.h12_cut_obj)
     rec = P.blade_t + 0.05
     vendor.slit_blades(doc, head, P, P.z_slit + rec)
     vendor.field_lens(doc, head, P, P.z_slit + rec)
-    vendor.m12_holder(doc, head, "HSI_coll_holder", "M12 holder U0756M10 (collimator)",
-                      Frame((0, P.y_axis, P.z_slit + P.slit_t)), P, flip=True)
+    vendor.m12_holder(doc, head, "HSI_coll_holder", "M12 holder: uxcell, cut down (collimator)",
+                      Frame((0, P.y_axis, P.z_slit + P.slit_t)), P, P.h12_cut_coll, flip=True)
     vendor.m12_lens(doc, head, "HSI_collimator", "Collimator: Arducam LN016 25 mm (reversed)",
                     Frame((0, P.y_axis, P.z_slit + P.coll_bfl)), P.coll_od, P.coll_len, P.coll_thread,
                     flip=True)

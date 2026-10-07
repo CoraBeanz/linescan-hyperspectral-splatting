@@ -40,8 +40,8 @@ MASS_G = {
     "HSI_objective": (5.0, "listing"),
     "HSI_collimator": (8.0, "listing"),
     "HSI_cam_lens": (7.0, "listing"),
-    "HSI_obj_holder": (3.5, "est"),
-    "HSI_coll_holder": (3.5, "est"),
+    "HSI_obj_holder": (1.5, "est"),
+    "HSI_coll_holder": (1.5, "est"),
     "HSI_camera": (14.0, "est"),
     "HSI_pose_camera": (3.0, "ds"),
     "HSI_mirror": (3.0, "est"),
@@ -107,17 +107,17 @@ def m12_lens(doc, parent, name, label, frame, od, length, thread, flip=False):
     return c
 
 
-def m12_holder(doc, parent, name, label, frame, P, flip=False):
-    """Metal M12 holder. Local frame: mounting face at z=0, body toward -z."""
+def m12_holder(doc, parent, name, label, frame, P, h, flip=False):
+    """Plastic M12 holder cut down to height h. Local frame: mounting face at z=0, body toward -z."""
     rot = App.Rotation(App.Vector(1, 0, 0), 180) if flip else None
     c = container(doc, parent, name, label, frame, fixed_rot=rot)
     b = Part(doc, c, name).m("anodized_black")
-    body = b.cyl("body", "z", (0, 0, -P.h12_h), P.h12_d / 2, P.h12_h)
-    ears = b.cbox("ears", 0, 0, -P.h12_ear_t, P.h12_ear, 5.0, P.h12_ear_t)
-    bore = b.cyl("bore", "z", (0, 0, -P.h12_h - 1), 6.0, P.h12_h + 2)
+    body = b.cyl("body", "z", (0, 0, -h), P.h12_d / 2, h)
+    base = b.cbox("base", 0, 0, -P.h12_ear_t, P.h12_ear, P.h12_w, P.h12_ear_t)
+    bore = b.cyl("bore", "z", (0, 0, -h - 1), 6.0, h + 2)
     holes = [b.cyl("hole%d" % i, "z", (s * P.h12_pitch / 2, 0, -P.h12_ear_t - 1), 1.1, P.h12_ear_t + 2)
              for i, s in enumerate((-1, 1))]
-    u = b.fuse("solid", [body, ears])
+    u = b.fuse("solid", [body, base])
     b.cut("holder", u, [bore] + holes)
     return c
 
@@ -149,7 +149,8 @@ def stepper(doc, parent, P):
 
 def scan_mirror(doc, parent, P, rotor_frame):
     """Front-surface mirror; its frame turns with the shaft (angle in the sheet)."""
-    c = container(doc, parent, "HSI_mirror", "Scan mirror: Edmund #43-872, 20 x 20 x 3 mm", rotor_frame)
+    c = container(doc, parent, "HSI_mirror", "Scan mirror: 20 x 20 mm cut from a RUEHALF 3 mm front-surface sheet",
+                  rotor_frame)
     b = Part(doc, c, "mirror")
     b.m("mirror").box("glass", -P.mirror_l / 2, P.mirror_e - P.mirror_t, -P.mirror_w / 2,
                       P.mirror_l, P.mirror_t, P.mirror_w)
@@ -208,7 +209,7 @@ def camera_board(doc, parent, P, frame):
     b = Part(doc, c, "cam")
     z_pcb = P.f_cam + P.sensor_above_pcb
     pcb = b.m("pcb_black").cbox("pcb_blank", 0, 0, z_pcb, P.brd_w, P.brd_h, P.brd_t)
-    holes = [b.cyl("hole%d" % i, "z", (sx * P.brd_hole / 2, sy * P.brd_hole / 2, z_pcb - 1), 1.1, P.brd_t + 2)
+    holes = [b.cyl("hole%d" % i, "z", (sx * P.brd_hole / 2, sy * P.brd_hole_y / 2, z_pcb - 1), 1.1, P.brd_t + 2)
              for i, (sx, sy) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1)))]
     b.cut("pcb", pcb, holes)
     b.m("chip").cbox("sensor", 0, 0, P.f_cam, 8.5, 8.5, P.sensor_above_pcb)

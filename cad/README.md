@@ -19,10 +19,10 @@ A parametric FreeCAD model of the whole rig: the SO-101 follower arm, the spectr
 
 ## At a glance
 
-- **Head:** 188 g and 66 × 53 × 135 mm, wrist puck included. The NEMA 8 stepper is 60 g of that.
-- **Printed:** eight parts on the head, about 65 g of PETG, plus an optional bench mount.
+- **Head:** 185 g and 66 × 53 × 135 mm, wrist puck included. The NEMA 8 stepper is 60 g of that.
+- **Printed:** eight parts on the head, about 66 g of PETG, plus an optional bench mount.
 - **Checks:** no parts overlap. The mirror turns a full circle with at least 0.5 mm to spare. The head clears the wrist at every roll angle (1.4 mm closest) and through ±95° of wrist flex.
-- **Watch out:** with the arm stretched out level, the shoulder servo has to hold 1.22 N·m, which is 75% of its stall torque. The stock gripper needs 0.86 N·m there. The scanning pose in the render needs only 0.30 N·m. See [Arm load](#arm-load).
+- **Watch out:** with the arm stretched out level, the shoulder servo has to hold 1.20 N·m, which is 74% of its stall torque. The stock gripper needs 0.86 N·m there. The scanning pose in the render needs only 0.29 N·m. See [Arm load](#arm-load).
 
 ## Files
 
@@ -51,9 +51,9 @@ The head has its own frame: the origin is on the face of the wrist-roll horn, +Z
 
 **Optics carriers.** The objective carrier, slit block and grating carrier are plates that slide into rib slots from the open side. That lets you build and align the optics before the lid goes on. The bench puck has the same rail on a 50 × 40 mm plate with a 1/4"-20 nut, so the head can sit on a tripod or the optics table for the bench steps in the [build order](../docs/parts_list_and_design.md#4-build-order).
 
-**Scan mirror.** A printed clamp grips the stepper's 4 mm shaft with an M3 pinch screw and holds the mirror on a flat pad parallel to the shaft. The pad is drawn for Edmund's 20 × 20 × 3 mm mirror, and notches in its edges mark where the mirror's ends go so it sits centred on the optical axis. A mirror up to 25 mm long fits the same pad. For thinner glass, set `mirror_t` and rebuild, or glue the mirror onto a printed shim that makes up the difference to 3 mm. A 5 × 2 mm magnet in the clamp's tab passes an A3144 hall sensor in the +X wall when the mirror is turned 40° back from its 45° working angle, which gives each scan a home position.
+**Scan mirror.** A printed clamp grips the stepper's 4 mm shaft with an M3 pinch screw and holds the mirror on a flat pad parallel to the shaft. The pad is drawn for a 20 × 20 mm piece cut from a 3 mm front-surface mirror sheet, and notches in its edges mark where the mirror's ends go so it sits centred on the optical axis. Along the shaft the piece can be anything from 20 to 25 mm. Across the shaft keep it at 20 mm or a little under, because its corners pass 0.9 mm from the housing as it turns. For thinner glass, set `mirror_t` and rebuild, or glue the mirror onto a printed shim that makes up the difference to 3 mm. A 5 × 2 mm magnet in the clamp's tab passes an A3144 hall sensor in the +X wall when the mirror is turned 40° back from its 45° working angle, which gives each scan a home position.
 
-**Camera.** The B0152 board sits outside the end wall on four standoffs. The CIL122 goes in the board's own M12 holder and looks through a 20 mm hole in the wall. Turn the board so the sensor's long side runs across the slit, since that is the axis the spectrum spreads along. Black tape around the board edge keeps light out of the end.
+**Camera.** The B0152 board sits outside the end wall on four standoffs. The CIL122 goes in the board's own M12 holder, which reaches through a 21 mm hole in the wall. The hole is sized from `brd_holder_w` so a square holder passes at any angle. Turn the board so the sensor's long side runs across the slit, since that is the axis the spectrum spreads along. Black tape around the board edge keeps light out of the end.
 
 **Pose camera.** The Pi NoIR v2 sits on four standoffs on the +Y face next to the scan window, looking at the scene.
 
@@ -65,7 +65,7 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 
 | Part | File | How to print | Mass |
 |---|---|---|---|
-| Housing | [`housing.stl`](stl/housing.stl) | Floor (dovetail side) on the bed, camera end up. 0.2 mm layers, 3 perimeters, 20% gyroid, supports only under the camera flange | 36 g |
+| Housing | [`housing.stl`](stl/housing.stl) | Floor (dovetail side) on the bed, camera end up. 0.2 mm layers, 3 perimeters, 20% gyroid, supports only under the camera flange | 37 g |
 | Lid | [`lid.stl`](stl/lid.stl) | Inner (flat) face on the bed. 4 perimeters around the motor holes | 13 g |
 | Mirror clamp | [`mirror_clamp.stl`](stl/mirror_clamp.stl) | Mirror pad face down. 0.15 mm layers, 100% infill | 2 g |
 | Wrist puck | [`wrist_puck.stl`](stl/wrist_puck.stl) | Horn side down (it bridges the 20 mm horn recess). 100% infill | 5 g |
@@ -83,12 +83,12 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | Collimator: Arducam LN016, 25 mm, used backwards | size from the listing, back focus estimated |
 | Camera lens: Commonlands CIL122, 12 mm f/2 | barrel size estimated |
 | Camera: Arducam B0152 IMX219 NoIR, M12 mount | 36 × 36 mm from the listing; holes, thickness and holder estimated |
-| 2× M12 holder, UCTRONICS U0756M10 (objective, collimator) | listing |
+| 2× M12 holder, uxcell, 20 mm screw spacing (objective, collimator), each cut down to 10 mm: see [Assembly](#assembly) | 24 × 17 × 14 mm from the listing; ear thickness estimated |
 | Field lens: Edmund #49-840, 12.7 mm plano-convex, f = 15 mm, uncoated | datasheet |
 | Slit: two 20 mm pieces of a 9 mm snap-off blade, set 50 µm apart with a feeler gauge | single-edge blades (38 × 19 mm) don't fit inside the head |
 | Grating: 15 × 15 mm piece of 500 l/mm film, grooves along X | |
 | Long-pass filter: Edmund #54-652, SCHOTT GG-495, Ø12.5 × 3 mm | listing. The cap's seat takes the ±0.38 mm diameter tolerance |
-| Scan mirror: Edmund #43-872, 20 × 20 × 3 mm, enhanced aluminum | listing |
+| Scan mirror: 20 × 20 mm piece cut from a RUEHALF 100 × 100 × 3 mm front-surface mirror | thickness from the listing |
 | Stepper: StepperOnline 8HS11-0204S, NEMA 8, 1.8°, 0.2 A | size, shaft and holes from the listing; boss and thread depth estimated |
 | A3144 hall sensor and a 5 × 2 mm magnet | |
 | Pose camera: Pi NoIR v2 (owned) | Raspberry Pi drawing |
@@ -100,36 +100,41 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | 4 | M3 × 6 | puck to the servo horn |
 | 4 | M2 × 4 | stepper to the lid, from inside (the heads sit flush) |
 | 2 + 2 + 2 | M3 × 35, M3 washers and M3 nuts | from the counterbores on the +X face, through the floor and the lid, nutted on the lid's motor pad |
-| 2 + 2 | M3 × 8 and M3 heat-set inserts, 5.7 mm long and about 4.6 mm across | lid ears to the housing |
+| 2 + 2 | M3 × 8 and M3 × 6 heat-set inserts (Pofsnnx: 5.0 mm knurl, 4.5 mm holes) | lid ears to the housing |
 | 1 + 1 | M3 × 8 and M3 nut | mirror clamp pinch screw |
-| 8 + 8 | M2 × 5 and M2 heat-set inserts, 3 to 4 mm long and about 3.6 mm across | camera board (4) and pose camera (4) |
+| 8 + 8 | M2 × 5 and M2 × 4 heat-set inserts (Pofsnnx: 3.0 mm knurl, 2.85 mm holes) | camera board (4) and pose camera (4) |
 | 2 | M2 × 5 | objective's M12 holder to its carrier, self-tapping into the printed pilot holes |
-| 2 | M2 × 6 | collimator's M12 holder to the back of the slit block, self-tapping |
+| 2 | M2 × 5 | collimator's M12 holder to the back of the slit block, self-tapping (3 mm of thread in the block) |
 
 Plus CA glue for the magnet, mirror and slit blades, and Kapton tape for the grating film. The [NEMA 17 build](#the-nema-17-option) holds its motor with two M3 × 6 instead, and the long bolts thread into the motor rather than into nuts.
 
 ## Measure these first
 
-These numbers came from estimates, not datasheets. Check them when the parts arrive, before printing the part they affect. All of them are cells in the Params sheet, marked `est`.
+These numbers came from estimates or listings, not datasheets. Check them when the parts arrive, before printing the part they affect. All of them are cells in the Params sheet; the estimates are marked `est`.
 
 | Value | Assumed | Affects |
 |---|---|---|
-| B0152 hole spacing (`brd_hole`) | 29 mm square | camera standoffs on the housing |
-| B0152 lens holder size (`brd_holder_h`, `brd_holder_w`) | 10 mm tall, 14 mm wide | camera opening in the end wall |
-| CIL161 barrel (`obj_od`, `obj_len`) | Ø14 × 18.5 mm | filter cap fit, objective position |
-| CIL122 barrel (`cam_od`, `cam_len`) | Ø15 × 19 mm | how close the camera lens can get to the grating |
+| B0152 hole spacing (`brd_hole` along X, `brd_hole_y` along the dispersion) | 29 mm square | camera standoffs on the housing |
+| B0152 lens holder size (`brd_holder_h`, `brd_holder_w`) | 10 mm tall, 14 mm square | camera opening in the end wall |
+| B0152 sensor above the PCB (`sensor_above_pcb`) and PCB thickness (`brd_t`) | 1 mm, 1.6 mm | where the end wall sits so the sensor is in focus; camera screw length |
+| CIL161 barrel (`obj_od`, `obj_len`), on the M12ANIR version | Ø14 × 18.5 mm | filter cap fit, objective position |
+| CIL122 barrel (`cam_od`, `cam_len`), on the M12ANIR version | Ø15 × 19 mm | how close the camera lens can get to the grating |
+| LN016 length (`coll_len`) | 21 mm | grating carrier position |
 | Lens back focal lengths (`*_bfl`) | 5–6 mm | carrier positions. Turning a lens in its M12 thread takes up a millimetre or two |
-| M12 holder ear thickness (`h12_ear_t`) | 2 mm | holder screw length |
+| Lens thread lengths (`obj_thread`, `coll_thread`): rear end to where the barrel widens | 9 mm | where to cut the M12 holders, see [Assembly](#assembly) |
+| M12 holder ear thickness (`h12_ear_t`) | 2 mm | holder screw length: M2 × 5 leaves 3 mm of thread in the carrier |
+| Snap-off blade thickness (`blade_t`) | 0.38 mm | depth of the blade recess in the slit block |
 | Stepper pilot boss (`mot_boss_d`, `mot_boss_h`) | Ø15 × 1.5 mm | the pocket in the lid it sits in; the motor has to sit flat on the pad |
-| Stepper thread depth (`mot_hole_depth`) | 2.5 mm | the M2 × 4 screws reach 2.2 mm into it |
+| Stepper thread depth (`mot_hole_depth`) | 2.5 mm | the M2 × 4 screws reach 2.2 mm into it. M2 × 5 reach 3.2 mm, so use them only if the holes are that deep, or file 1 mm off them |
 
 ## Assembly
 
-1. Press in the heat-set inserts: two M3 in the lid bosses on the housing, four M2 in the camera standoffs and four M2 in the pose-camera standoffs.
-2. Build the optics on their carriers. The objective's holder screws to the objective carrier, the long-pass disc drops into the filter cap, and the cap pushes onto the front of the lens. In the slit block, the field lens drops into its pocket from the front with its flat side toward the blades (a dot of glue on its rim stops it rattling), the two blade pieces go in the recess over it with the 0.05 mm feeler blade setting the gap, and the collimator's holder screws to the back. Tape the grating film into its carrier with the grooves along X. Slide the three carriers into their slots.
-3. Fit the camera board on the end wall, the pose camera on the +Y face, and the hall sensor in its pocket in the +X wall.
-4. Screw the stepper to the lid with the four M2 × 4 from inside. Glue the magnet into the clamp's tab and the mirror onto the pad between the notches, then put the clamp on the shaft.
-5. Take the gripper off the wrist-roll horn and screw the puck on. Slide the housing onto the rail, then fit the lid so the mirror goes in through the open side. The two M3 × 35 bolts go in from the +X face and take a washer and nut each on the lid's motor pad, and the two M3 × 8 go through the lid ears.
+1. Cut two of the uxcell M12 holders down to 10 mm, the lens thread plus 1 mm. Cut from the end the lens screws into, not the ear end, and square the cut on sandpaper. A lens screwed in until its barrel stops against the cut end then has its rear end 1 mm inside the holder, where the model puts it. If a lens's thread isn't 9 mm, cut its holder to the thread plus 1 mm; with 13 mm of thread or more, leave the holder whole. Then score and snap a 20 × 20 mm piece from the mirror sheet, scoring the bare back so the coated face isn't scratched.
+2. Press in the heat-set inserts: two M3 in the lid bosses on the housing, four M2 in the camera standoffs and four M2 in the pose-camera standoffs.
+3. Build the optics on their carriers. The objective's holder screws to the objective carrier, the long-pass disc drops into the filter cap, and the cap pushes onto the front of the lens. In the slit block, the field lens drops into its pocket from the front with its flat side toward the blades (a dot of glue on its rim stops it rattling), the two blade pieces go in the recess over it with the 0.05 mm feeler blade setting the gap, and the collimator's holder screws to the back. Tape the grating film into its carrier with the grooves along X. Slide the three carriers into their slots.
+4. Fit the camera board on the end wall, the pose camera on the +Y face, and the hall sensor in its pocket in the +X wall.
+5. Screw the stepper to the lid with the four M2 × 4 from inside. Glue the magnet into the clamp's tab and the mirror onto the pad between the notches, then put the clamp on the shaft.
+6. Take the gripper off the wrist-roll horn and screw the puck on. Slide the housing onto the rail, then fit the lid so the mirror goes in through the open side. The two M3 × 35 bolts go in from the +X face and take a washer and nut each on the lid's motor pad, and the two M3 × 8 go through the lid ears.
 
 ## Checks
 
@@ -147,9 +152,9 @@ Gravity torque on each joint, from the link masses in the SO-101 URDF, with the 
 | Shoulder / elbow torque, N·m (% of stall) | Head | Scanning pose (render above) | Worst case: arm stretched out level |
 |---|---|---|---|
 | Stock gripper | | 0.13 / 0.38 | 0.86 (53%) / 0.45 (28%) |
-| **Head as modelled (NEMA 8)** | **188 g** | **0.30 (18%) / 0.61 (38%)** | **1.22 (75%) / 0.70 (44%)** |
-| NEMA 17 pancake instead (`RIG_MOTOR=17HM08`) | 282 g | 0.41 (25%) / 0.79 (49%) | 1.53 (94%) / 0.91 (56%) |
-| No scan motor, the arm sweeps the line | 128 g | 0.22 (14%) / 0.50 (31%) | 1.02 (63%) / 0.57 (36%) |
+| **Head as modelled (NEMA 8)** | **185 g** | **0.29 (18%) / 0.60 (37%)** | **1.20 (74%) / 0.70 (43%)** |
+| NEMA 17 pancake instead (`RIG_MOTOR=17HM08`) | 278 g | 0.41 (25%) / 0.78 (48%) | 1.51 (94%) / 0.90 (56%) |
+| No scan motor, the arm sweeps the line | 125 g | 0.22 (13%) / 0.49 (30%) | 1.01 (62%) / 0.57 (35%) |
 
 The 12 V version of the STS3215 (30 kg·cm) would bring the worst case down to 41%, but it means swapping all six servos and the power supply. In practice: keep the arm folded the way the render shows while scanning, and don't park it stretched out level.
 
@@ -160,11 +165,11 @@ The head was first drawn around a 150 g NEMA 17 pancake, which pushed the should
 | | 8HS11-0204S (default) | 17HM08-1204S |
 |---|---|---|
 | Motor | NEMA 8, 1.8°, 0.2 A, 60 g | NEMA 17 pancake, 0.9°, 1.2 A, 150 g |
-| Head | 188 g | 282 g |
+| Head | 185 g | 278 g |
 | Motor to lid | 4× M2 × 4 from inside; the long bolts end in washers and nuts on the lid | 2× M3 × 6 from inside; the long bolts thread into its lower holes |
 | Microstepping for 0.29 mm lines at 150 mm | 1/32 | 1/16 |
 
-The NEMA 8's 10 mm shaft reaches 5.5 mm into the clamp, with the pinch screw over it. Gravity on the mirror, clamp and magnet puts at most 0.014 N·cm on the shaft, about 1% of the motor's 1.4 N·cm holding torque. Build the pancake version with `RIG_MOTOR=17HM08 freecadcmd cad/build_rig.py`.
+The NEMA 8's 10 mm shaft reaches 5.5 mm into the clamp, with the pinch screw over it. Gravity on the mirror, clamp and magnet puts at most 0.014 N·cm on the shaft, about 1% of the motor's 1.6 N·cm holding torque. Build the pancake version with `RIG_MOTOR=17HM08 freecadcmd cad/build_rig.py`.
 
 ## Optics as built
 

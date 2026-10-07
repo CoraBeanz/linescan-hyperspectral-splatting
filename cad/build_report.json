@@ -26,8 +26,8 @@
   "rows": [
    {
     "part": "Housing (printed)",
-    "g": 36.2,
-    "source": "PETG, 35.7 cm3 at 80%"
+    "g": 36.7,
+    "source": "PETG, 36.2 cm3 at 80%"
    },
    {
     "part": "Lid with motor mount (printed)",
@@ -70,7 +70,7 @@
     "source": "listing"
    },
    {
-    "part": "Scan mirror: Edmund #43-872, 20 x 20 x 3 mm",
+    "part": "Scan mirror: 20 x 20 mm cut from a RUEHALF 3 mm front-surface sheet",
     "g": 3.0,
     "source": "est"
    },
@@ -95,8 +95,8 @@
     "source": "listing"
    },
    {
-    "part": "M12 holder U0756M10 (objective)",
-    "g": 3.5,
+    "part": "M12 holder: uxcell, cut down (objective)",
+    "g": 1.5,
     "source": "est"
    },
    {
@@ -110,8 +110,8 @@
     "source": "est"
    },
    {
-    "part": "M12 holder U0756M10 (collimator)",
-    "g": 3.5,
+    "part": "M12 holder: uxcell, cut down (collimator)",
+    "g": 1.5,
     "source": "est"
    },
    {
@@ -145,11 +145,11 @@
     "source": "est"
    }
   ],
-  "total_g": 188.2,
+  "total_g": 184.7,
   "com_head_mm": [
-   -10.6,
-   -1.1,
-   55.5
+   -10.8,
+   -1.2,
+   55.4
   ]
  },
  "roll_clearance": {
@@ -241,10 +241,10 @@
   },
   "with_head": {
    "shoulder_pan": 0.0,
-   "shoulder_lift": 0.297,
-   "elbow_flex": 0.609,
-   "wrist_flex": 0.251,
-   "wrist_roll": 0.02
+   "shoulder_lift": 0.291,
+   "elbow_flex": 0.601,
+   "wrist_flex": 0.246,
+   "wrist_roll": 0.019
   },
   "worst_stock": {
    "shoulder_pan": [
@@ -298,7 +298,7 @@
     ]
    ],
    "shoulder_lift": [
-    1.217,
+    1.204,
     [
      75,
      -75,
@@ -306,15 +306,15 @@
     ]
    ],
    "elbow_flex": [
-    0.704,
+    0.695,
     [
-     -15,
-     15,
+     0,
+     0,
      0
     ]
    ],
    "wrist_flex": [
-    0.251,
+    0.246,
     [
      0,
      30,
@@ -324,9 +324,9 @@
    "wrist_roll": [
     0.003,
     [
-     15,
-     -90,
-     75
+     -15,
+     -75,
+     90
     ]
    ]
   }
@@ -355,9 +355,9 @@
    "part": "Housing",
    "qty": 1,
    "print": "floor (dovetail side) on the bed, camera end up; 0.2 mm layers, 3 perimeters, 20% gyroid; supports only under the camera flange",
-   "volume_cm3": 35.7,
+   "volume_cm3": 36.2,
    "size_mm": [
-    35.5,
+    38.0,
     48.3,
     128.2
    ]

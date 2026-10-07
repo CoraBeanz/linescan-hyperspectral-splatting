@@ -78,8 +78,9 @@ def shell(doc, parent, P):
                    P.z_mirror + h, hh, 2 * h, axis="zy-x")
     boss_p = b.cyl("lidboss_p", "x", (-xi, yhi + 1, P.z_lid_screw), 3.5, 8)
     boss_n = b.cyl("lidboss_n", "x", (-xi, ylo - 1, P.z_lid_screw), 3.5, 8)
-    # camera end wall: a flange in the camera frame, wide enough for the 36 mm board
-    flange_raw = b.box("flange_raw", -xi - 4.5, -20, zw_in, xo + xi + 4.5, 50, P.carrier_t, cf)
+    # camera end wall: a flange in the camera frame, 1 mm wider than the board on each side
+    fx = P.brd_w / 2 + 1
+    flange_raw = b.box("flange_raw", -fx, -20, zw_in, 2 * fx, 50, P.carrier_t, cf)
     above = b.box("flange_trim", -xi - 10, yhi, zb, xo + xi + 20, 60, L + 20)
     flange = b.cut("flange", flange_raw, [above])
     body = b.fuse("body", [outer, hood, boss_p, boss_n, flange])
@@ -100,10 +101,11 @@ def shell(doc, parent, P):
             adds.append(b.box("rib_py_" + n, -xi, yhi_i - P.rib_h, zr, 2 * xi, P.rib_h + 0.01, P.rib_w))
             adds.append(b.box("rib_ny_" + n, -xi, ylo_i - 0.01, zr, 2 * xi, P.rib_h + 0.01, P.rib_w))
             adds.append(b.box("rib_px_" + n, xi - P.rib_h, ylo_i, zr, P.rib_h + 0.01, yhi_i - ylo_i, P.rib_w))
-    hb = P.brd_hole / 2
+    hbx, hby = P.brd_hole / 2, P.brd_hole_y / 2
     cam_holes = ((-1, -1), (1, -1), (-1, 1), (1, 1))
     for i, (sx, sy) in enumerate(cam_holes):
-        adds.append(b.cyl("cam_standoff%d" % i, "z", (sx * hb, sy * hb, zw_out - 0.5), 3.0, P.standoff_h + 0.5, cf))
+        adds.append(b.cyl("cam_standoff%d" % i, "z", (sx * hbx, sy * hby, zw_out - 0.5), 3.0, P.standoff_h + 0.5,
+                          cf))
     # Pi camera v2 holes, relative to its lens centre (local x, local y -> world -Z)
     pose_holes = ((-10.49, -12.40), (10.49, -12.40), (-10.49, 0.12), (10.49, 0.12))
     for i, (hx, hy) in enumerate(pose_holes):
@@ -131,15 +133,22 @@ def shell(doc, parent, P):
     # hall sensor pocket and lead slot in the +X wall
     cuts.append(b.box("hall_pocket", xi - 0.01, P.hall_y - 2.25, P.hall_z - 1.65, 1.71, 4.5, 3.3))
     cuts.append(b.box("hall_leads", xi + 1.0, P.hall_y - 2.2, P.hall_z - 1.5, P.wall, 4.4, 1.0))
-    # end wall: opening for the camera's M12 holder and lens; M2 inserts in the standoffs
-    cuts.append(b.cyl("cam_opening", "z", (0, 0, zw_in - 1), 10.0, P.carrier_t + 2, cf))
+    # end wall: opening the board's square M12 holder passes through at any angle; M2 inserts in the standoffs
+    cuts.append(b.cyl("cam_opening", "z", (0, 0, zw_in - 1), P.brd_holder_w / 2 ** 0.5 + 0.5, P.carrier_t + 2, cf))
     for i, (sx, sy) in enumerate(cam_holes):
-        cuts.append(b.cyl("cam_insert%d" % i, "z", (sx * hb, sy * hb, zw_out + P.standoff_h - 4.0),
-                          P.insert_m2_d / 2, 4.1, cf))
+        cuts.append(b.cyl("cam_insert%d" % i, "z", (sx * hbx, sy * hby, zw_out + P.standoff_h - P.insert_m2_l),
+                          P.insert_m2_d / 2, P.insert_m2_l + 0.1, cf))
     for i, (hx, hy) in enumerate(pose_holes):
-        cuts.append(b.cyl("pose_insert%d" % i, "y", (hx, yhi - 1.0, P.z_pose - hy), P.insert_m2_d / 2, 4.6))
+        # the standoffs end 3.5 mm proud of the +Y face; inserts go 0.5 mm deeper than they are long
+        cuts.append(b.cyl("pose_insert%d" % i, "y", (hx, yhi + 3.0 - P.insert_m2_l, P.z_pose - hy), P.insert_m2_d / 2,
+                          P.insert_m2_l + 0.6))
     for i, y in enumerate((yhi + 1, ylo - 1)):
-        cuts.append(b.cyl("lid_insert%d" % i, "x", (-xi - 0.1, y, P.z_lid_screw), P.insert_d / 2, 6.6))
+        cuts.append(b.cyl("lid_insert%d" % i, "x", (-xi - 0.1, y, P.z_lid_screw), P.insert_d / 2, P.insert_l + 0.6))
+    # the M12 holders' ears end close to the +X wall: notch the carrier ribs beside them
+    ex = P.h12_ear / 2 + 0.3
+    for n, z in (("obj", P.z_obj_plate - P.fit - P.rib_w), ("coll", P.z_slit + P.slit_t + P.fit)):
+        cuts.append(b.box("ear_notch_" + n, xi - P.rib_h - 0.01, P.y_axis - P.h12_w / 2 - 0.5, z - 0.01,
+                          emax(ex - xi + P.rib_h, 0.05) + 0.01, P.h12_w + 1, P.rib_w + 0.02))
     final = b.cut("Housing", solid, cuts)
     final.Label = "Housing"
     return _print("housing", "Housing", cont, final, App.Rotation(),
