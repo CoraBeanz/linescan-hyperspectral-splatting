@@ -1,0 +1,14 @@
+# Average a few camera frames of a reference: a dark (lens capped) or a white (PTFE under the
+# scan's light), at the camera's current exposure and gain. Written as an hsical frame set,
+# <directory>/reference/<name>/ (raw frames and meta.json), plus binned/reference_<name>.npy
+# when the camera has a calibration.
+string directory       # scan folder; empty = the open recording's
+string kind            # "dark" or "white"
+string name            # folder name; empty = the kind
+uint32 frames          # how many frames to average; 0 = 16
+---
+bool success
+string message
+string path            # the folder written
+float64 peak_fraction  # brightest pixels as a fraction of full scale (aim for 0.5 to 0.9 on a white)
+float64 saturated      # fraction of pixels at full scale

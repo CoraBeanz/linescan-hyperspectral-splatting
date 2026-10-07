@@ -3,14 +3,16 @@
     ros2 run so101_scan_sweep fake_scan_mirror --link /tmp/scan_mirror_fake
 
 It speaks the firmware's protocol (firmware/PROTOCOL.md) as far as the bridge needs: INFO, PING,
-STATUS, ENABLE, DISABLE, HOME, MOVE, STOP, stare SCANs and REBOOT, with the replies, events and
-errors the firmware sends. Like the real board it starts with the motor off and not homed. Its
-microsecond clock starts at a random offset and can run a little fast or slow (--drift-ppm),
-and every line it sends arrives after a random USB-like delay, so the bridge's clock mapping is
-exercised too. Sweep-mode scans, NUDGE, PERIOD and the settings commands aren't in it.
+STATUS, ENABLE, DISABLE, HOME, MOVE, STOP, stare SCANs with NUDGE and PERIOD, CFG (reading it,
+and setting the motion keys) and REBOOT, with the replies, events and errors the firmware sends.
+Like the real board it starts with the motor off and not homed. Its microsecond clock starts at
+a random offset and can run a little fast or slow (--drift-ppm), and every line it sends arrives
+after a random USB-like delay, so the bridge's clock mapping is exercised too. Sweep-mode scans,
+SAVE and the driver commands aren't in it.
 """
 
 import argparse
+import bisect
 import math
 import os
 import queue
@@ -55,9 +57,16 @@ class FakeMirror:
         self.lock = threading.RLock()
         self.received = []          # every command line, for tests
         self.line_times = []        # (scan number, line, wall-clock ns when it was ready), for tests
+        self.ticks = []             # (scan number, line, wall-clock ns of its tick), and the tick
+                                    # after the last line as line `lines`, for tests
+        self.nudges, self.periods = [], []   # every NUDGE dt and PERIOD us taken, for tests
         self.scans = 0
         self._job = None
         self._abort = threading.Event()
+        self._kick = threading.Event()   # NUDGE or PERIOD moved the line clock, or the job ended
+        self._next_tick = None      # the running scan's next line tick, on the fake's clock
+        self._period = None
+        self._motions = []          # (start time, start, target, speed) of recent moves, for pos_at_wall
         self._out = queue.Queue()
         self.running = False
         self._threads = [threading.Thread(target=self._serve, daemon=True),
@@ -71,6 +80,7 @@ class FakeMirror:
             # where the motor is before homing, unknown to the host
             self.pos = self.rng.randint(-800, 800) if start_pos is None else start_pos
             self.target, self._motion = self.pos, None
+            self._motions = []
             self.state, self.homed = "disabled", False
             self.line = self.lines = 0
             # the boot ROM's message at 115200 baud reads as a few bytes and no newline at 921600
@@ -89,6 +99,24 @@ class FakeMirror:
     def wall_ns(self, t_us):
         """The wall-clock time at which the fake's clock reads t_us."""
         return time.time_ns() + int((t_us - self.now_us()) * 1000 / (1.0 + self.drift))
+
+    def esp_us(self, wall_ns):
+        """What the fake's clock read at a wall-clock time: wall_ns backwards."""
+        return self.now_us() + (wall_ns - time.time_ns()) * 1e-3 * (1.0 + self.drift)
+
+    def pos_at_wall(self, wall_ns):
+        """Where the mirror was at a wall-clock time in the last few seconds (for a simulated
+        camera that needs to know whether it moved during an exposure)."""
+        t = self.esp_us(wall_ns)
+        with self.lock:
+            motions = list(self._motions)
+            pos = self.pos
+        i = bisect.bisect_right([m[0] for m in motions], t)
+        if i == 0:
+            return motions[0][1] if motions else pos
+        t_start, start, target, speed = motions[i - 1]
+        done = int(speed * max(0.0, t - t_start) * 1e-6)
+        return target if done >= abs(target - start) else start + (done if target > start else -done)
 
     def _wait_until_us(self, t_us):
         seconds = self._t0 + (t_us - self.clock_offset_us) / (1e6 * (1.0 + self.drift)) - time.monotonic()
@@ -113,6 +141,7 @@ class FakeMirror:
         with self.lock:
             start = self.pos = self._pos_at(t_start)
             self.target, self._motion = target, (start, target, t_start, speed)
+            self._motions = self._motions[-200:] + [(t_start, start, target, speed)]
         return t_start + abs(target - start) / speed * 1e6
 
     def _arrive(self):
@@ -125,6 +154,7 @@ class FakeMirror:
 
     def _start(self, state, job, *args):
         self._abort.clear()
+        self._kick.clear()
         with self.lock:
             self.state = state
 
@@ -141,12 +171,14 @@ class FakeMirror:
         """Abort the running job, wait for it, and stop the motor where it got to. Never call
         with self.lock held: the job needs it."""
         self._abort.set()
+        self._kick.set()
         if self._job is not None:
             self._job.join(timeout=2.0)
             self._job = None
         with self.lock:
             self.pos = self.target = self._pos_now()
             self._motion = None
+            self._next_tick = None
 
     def _halt(self, why):
         """End the running job as the firmware does, with the events it sends for that."""
@@ -180,9 +212,26 @@ class FakeMirror:
             self.state = "idle"
             self._ev("MOVED", pos=self.pos, t=round(done))
 
+    def _wait_tick(self):
+        """Wait for the running scan's next line tick, which NUDGE can move meanwhile. Returns
+        its time on the fake's clock, with the tick after it already scheduled one period on
+        (from then on NUDGE and PERIOD act on that one)."""
+        while True:
+            with self.lock:
+                if self._abort.is_set():
+                    raise Abort
+                tick = self._next_tick
+                seconds = self._t0 + (tick - self.clock_offset_us) / (1e6 * (1.0 + self.drift)) - time.monotonic()
+                if seconds <= 0:
+                    # a PERIOD sent since the last tick takes effect from the tick after this one
+                    self._next_tick = tick + self._period
+                    return tick
+            self._kick.wait(seconds)
+            self._kick.clear()
+
     def _scan(self, start, step, lines, period, t0, settle_us):
         with self.lock:
-            self.line, self.lines = 0, lines
+            self.line, self.lines, self._period = 0, lines, period
         ready = self.now_us()
         if self.pos != start:
             ready = self._move(start, self.vmax, ready) + settle_us
@@ -190,16 +239,19 @@ class FakeMirror:
             with self.lock:
                 self._arrive()
         # ticks that come before the mirror has arrived and settled are skipped, whole periods
-        first = t0 + max(0, math.ceil((ready - t0) / period)) * period
+        with self.lock:
+            self._next_tick = t0 + max(0, math.ceil((ready - t0) / period)) * period
         for n in range(lines):
-            tick = first + n * period
+            tick = self._wait_tick()
+            with self.lock:
+                after = self._next_tick
+            self.ticks.append((self.scans, n, self.wall_ns(tick)))
             ready = tick   # line 0: already there
             if n:
-                self._wait_until_us(tick)
                 ready = self._move(start + n * step, self.vstart, tick) + settle_us
             # it reports the line once settled, or at the next tick if it is still moving then
-            settled = ready < tick + period
-            sent = ready if settled else tick + period
+            settled = ready < after
+            sent = ready if settled else after
             self._wait_until_us(sent)
             with self.lock:
                 if settled:
@@ -209,13 +261,14 @@ class FakeMirror:
                 self.line = n + 1
                 self.line_times.append((self.scans, n, self.wall_ns(ready if settled else tick)))
                 self._ev("LINE", n=n, t=round(tick), pos=self._pos_at(sent), ready=round(ready) if settled else -1)
-        done = first + lines * period   # the tick after the last line
-        self._wait_until_us(done)
+        done = self._wait_tick()   # the tick after the last line
+        self.ticks.append((self.scans, lines, self.wall_ns(done)))
         with self.lock:
             if self._abort.is_set():
                 raise Abort
             self.pos = self._pos_at(done)
             self.state = "idle"
+            self._next_tick = None
             self._ev("SCAN_DONE", lines=lines, t=round(done), pos=self.pos, aborted=0)
 
     # --- commands -------------------------------------------------------------------------
@@ -326,6 +379,52 @@ class FakeMirror:
         self.scans += 1
         self._ok("SCAN", cid, mode="stare", t0=round(t0), period=period, start=start, step=step, lines=lines)
         self._start("scanning", self._scan, start, step, lines, period, t0, settle)
+
+    def _cmd_nudge(self, args, cid):
+        if set(args) != {"dt"}:
+            raise ValueError("dt= is required, and nothing else")
+        dt = int(args["dt"])
+        if not -1_000_000 <= dt <= 1_000_000:
+            raise ValueError("dt must be -1000000..1000000")
+        with self.lock:
+            if self.state != "scanning" or self._next_tick is None:
+                return self._err("NUDGE", "no_scan", cid, "no scan is running")
+            self._next_tick += dt
+            nxt = self._next_tick
+        self.nudges.append(dt)
+        self._kick.set()
+        self._ok("NUDGE", cid, next=round(nxt))
+
+    def _cmd_period(self, args, cid):
+        if set(args) != {"us"}:
+            raise ValueError("us= is required, and nothing else")
+        us = float(args["us"])
+        if not 1000 <= us <= 60e6:
+            raise ValueError("us must be 1000..60000000")
+        with self.lock:
+            if self.state != "scanning" or self._next_tick is None:
+                return self._err("PERIOD", "no_scan", cid, "no scan is running")
+            self._period = us
+        self.periods.append(us)
+        self._ok("PERIOD", cid, us=us)
+
+    CFG_KEYS = ("usteps", "vmax", "vstart", "accel", "settle", "min", "max")
+
+    def _cmd_cfg(self, args, cid):
+        if args:
+            unknown = set(args) - {"vmax", "vstart", "settle"}
+            if unknown:
+                raise ValueError("the fake mirror only sets vmax, vstart and settle, not %s" % sorted(unknown)[0])
+            if self.state in BUSY:
+                return self._not_now("CFG", cid)
+            values = {k: int(v) for k, v in args.items()}
+            with self.lock:
+                self.vmax = values.get("vmax", self.vmax)
+                self.vstart = values.get("vstart", self.vstart)
+                self.settle_us = values.get("settle", self.settle_us)
+            return self._ok("CFG", cid, **values)
+        self._ok("CFG", cid, usteps=32, vmax=self.vmax, vstart=self.vstart, accel=20000, settle=self.settle_us,
+                 min=self.limits[0], max=self.limits[1])
 
     def _cmd_reboot(self, args, cid):
         self._ok("REBOOT", cid)

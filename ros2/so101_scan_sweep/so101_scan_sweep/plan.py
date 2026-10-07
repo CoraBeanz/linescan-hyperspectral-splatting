@@ -14,7 +14,13 @@ degrees, since that is what people write; everything is converted to radians on 
       start_angle_deg: -6.0            # mirror angle of the first line; 0 is the 45 deg rest
       steps_per_line: 2                # microsteps between lines; negative sweeps the other way
       n_lines: 107
-      line_period_s: 0.0333            # one camera frame per line
+      line_period_s: 0.0333            # one camera frame per line; with line_camera running the
+                                       # bridge rounds it up to whole camera frames
+    camera:                            # line_camera, the spectrograph camera (so101_scan_camera)
+      record: auto                     # auto: record its lines into the scan folder when it is
+                                       # running; required: stop if it isn't; off: don't
+      references: ""                   # a folder whose reference/ has this scan's dark and white
+                                       # (default: the ones capture_reference took last)
     viewpoints:
       - name: above
         joints_deg: {shoulder_pan: 0, shoulder_lift: 0, elbow_flex: 50, wrist_flex: -50, wrist_roll: -87}
@@ -36,7 +42,9 @@ DEFAULTS = {
     "home_mirror": True,
     "move": {"max_joint_speed_deg": 30.0, "min_move_s": 1.0, "settle_s": 0.5},
     "sweep": {"start_angle_deg": -6.0, "steps_per_line": 2, "n_lines": 107, "line_period_s": 0.0333},
+    "camera": {"record": "auto", "references": ""},
 }
+CAMERA_RECORD = ("auto", "required", "off")
 
 
 class PlanError(ValueError):
@@ -66,6 +74,8 @@ class Plan:
     max_joint_speed: float  # rad/s
     min_move_time: float    # s
     settle_time: float      # s
+    camera_record: str = "auto"      # auto, required or off
+    camera_references: str = ""      # folder with reference/, or empty for line_camera's latest
     viewpoints: list = field(default_factory=list)
     source: dict = field(default_factory=dict)  # the YAML as loaded, defaults filled in
 
@@ -100,6 +110,18 @@ def from_dict(data):
                 source=d)
     if plan.max_joint_speed <= 0:
         raise PlanError("max_joint_speed_deg must be positive")
+    camera = d["camera"] or {}
+    unknown = set(camera) - set(DEFAULTS["camera"])
+    if unknown:
+        raise PlanError("camera: unknown keys %s" % sorted(unknown))
+    record = camera.get("record", "auto")
+    if isinstance(record, bool):      # YAML reads a bare off/on as false/true
+        record = "required" if record else "off"
+    plan.camera_record = str(record).strip().lower()
+    if plan.camera_record not in CAMERA_RECORD:
+        raise PlanError("camera.record is %r; use one of %s" % (record, ", ".join(CAMERA_RECORD)))
+    refs = camera.get("references") or ""
+    plan.camera_references = os.path.abspath(os.path.expanduser(os.path.expandvars(str(refs)))) if refs else ""
     for i, v in enumerate(vps):
         name = str(v.get("name", "view%d" % i))
         joints = v.get("joints_deg") or {}

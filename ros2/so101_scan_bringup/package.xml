@@ -5,8 +5,8 @@
   <version>0.1.0</version>
   <description>
     Launch files and controller settings that bring up the SO-101 scan arm: the URDF,
-    ros2_control with the STS3215 driver (or mock hardware), the scan mirror bridge, and
-    optionally Foxglove or RViz.
+    ros2_control with the STS3215 driver (or mock hardware), the scan mirror bridge, the
+    spectrograph camera, and optionally Foxglove or RViz.
   </description>
   <maintainer email="vincentryanbaker@gmail.com">CoraBeanz</maintainer>
   <license>TODO</license>
@@ -19,6 +19,7 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>so101_scan_camera</exec_depend>
   <exec_depend>so101_scan_description</exec_depend>
   <exec_depend>so101_scan_hardware</exec_depend>
   <exec_depend>so101_scan_sweep</exec_depend>

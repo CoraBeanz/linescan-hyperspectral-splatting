@@ -10,6 +10,10 @@
     # the real arm and the real mirror
     ros2 launch so101_scan_bringup scan_arm.launch.py
 
+    # ... with the spectrograph camera, binning lines with its calibration (or camera:=fake for
+    # a simulated one with a made-up spectrograph)
+    ros2 launch so101_scan_bringup scan_arm.launch.py camera:=v4l2 camera_calibration:=/data/hsical/cal
+
 What starts:
   robot_state_publisher   the URDF (so101_scan_description) and TF for every frame
   ros2_control_node       the STS3215 driver (or mock hardware) at 100 Hz, with
@@ -17,6 +21,8 @@ What starts:
                           a trajectory controller (not started with torque:=false)
   scan_mirror_bridge      talks to the mirror ESP32; publishes the mirror angle and scan lines
   fake_scan_mirror        with mirror:=fake, a simulated ESP32 on a pseudo-terminal
+  line_camera             with camera:=v4l2 or fake, the spectrograph camera
+                          (so101_scan_camera); the bridge locks sweeps to its frames
   foxglove_bridge, rviz2  optional viewers
 
 Stopping the launch leaves the servos holding the arm where it is; torque:=false or
@@ -47,7 +53,7 @@ def _true(text):
 def _setup(context):
     arg = {name: LaunchConfiguration(name).perform(context) for name in (
         "use_mock_hardware", "port", "calibration_file", "torque", "mirror", "mirror_port",
-        "mirror_config", "foxglove", "rviz")}
+        "mirror_config", "camera", "camera_config", "camera_calibration", "foxglove", "rviz")}
     description = get_package_share_directory("so101_scan_description")
     bringup = get_package_share_directory("so101_scan_bringup")
     mock = _true(arg["use_mock_hardware"])
@@ -92,6 +98,21 @@ def _setup(context):
     nodes.append(Node(package="so101_scan_sweep", executable="scan_mirror_bridge", output="screen",
                       parameters=[arg["mirror_config"], {"port": mirror_port}]))
 
+    camera = arg["camera"]
+    if camera not in ("none", "v4l2", "fake"):
+        raise RuntimeError("camera:=%s; use none, v4l2 or fake" % camera)
+    if camera != "none":
+        overrides = {"source": camera}
+        if arg["camera_calibration"]:
+            overrides["calibration"] = os.path.expanduser(arg["camera_calibration"])
+        if camera == "fake":
+            # a small simulated sensor, so it keeps up at 30 fps anywhere
+            overrides.update(width=164, height=124, slit_bins=64)
+        config = arg["camera_config"] or os.path.join(get_package_share_directory("so101_scan_camera"), "config",
+                                                      "line_camera.yaml")
+        nodes.append(Node(package="so101_scan_camera", executable="line_camera", output="screen",
+                          parameters=[config, overrides]))
+
     if _true(arg["foxglove"]):
         nodes.append(Node(package="foxglove_bridge", executable="foxglove_bridge", output="screen",
                           parameters=[{"port": 8765}]))
@@ -117,6 +138,14 @@ def generate_launch_description():
         DeclareLaunchArgument("mirror_port", default_value="/dev/scan_mirror",
                               description="the mirror ESP32's USB serial port"),
         DeclareLaunchArgument("mirror_config", default_value=os.path.join(bringup, "config", "scan_mirror.yaml")),
+        DeclareLaunchArgument("camera", default_value="none",
+                              description="none, v4l2 (the IMX219 on /dev/video0) or fake (simulated)"),
+        DeclareLaunchArgument("camera_config", default_value="",
+                              description="line_camera's parameters (default: so101_scan_camera's "
+                                          "config/line_camera.yaml)"),
+        DeclareLaunchArgument("camera_calibration", default_value="",
+                              description="hsical calibration folder to bin lines with (overrides the "
+                                          "config's calibration)"),
         DeclareLaunchArgument("foxglove", default_value="false",
                               description="start foxglove_bridge on port 8765, to view from another computer"),
         DeclareLaunchArgument("rviz", default_value="false"),

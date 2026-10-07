@@ -1,0 +1,11 @@
+# Start writing the camera's scan lines into a scan folder (scan_sweep's output directory):
+# frames/ (camera.json, frames.csv, and raw frames when kept) and binned/ (calibrated lines).
+# Lines are matched to frames whether or not a recording is open; only an open one writes.
+string directory       # the scan folder; created if missing
+---
+bool success
+string message         # why not (no frames from the camera, the folder can't be written)
+bool calibrated        # lines are binned with a calibration (binned/ is written)
+bool raw               # raw frames are kept (frames/sweep_*/)
+string references      # a folder whose reference/ has the latest dark and white, when they were
+                       # taken outside a recording; empty if none (scan_sweep notes it in scan.json)

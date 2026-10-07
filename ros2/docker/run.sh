@@ -30,11 +30,13 @@ TTY=-i
 # --security-opt seccomp=...  JetPack 4's Docker refuses a call Ubuntu 22.04 uses to start
 #                             threads (clone3); without this, ROS nodes fail to start
 # -v /dev:/dev + cgroup rules USB serial ports (ttyACM: 166, ttyUSB: 188), including after
-#                             unplugging and plugging back in, which --device would not survive
+#                             unplugging and plugging back in, which --device would not survive,
+#                             and the camera (video4linux: 81)
 exec docker run --rm $TTY \
     --network host --ipc host \
     --security-opt seccomp=unconfined \
     -v /dev:/dev --device-cgroup-rule 'c 166:* rmw' --device-cgroup-rule 'c 188:* rmw' \
+    --device-cgroup-rule 'c 81:* rmw' \
     -v "$WS:/ws" \
     -v "$REPO:/ws/src/linescan-hyperspectral-splatting" \
     -v "$DATA:/data" \

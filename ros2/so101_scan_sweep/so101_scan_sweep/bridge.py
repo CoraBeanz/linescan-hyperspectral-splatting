@@ -14,12 +14,21 @@ that into ROS:
   ~/start_sweep   StartSweep              start a sweep; returns once the ESP32 accepts it
   ~/stop          std_srvs/Trigger        stop whatever is running
 
+and it listens to /line_camera/frame (FrameStamp), when line_camera runs, to lock sweeps to the
+camera's frames (below).
+
 A sweep is the firmware's stare scan: on each line's tick the mirror steps, settles and holds
 still until the next tick, and the ESP32 reports when it settled. Once a second the bridge sends
 a PING and maps the ESP32's clock onto ROS time from the round trips (clock_sync.py), so a line's
 stamp is the ROS time the mirror settled, good to about a millisecond, and the arm's pose can be
 looked up at that instant. The bridge keeps trying to (re)open the port, so the ESP32 can be
 plugged in after launch.
+
+With the camera's frames coming in, a sweep is locked to them (frame_lock.py): the line period
+becomes a whole number of frame periods, long enough for one exposure plus a move, and the ticks
+go where the moves fall between exposures. The bridge then keeps them there with NUDGE (phase)
+and PERIOD (rate) as each line reports when its tick was. Without frames, or with
+frame_lock: false, sweeps run on their own clock as asked.
 """
 
 import itertools
@@ -29,6 +38,7 @@ import time
 import traceback
 from dataclasses import dataclass
 
+import numpy as np
 import rclpy
 import serial
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
@@ -38,8 +48,9 @@ from rclpy.time import Time
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 
-from so101_scan_interfaces.msg import MirrorState, ScanLine
+from so101_scan_interfaces.msg import FrameStamp, MirrorState, ScanLine
 from so101_scan_interfaces.srv import MoveMirror, StartSweep
+from so101_scan_sweep import frame_lock as fl
 from so101_scan_sweep import mirror_protocol as mp
 from so101_scan_sweep.clock_sync import ClockSync
 
@@ -220,9 +231,15 @@ class MirrorLink:
 class Sweep:
     id: int
     n_lines: int
-    period_us: float
+    period_us: float        # on the ESP32's clock
     seen: int = 0
     started: bool = False   # the ESP32 has accepted it (OK SCAN)
+    lock: fl.LockPlan = None  # locked to the camera's frames
+    nudge_pending: bool = False
+    period_line: int = 0    # the line at which PERIOD was last sent
+    nudges: int = 0
+    phase_errors_ns: list = None
+    busy_max_us: int = 0    # the longest move and settle of a line, as reported
 
 
 def why(reply, verb):
@@ -246,11 +263,18 @@ class ScanMirrorBridge(Node):
         status_period = p("status_period", 0.1).value
         self.home_timeout = p("home_timeout", 75.0).value  # the firmware gives up after 60 s
         self.move_timeout = p("move_timeout", 10.0).value
+        frame_topic = p("frame_topic", "/line_camera/frame").value
+        self.frame_lock = p("frame_lock", True).value
+        self.lock_margin_ns = p("lock_margin", 0.001).value * 1e9     # either side of a window
+        self.nudge_threshold_ns = p("nudge_threshold", 0.0003).value * 1e9
+        self.lock_lead_ns = p("lock_lead", 0.15).value * 1e9         # first tick at least this far ahead
 
         self.clock_sync = ClockSync()
         self.rad_per_step = 2.0 * math.pi / 6400  # until the ESP32's INFO says otherwise
         self.tick_us = 50       # its step timer; INFO says too
         self.firmware = None    # the fields of its INFO reply
+        self.mirror_cfg = {}    # its settings (CFG): vstart and settle set how long a line's move takes
+        self.frames = fl.FrameClock()
         self.last_esp_now = None  # its clock in the last PING or STATUS reply
         self.esp_state = "disconnected"
         self.homed = False
@@ -272,6 +296,8 @@ class ScanMirrorBridge(Node):
 
         services = ReentrantCallbackGroup()
         timers = MutuallyExclusiveCallbackGroup()
+        self.create_subscription(FrameStamp, frame_topic, self.on_frame, 50,
+                                 callback_group=MutuallyExclusiveCallbackGroup())
         self.create_service(Trigger, "~/home", self.handle_home, callback_group=services)
         self.create_service(Trigger, "~/stop", self.handle_stop, callback_group=services)
         self.create_service(MoveMirror, "~/move", self.handle_move, callback_group=services)
@@ -318,6 +344,7 @@ class ScanMirrorBridge(Node):
         self.clock_sync.reset()
         self.last_esp_now = None
         self.link.send_command("INFO")
+        self.link.send_command("CFG")
         threading.Thread(target=self._ping_burst, daemon=True).start()
 
     def _ping_burst(self):
@@ -332,8 +359,12 @@ class ScanMirrorBridge(Node):
                 if handler:
                     handler(m)
             elif m.kind == "ERR":
-                # the service that sent the command reports it to its caller too
-                self.get_logger().info("ESP32: %s" % m)
+                if m.name in ("NUDGE", "PERIOD"):
+                    self.end_nudge()
+                    self.get_logger().warning("ESP32 refused the frame lock's %s: %s" % (m.name, m))
+                else:
+                    # the service that sent the command reports it to its caller too
+                    self.get_logger().info("ESP32: %s" % m)
             elif m.name == "PING":
                 t = m.int("t")
                 self.check_clock(t)
@@ -360,6 +391,11 @@ class ScanMirrorBridge(Node):
                 self.publish_state()
             elif m.name == "INFO":
                 self.on_info(m)
+            elif m.name == "CFG":
+                if "settle" in m.fields:     # the full list, not the reply to a change
+                    self.mirror_cfg = dict(m.fields)
+            elif m.name == "NUDGE":
+                self.end_nudge()
         except mp.ProtocolError as e:
             self.get_logger().warning("ESP32 sent %r: %s" % (str(m), e))
 
@@ -406,6 +442,45 @@ class ScanMirrorBridge(Node):
         log = self.get_logger().error if m.name == "FAULT" else self.get_logger().warning
         log("ESP32: %s" % m)
 
+    def on_frame(self, msg):
+        self.frames.add(Time.from_msg(msg.header.stamp).nanoseconds, Time.from_msg(msg.exposure_start).nanoseconds,
+                        Time.from_msg(msg.exposure_end).nanoseconds)
+
+    def end_nudge(self):
+        with self._lock:
+            if self.active is not None:
+                self.active.nudge_pending = False
+
+    def track_lock(self, sweep, n, t, ready):
+        """After line n of a locked sweep (its tick at t on the ESP32's clock): how far to NUDGE
+        the ticks still to come (us, 0 for not at all), and a new PERIOD (us) or None."""
+        if ready >= 0 and n > 0:
+            busy = ready - t
+            sweep.busy_max_us = max(sweep.busy_max_us, busy)
+            if busy * 1000 > sweep.lock.busy_ns + sweep.lock.slack_ns / 2:
+                self.get_logger().warning(
+                    "sweep %d line %d: the mirror took %.1f ms to move and settle, more than the %.1f ms the "
+                    "frame lock left for it; frames may catch it moving" % (
+                        sweep.id, n, busy * 1e-3, (sweep.lock.busy_ns + sweep.lock.slack_ns / 2) * 1e-6),
+                    throttle_duration_sec=5.0)
+        now = self.now_ns()
+        fit = self.frames.fit(now) if self.clock_sync.ready else None
+        if fit is None:
+            return 0, None   # no frames for now: the ticks carry on as they are
+        err = fl.phase_error_ns(fit, sweep.lock, self.clock_sync.to_ros_ns(t))
+        sweep.phase_errors_ns.append(err)
+        ns_per_us = self.clock_sync.ns_per_us
+        nudge = 0
+        if not sweep.nudge_pending and abs(err) > self.nudge_threshold_ns and n < sweep.n_lines - 1:
+            nudge = int(round(-err / ns_per_us))
+            sweep.nudge_pending = True
+            sweep.nudges += 1
+        period = None
+        want = sweep.lock.frames_per_line * fit.period_ns / ns_per_us
+        if abs(want - sweep.period_us) > 0.05 and n - sweep.period_line >= 10 and n < sweep.n_lines - 2:
+            period, sweep.period_us, sweep.period_line = want, want, n
+        return nudge, period
+
     def on_line(self, m):
         n, t, pos = m.int("n"), m.int("t"), m.int("pos")
         ready = m.int("ready") if "ready" in m.fields else -1
@@ -420,11 +495,15 @@ class ScanMirrorBridge(Node):
         settled = ready >= 0
         at = ready if settled else t
         stamp_ns = self.esp_to_ros_ns(at)
+        # the line's hold ends at the next tick (the period after this one: a PERIOD sent now
+        # starts a tick later), or earlier if this line's NUDGE pulls the ticks in
+        period_us = sweep.period_us
+        nudge, new_period = self.track_lock(sweep, n, t, ready) if sweep.lock is not None else (0, None)
         msg = ScanLine()
         msg.header.stamp = Time(nanoseconds=stamp_ns).to_msg()
         msg.header.frame_id = self.frame_id
         # the next line's tick, less one step-timer tick: the timer can act that much early
-        moves_on = t + sweep.period_us - self.tick_us
+        moves_on = t + period_us - self.tick_us + min(nudge, 0)
         msg.hold_until = Time(nanoseconds=stamp_ns + int(round((moves_on - at) * 1000))).to_msg()
         msg.sweep_id = sweep.id
         msg.index = n
@@ -433,6 +512,10 @@ class ScanMirrorBridge(Node):
         msg.settled = settled
         msg.last = n == sweep.n_lines - 1
         self.line_pub.publish(msg)
+        if nudge:
+            self.link.send_command("NUDGE", dt=nudge)
+        if new_period is not None:
+            self.link.send_command("PERIOD", us=new_period)
         self.publish_joint(msg.header.stamp, msg.angle)
         if not settled:
             self.get_logger().warning("sweep %d line %d: the mirror was still moving when the next line "
@@ -452,6 +535,12 @@ class ScanMirrorBridge(Node):
         if sweep is not None and (reason or sweep.seen < sweep.n_lines):
             self.get_logger().warning("sweep %d ended after %d of %d lines%s"
                                       % (sweep.id, sweep.seen, sweep.n_lines, ": " + reason if reason else ""))
+        if sweep is not None and sweep.lock is not None and sweep.phase_errors_ns:
+            e = np.abs(np.array(sweep.phase_errors_ns))
+            self.get_logger().info("sweep %d kept to the camera's frames within %.2f ms (typically %.2f ms), "
+                                   "%d nudges; moves took up to %.1f ms of the %.1f ms planned"
+                                   % (sweep.id, e.max() * 1e-6, np.median(e) * 1e-6, sweep.nudges,
+                                      sweep.busy_max_us * 1e-3, sweep.lock.busy_ns * 1e-6))
 
     def publish_joint(self, stamp=None, angle=None):
         js = JointState()
@@ -579,6 +668,21 @@ class ScanMirrorBridge(Node):
         response.success, response.message = True, "at %.4f rad" % response.angle
         return response
 
+    def plan_lock(self, request):
+        """(LockPlan, t0 on the ESP32's clock, period in ESP32 us) for a sweep locked to the
+        camera's frames, or None when there are none to lock to."""
+        if not self.frame_lock or not self.clock_sync.ready:
+            return None
+        fit = self.frames.fit(self.now_ns())
+        if fit is None:
+            return None
+        cfg = self.mirror_cfg
+        busy = fl.busy_ns(request.steps_per_line, float(cfg.get("vstart", 1600)), float(cfg.get("settle", 3000)),
+                          self.tick_us)
+        lock = fl.plan_lock(fit, request.line_period * 1e9, busy, self.lock_margin_ns)
+        first = fl.first_tick_ns(fit, lock, self.now_ns() + self.lock_lead_ns)
+        return lock, int(round(self.clock_sync.to_esp_us(first))), lock.line_period_ns / self.clock_sync.ns_per_us
+
     def handle_start_sweep(self, request, response):
         start = self.angle_to_step(request.start_angle)
         response.start_angle = self.step_to_angle(start)
@@ -587,6 +691,8 @@ class ScanMirrorBridge(Node):
         error = self._check(response.start_angle, self.step_to_angle(end))
         if error is None and (request.n_lines < 1 or request.line_period < 0.001):
             error = "need n_lines >= 1 and line_period >= 0.001 s"
+        locked = self.plan_lock(request) if error is None else None
+        lock, t0, period_us = locked if locked else (None, None, request.line_period * 1e6)
         sweep = None
         if error is None:
             with self._lock:
@@ -594,10 +700,11 @@ class ScanMirrorBridge(Node):
                     error = "sweep %d is still running" % self.active.id
                 else:
                     self.next_sweep_id += 1
-                    sweep = self.active = Sweep(self.next_sweep_id, request.n_lines, request.line_period * 1e6)
+                    sweep = self.active = Sweep(self.next_sweep_id, request.n_lines, period_us, lock=lock,
+                                                phase_errors_ns=[])
         if sweep is not None:
             reply = self.link.request("SCAN", 2.0, mode="stare", start=start, step=request.steps_per_line,
-                                      lines=request.n_lines, period=sweep.period_us)
+                                      lines=request.n_lines, period=sweep.period_us, t0=t0)
             if reply is None or reply.kind == "ERR":
                 error = why(reply, "SCAN")
                 with self._lock:
@@ -606,7 +713,23 @@ class ScanMirrorBridge(Node):
             else:
                 response.sweep_id = sweep.id
         response.accepted = error is None
-        response.message = error or "sweep %d: %d lines" % (response.sweep_id, request.n_lines)
+        response.frame_locked = lock is not None
+        if lock is not None:
+            response.line_period = lock.line_period_ns * 1e-9
+            response.frames_per_line = lock.frames_per_line
+        else:
+            response.line_period = request.line_period
+        if error:
+            response.message = error
+        elif lock is not None:
+            response.message = ("sweep %d: %d lines locked to the camera, %d frame%s a line (%.1f ms), "
+                                "%d still for its whole exposure" % (
+                                    response.sweep_id, request.n_lines, lock.frames_per_line,
+                                    "" if lock.frames_per_line == 1 else "s", lock.line_period_ns * 1e-6,
+                                    lock.good_frames))
+        else:
+            response.message = "sweep %d: %d lines%s" % (response.sweep_id, request.n_lines,
+                                                          ", not locked to a camera" if self.frame_lock else "")
         return response
 
     def destroy_node(self):

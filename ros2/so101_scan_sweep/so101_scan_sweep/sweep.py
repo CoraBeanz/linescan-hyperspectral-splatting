@@ -15,6 +15,11 @@ run writes a folder:
       scan.json    the run: the plan, per-viewpoint counts and timing, frames and units
       robot.urdf   the URDF the poses came from
 
+With line_camera running (scan_arm.launch.py camera:=v4l2), it also has the camera record into
+the same folder (frames/ and binned/, see so101_scan_camera/session.py), and the mirror bridge
+locks the lines to the camera's frames; the plan's camera.record says whether that is needed
+(plan.py). scan_to_dataset (so101_scan_camera) turns the folder into the splat trainer's dataset.
+
 It also publishes every line's pose on /scan/line_pose and the scan lines as RViz markers on
 /scan/markers. Ctrl-C stops the mirror and still writes what was logged.
 """
@@ -47,7 +52,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from so101_scan_description.kinematics import Robot
 from so101_scan_interfaces.msg import MirrorState, ScanLine, ScanLinePose
-from so101_scan_interfaces.srv import StartSweep
+from so101_scan_interfaces.srv import StartRecording, StartSweep
 from so101_scan_sweep import plan as plan_mod
 from so101_scan_sweep.line_log import JointBuffer, LinePoser, LinesCsv, quaternion
 from so101_scan_sweep.plan import ARM_JOINTS
@@ -104,6 +109,8 @@ class ScanSweep(Node):
         self.home_client = self.create_client(Trigger, "/scan_mirror/home", callback_group=group)
         self.stop_client = self.create_client(Trigger, "/scan_mirror/stop", callback_group=group)
         self.sweep_client = self.create_client(StartSweep, "/scan_mirror/start_sweep", callback_group=group)
+        self.record_client = self.create_client(StartRecording, "/line_camera/start_recording", callback_group=group)
+        self.stop_record_client = self.create_client(Trigger, "/line_camera/stop_recording", callback_group=group)
         self.create_timer(0.02, self.process_pending)
 
     # --- subscriptions --------------------------------------------------------------------
@@ -282,6 +289,46 @@ class ScanSweep(Node):
         if not res.success:
             raise ScanError("homing failed: %s" % res.message)
 
+    def start_recording(self, plan, out_dir, info):
+        """Have line_camera write its lines into the scan folder. Returns whether it does."""
+        mode = plan.camera_record
+        info["camera"] = {"record": mode, "recording": False}
+        if mode == "off":
+            return False
+        if not self.record_client.wait_for_service(timeout_sec=5.0 if mode == "required" else 2.0):
+            if mode == "required":
+                raise ScanError("line_camera is not running and the plan has camera.record: required; start it "
+                                "with scan_arm.launch.py camera:=v4l2")
+            self.get_logger().warning("line_camera is not running: scanning without the camera")
+            return False
+        deadline = time.monotonic() + 5.0     # it may still be starting the camera
+        while True:
+            res = self.wait(self.record_client.call_async(StartRecording.Request(directory=out_dir)), 10.0,
+                            "/line_camera/start_recording")
+            if res.success or time.monotonic() > deadline:
+                break
+            time.sleep(0.5)
+        info["camera"]["message"] = res.message
+        if not res.success:
+            if mode == "required":
+                raise ScanError("line_camera can't record: %s" % res.message)
+            self.get_logger().warning("line_camera can't record (%s): scanning without the camera" % res.message)
+            return False
+        info["camera"].update(recording=True, calibrated=res.calibrated, raw=res.raw)
+        references = plan.camera_references or res.references
+        if references:
+            info["camera"]["references"] = references   # where scan_to_dataset also looks for darks and whites
+        self.get_logger().info(res.message)
+        return True
+
+    def stop_recording(self, info):
+        try:
+            res = self.call(self.stop_record_client, Trigger.Request(), 30.0, "/line_camera/stop_recording")
+            info["camera"]["stopped"] = res.message
+            self.get_logger().info(res.message)
+        except Exception as e:  # still write scan.json
+            self.get_logger().error("could not stop line_camera's recording: %s" % e)
+
     def sweep(self, index, viewpoint):
         s = viewpoint.sweep
         req = StartSweep.Request(start_angle=s.start_angle, steps_per_line=s.steps_per_line,
@@ -292,7 +339,10 @@ class ScanSweep(Node):
         log = SweepLog(index, viewpoint.name, s.n_lines)
         with self.lock:
             self.sweeps[res.sweep_id] = log
-        log.done.wait(s.n_lines * s.line_period + 5.0)
+        if res.frame_locked:
+            self.get_logger().info(res.message)
+        # locked to the camera, the period is a whole number of frames, so maybe longer than asked
+        log.done.wait(s.n_lines * max(res.line_period, s.line_period) + 5.0)
         time.sleep(0.6)  # let the last lines' joint states arrive
         return res, log
 
@@ -316,7 +366,9 @@ class ScanSweep(Node):
         info["units"] = {"position": "m", "angle": "rad", "quaternion": "x y z w",
                          "stamp_ns": "ROS time in ns at which the mirror settled on the line",
                          "hold_until_ns": "ROS time in ns at which the mirror moved on to the next line"}
+        recording = False
         try:
+            recording = self.start_recording(plan, out_dir, info)
             self.ensure_homed(plan)
             for i, vp in enumerate(plan.viewpoints):
                 entry = {"name": vp.name, "joints_goal": vp.joints}
@@ -351,6 +403,8 @@ class ScanSweep(Node):
                 time.sleep(0.05)
             with self.lock:
                 csv_file, self.csv = self.csv, None
+            if recording:
+                self.stop_recording(info)
             info["finished"] = datetime.now().isoformat()
             if csv_file:
                 csv_file.close()
@@ -362,6 +416,8 @@ class ScanSweep(Node):
 
 def summarize(res, log):
     out = {"sweep_id": res.sweep_id, "start_angle": res.start_angle, "rad_per_step": res.rad_per_step,
+           "line_period_s": res.line_period, "frame_locked": res.frame_locked,
+           "frames_per_line": res.frames_per_line,
            "lines_expected": log.n_lines, "lines_logged": len(log.stamps), "lines_unsettled": log.unsettled}
     if len(log.stamps) > 1:
         periods = np.diff(np.array(log.stamps, dtype=np.int64)) * 1e-9

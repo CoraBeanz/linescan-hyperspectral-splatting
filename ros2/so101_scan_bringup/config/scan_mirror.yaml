@@ -11,3 +11,10 @@ scan_mirror:
     max_angle: 0.8
     ping_period: 1.0
     status_period: 0.1
+    # Lock sweeps to the spectrograph camera's frames while line_camera publishes them: lines
+    # take a whole number of frames, and the mirror moves between exposures.
+    frame_topic: /line_camera/frame
+    frame_lock: true
+    lock_margin: 0.001       # s kept clear either side of an exposure, for the clocks' error
+    nudge_threshold: 0.0003  # s of phase error before the line clock is nudged
+    lock_lead: 0.15          # s from the request to the first line, at least
