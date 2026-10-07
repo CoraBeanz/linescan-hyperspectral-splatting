@@ -119,7 +119,8 @@ JetPack 4 is Ubuntu 18.04 and Humble needs 22.04, so ROS runs in the container
    If a name is missing, check the device's id with `lsusb` and fix its line in the rules file
    (the file says how).
 2. **Build:** `ros2/docker/run.sh`, then `colcon build` inside (about 10 minutes the first time
-   on a Nano; later builds only redo what changed).
+   on a Nano; later builds only redo what changed). On JetPack 4.6, use
+   [`jetson/ros.sh`](../jetson/README.md) in place of `run.sh`: its Docker can't build this image.
 
 ## First steps with the real arm
 
