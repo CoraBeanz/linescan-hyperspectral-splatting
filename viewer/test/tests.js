@@ -86,6 +86,21 @@ test('decodes features between each Gaussian\'s offset and offset + scale', asyn
   }
 });
 
+test('reads base64 text the same as the binary file', async () => {
+  const { trained } = await fixtures();
+  for (const file of ['../data/trained-16-sweeps.lsplat', '../data/ground-truth.lsplat.gz']) {
+    const bytes = new Uint8Array(await (await fetch(file)).arrayBuffer());
+    let text = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const scene = await decodeSplat(new TextEncoder().encode(btoa(text) + '\n').buffer);
+    const direct = await decodeSplat(bytes.buffer);
+    check(scene.count === direct.count, `${file}: ${scene.count} Gaussians from base64, ${direct.count} from binary`);
+    check(scene.means.every((v, i) => v === direct.means[i]), `${file}: positions differ`);
+    check(scene.features.every((v, i) => v === direct.features[i]), `${file}: features differ`);
+  }
+  return `${trained.count} Gaussians`;
+});
+
 test('rejects files that are not splats', async () => {
   const bad = [new Uint8Array([1, 2, 3]), new TextEncoder().encode('LSPX\u0001\u0000\u0000\u0000\u0004\u0000\u0000\u0000{}  ')];
   for (const bytes of bad) {

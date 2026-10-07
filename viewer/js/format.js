@@ -14,7 +14,8 @@
 //                  feature_range  float32 [N, 2]  offset and scale of the features
 //                  features       uint8   [N, K]  feature = offset + scale * q / 255
 //
-// A spectrum is basis [B, K] times the features. A file may also be gzipped.
+// A spectrum is basis [B, K] times the features. A file may also be gzipped,
+// and either form may be base64 text, for hosts that only serve text.
 
 const MAGIC = 'LSPV';
 
@@ -44,8 +45,16 @@ export async function fetchSplat(url, onProgress) {
   return decodeSplat(bytes.buffer);
 }
 
+// How a file and a gzipped file start, in base64.
+const BASE64_STARTS = ['TFNQ', 'H4sI'];
+
 export async function decodeSplat(buffer) {
   let bytes = new Uint8Array(buffer);
+  if (BASE64_STARTS.includes(String.fromCharCode(...bytes.subarray(0, 4)))) {
+    const text = atob(new TextDecoder().decode(bytes).trim());
+    bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+  }
   if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
     if (typeof DecompressionStream === 'undefined')
       throw new Error("this browser can't unzip files; gunzip it first and open the .lsplat");

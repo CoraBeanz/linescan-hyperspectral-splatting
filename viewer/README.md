@@ -145,6 +145,9 @@ features, `values` (`reflectance`), the default `view` (`eye`, `target`,
 four board `corners`, `lines`) and `source` (where the scene came from). A
 band's value is the basis row times the features.
 
+A file may also be gzipped, and either form may be base64 text, for hosts
+that only serve text.
+
 ## Tests
 
 The checks in `test/` compare the page's code with the C++ renderer on the
