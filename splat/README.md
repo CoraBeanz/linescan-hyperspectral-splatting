@@ -390,6 +390,9 @@ cd build/splat
 
 # True color and CIR images of a scene from the overview camera
 ./splat_render view synth/gt/scene synth/view
+
+# Pack a trained splat into one file for the web viewer in viewer/
+./splat_export synth/train/scene synth.lsplat --dataset synth --poses synth/train/sweep_head_pose.npy
 ```
 
 ## Code map
@@ -410,7 +413,7 @@ include/linesplat/
 ├── spectra.hpp           material spectra, true color (CIE 1931) and CIR
 └── preview.hpp, png.hpp, npy.hpp, rng.hpp, util.hpp
 src/                      a .cpp per header, and cuda/rasterizer.cu
-tools/                    splat_synth, splat_render, splat_train
+tools/                    splat_synth, splat_render, splat_train, splat_export
 tests/                    one file per topic; test_cuda skips without a GPU
 ```
 
