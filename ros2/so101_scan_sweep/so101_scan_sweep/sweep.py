@@ -317,7 +317,7 @@ class ScanSweep(Node):
         info["camera"].update(recording=True, calibrated=res.calibrated, raw=res.raw)
         references = plan.camera_references or res.references
         if references:
-            info["calibration_session"] = references    # where scan_to_dataset looks for the dark and white
+            info["camera"]["references"] = references   # where scan_to_dataset also looks for darks and whites
         self.get_logger().info(res.message)
         return True
 

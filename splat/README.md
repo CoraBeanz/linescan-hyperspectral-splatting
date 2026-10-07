@@ -391,6 +391,9 @@ cd build/splat
 # True color and CIR images of a scene from the overview camera
 ./splat_render view synth/gt/scene synth/view
 
+# A scan from the rig (scan_sweep with line_camera recording) as a dataset; needs numpy only
+python3 ../../splat/tools/scan_to_dataset.py ~/so101_scan/scans/<scan> rig_scan
+
 # Pack a trained splat into one file for the web viewer in viewer/
 ./splat_export synth/train/scene synth.lsplat --dataset synth --poses synth/train/sweep_head_pose.npy
 ```
@@ -420,8 +423,9 @@ tests/                    one file per topic; test_cuda skips without a GPU
 ## Next steps
 
 1. **Time training on the Nano**, where TheRig's GPU takes 3 to 5 ms a step.
-2. **Real data**: a converter from the ROS 2 scan logs to this format, using
-   the wavelength map and warp from the calibration work.
+2. **Real data**: `tools/scan_to_dataset.py` converts a scan folder from the
+   rig (ros2/so101_scan_camera bins its lines with the calibration's maps);
+   what is left is first light and a real scan.
 3. **Fewer features than bands**: a learned spectral basis (K of 8 to 12
    instead of 46), which cuts memory and time on the Nano. The basis gradient
    isn't written yet.

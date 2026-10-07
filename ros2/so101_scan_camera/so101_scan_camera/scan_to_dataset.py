@@ -9,8 +9,9 @@ reference/) wrote into the scan folder, and writes the dataset splat/README.md d
 dataset.json, lines.npy, line_sweep.npy, line_mirror_angle.npy and sweep_head_pose.npy.
 
   values      reflectance against the white reference by default, band by band:
-                  0.98 x sum(line - dark) / (exposure x gain)
-                       / sum(white - its dark) / (its exposure x gain)
+                  R x sum(line - dark) / (exposure x gain)
+                    / sum(white - its dark) / (its exposure x gain)
+              where R is the white's reflectance (its meta.json's, else 0.98 for PTFE),
               with the sums over each band's binned cells weighted by their pixel counts (dim
               pixels count for less, as in hsical). Without a white: radiance, relative to the
               calibration's lamp (counts per second over the calibration's response); or ask
@@ -31,9 +32,10 @@ dataset.json, lines.npy, line_sweep.npy, line_mirror_angle.npy and sweep_head_po
 Lines without a frame, or with more than --max-missing of their values missing, are left out;
 the rest of the missing values (a saturated pixel, a band outside the white's light) are
 filled in from their neighbours along the spectrum, and dataset.json's metadata says how many.
-References are looked for in --references, the scan folder, and the folder scan.json names as
-calibration_session. Raw frames are binned here when the scan has no binned lines (it was
-taken without a calibration), with --calibration.
+References are looked for in --references, the scan folder's reference/, and the folders
+scan.json names (camera.references: where line_camera kept the darks and whites taken outside a
+recording; calibration_session). Raw frames are binned here when the scan has no binned lines
+(it was taken without a calibration), with --calibration.
 """
 
 import argparse
@@ -109,6 +111,7 @@ class Reference:
     gain: float
     folder: str
     root: str
+    reflectance: float = None     # a white's, when its meta.json says
     binned: np.ndarray = None
 
 
@@ -178,9 +181,9 @@ class Scan:
     def references(self, extra_roots=()):
         roots = [os.path.abspath(os.path.expanduser(r)) for r in extra_roots if r]
         roots.append(self.path)
-        cal_session = self.info.get("calibration_session")
-        if cal_session:
-            roots.append(os.path.abspath(os.path.expanduser(cal_session)))
+        for named in ((self.info.get("camera") or {}).get("references"), self.info.get("calibration_session")):
+            if isinstance(named, str) and named:   # relative to the scan folder
+                roots.append(os.path.normpath(os.path.join(self.path, os.path.expanduser(named))))
         out = []
         for root in dict.fromkeys(roots):
             folder = os.path.join(root, "reference")
@@ -196,7 +199,7 @@ class Scan:
                 if meta.get("kind") not in ("dark", "white"):
                     continue
                 ref = Reference(name, meta["kind"], float(meta.get("exposure_us") or 0), float(meta.get("gain", 1.0)),
-                                os.path.join(folder, name), root)
+                                os.path.join(folder, name), root, reflectance=meta.get("reflectance"))
                 binned = os.path.join(root, "binned", "reference_%s.npy" % name)
                 if same_grid and os.path.exists(binned):
                     ref.binned = np.load(binned).astype(np.float64)
@@ -207,7 +210,8 @@ class Scan:
         if ref.binned is None:
             if self.binner is None:
                 self.binner = self.make_binner(grid=self.grid)
-            frames = [np.load(os.path.join(ref.folder, f)) for f in sorted(os.listdir(ref.folder)) if f.endswith(".npy")]
+            frames = [np.load(os.path.join(ref.folder, f)) for f in sorted(os.listdir(ref.folder))
+                      if f.endswith(".npy")]
             frames = [f for a in frames for f in (a if a.ndim == 3 else [a])]
             if not frames:
                 raise ConvertError("no frames in %s" % ref.folder)
@@ -292,7 +296,7 @@ def csv_pose(row, prefix):
 
 
 def convert(scan_dir, out_dir, values="auto", nm_min=500.0, nm_max=950.0, nm_step=10.0, references=(),
-            white_name="", dark_name="", white_reflectance=0.98, calibration=None, slit_bins=256,
+            white_name="", dark_name="", white_reflectance=None, calibration=None, slit_bins=256,
             ground_z=TABLE_Z, max_missing=0.25, sweeps=None, force=False):
     from so101_scan_description.kinematics import Robot
 
@@ -337,6 +341,8 @@ def convert(scan_dir, out_dir, values="auto", nm_min=500.0, nm_max=950.0, nm_ste
         return (binned - dark) / (exposure_us * 1e-6 * gain)
 
     if values == "reflectance":
+        if white_reflectance is None:
+            white_reflectance = float(white.reflectance or 0.98)
         w = per_second(scan.bin_reference(white), white.exposure_us, white.gain)
         den = band_sums(w, pixels, m) / white_reflectance
         log("white: %s (%s), %.0f us, gain %.2f; its dark: %s" % (
@@ -465,7 +471,8 @@ def main(argv=None):
                     help="a folder whose reference/ has darks and whites (may be given more than once)")
     ap.add_argument("--white", default="", help="the white's folder name under reference/")
     ap.add_argument("--dark", default="", help="use only this dark")
-    ap.add_argument("--white-reflectance", type=float, default=0.98, help="the white's reflectance (PTFE: 0.98)")
+    ap.add_argument("--white-reflectance", type=float,
+                    help="the white's reflectance (default: its meta.json's, else 0.98 for PTFE)")
     ap.add_argument("--calibration", help="hsical calibration folder, to bin raw frames (default: camera.json's)")
     ap.add_argument("--slit-bins", type=int, default=256, help="pixels along the slit when binning raw frames here")
     ap.add_argument("--ground-z", type=float, default=TABLE_Z,

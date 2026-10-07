@@ -161,7 +161,9 @@ class LineCamera(Node):
         self._finished = deque(maxlen=50)      # sweeps already written
         self._recent_lines = deque(maxlen=8)   # (stamp, hold_until, step), for the fake camera
         self.writer = None
-        self.last_references = ""
+        # the darks and whites capture_reference took outside a recording, for the next scans
+        self.last_references = self.reference_dir if os.path.isdir(os.path.join(self.reference_dir, "reference")) \
+            else ""
         self._ref_job = None
         self._skip = 0
         self._last_frame_mono = None
@@ -370,7 +372,8 @@ class LineCamera(Node):
         self.get_logger().info("sweep %d: %d lines (%s)%s" % (sweep_id, n, counts or "none",
                                                               "" if writer else "; not recording"))
         if pending:
-            self.get_logger().warning("sweep %d ended with %d lines still waiting for frames" % (sweep_id, len(pending)))
+            self.get_logger().warning("sweep %d ended with %d lines still waiting for frames"
+                                      % (sweep_id, len(pending)))
         if writer is not None and self.binner is not None and n:
             arr = np.full((n,) + self.binner.shape, np.nan, np.float32)
             for i, v in sweep.lines.items():

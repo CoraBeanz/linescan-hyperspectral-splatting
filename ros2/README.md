@@ -1,16 +1,17 @@
 # ROS 2: the SO-101 scan arm
 
 ROS 2 Humble packages that move the SO-101 between viewpoints, sweep the scan mirror at each
-one, and log where the instrument was for every scan line, which is what the line-camera splat
-needs as camera poses.
+one, record the spectrograph camera's view of every scan line, and log where the instrument was
+for each, which is what the line-camera splat needs: its lines and their camera poses.
 
 | Package | What's in it |
 |---|---|
-| [`so101_scan_interfaces`](so101_scan_interfaces) | Messages and services: `ScanLine`, `MirrorState`, `ScanLinePose`, `StartSweep`, `MoveMirror` |
+| [`so101_scan_interfaces`](so101_scan_interfaces) | Messages and services: `ScanLine`, `MirrorState`, `ScanLinePose`, `FrameStamp`, `StartSweep`, `MoveMirror`, `StartRecording`, `CaptureReference` |
 | [`so101_scan_hardware`](so101_scan_hardware) | ros2_control driver for the STS3215 servo bus (C++), plus `sts_scan`, `sts_calibrate` and a fake servo bus |
 | [`so101_scan_description`](so101_scan_description) | URDF: the SO-101 with the scanner head on its wrist, the scan mirror as a joint, the line camera as the mirror sees it |
 | [`so101_scan_bringup`](so101_scan_bringup) | `scan_arm.launch.py` and the controller and mirror settings |
 | [`so101_scan_sweep`](so101_scan_sweep) | Mirror bridge, simulated mirror ESP32, `scan_sweep`, `make_plan`, `move_arm`, example plans |
+| [`so101_scan_camera`](so101_scan_camera) | `line_camera` (the IMX219 through V4L2: frames to calibrated scan lines), `capture_reference`, `scan_to_dataset` (a scan to the splat trainer's dataset), a simulated camera and spectrograph |
 | [`docker/`](docker), [`udev/`](udev) | The container for the Jetson Nano and stable device names |
 
 ## How it fits together
@@ -23,12 +24,18 @@ flowchart LR
         drv["FeetechStsSystem<br/>ros2_control driver, 100 Hz"]
         bridge["scan_mirror_bridge"]
         rsp["robot_state_publisher<br/>URDF to TF"]
+        cam["line_camera<br/>frames to scan lines"]
     end
     servos["SO-101<br/>5 x STS3215"]
     esp["Mirror ESP32<br/>TMC2209 + NEMA 8"]
+    imx["IMX219 NoIR<br/>(spectrograph)"]
     sweep -- "FollowJointTrajectory" --> jtc --> drv -- "USB serial, 1 Mbaud" --> servos
     sweep -- "start_sweep / home" --> bridge -- "USB serial, 921600 baud, text" --> esp
     bridge -- "/scan_mirror/line" --> sweep
+    imx -- "V4L2, raw RG10, 30 fps" --> cam
+    cam -- "/line_camera/frame" --> bridge
+    bridge -- "/scan_mirror/line" --> cam
+    sweep -- "start / stop_recording" --> cam
     drv -- "/joint_states" --> sweep
     drv -- "/joint_states" --> rsp
     bridge -- "/joint_states (mirror)" --> rsp
@@ -40,6 +47,15 @@ and stamps each line with its own microsecond clock; the bridge maps that clock 
 (ping round trips, about 1 ms), so every line carries the ROS time the mirror settled.
 `scan_sweep` then reads the arm's joints at that instant from `/joint_states`, adds the line's
 mirror angle, and puts both through the URDF to get the head pose and the line-camera pose.
+
+The spectrograph camera runs on its own 30 fps clock, so the bridge locks each sweep to it
+([`frame_lock.py`](so101_scan_sweep/so101_scan_sweep/frame_lock.py)): from the `FrameStamp`
+`line_camera` publishes for every frame (when the rows that see the slit were exposing), it fits
+the frame clock, makes the line period a whole number of frames, and times every mirror move to
+fall between two exposures, nudging the ESP32's line clock as the two drift apart. `line_camera`
+keeps the frames whose whole exposure fell while the mirror held still on a line, bins each into
+slit positions x wavelengths with the calibration kit's maps, and writes them into the scan's
+folder while `scan_sweep` has it recording.
 
 A few ROS 2 ideas this leans on:
 - **ros2_control** splits a robot into a *hardware interface* (here, the C++ driver that reads
@@ -80,7 +96,7 @@ On any 64-bit Linux machine with Docker (or the Nano itself):
 ```bash
 ros2/docker/run.sh                 # builds the image the first time, then opens a shell
 colcon build && source install/setup.bash
-ros2 launch so101_scan_bringup scan_arm.launch.py use_mock_hardware:=true mirror:=fake foxglove:=true
+ros2 launch so101_scan_bringup scan_arm.launch.py use_mock_hardware:=true mirror:=fake camera:=fake foxglove:=true
 ```
 
 In a second shell (`ros2/docker/run.sh` again):
@@ -89,8 +105,10 @@ In a second shell (`ros2/docker/run.sh` again):
 ros2 run so101_scan_sweep scan_sweep --plan src/linescan-hyperspectral-splatting/ros2/so101_scan_sweep/plans/ring.yaml
 ```
 
-The arm (mock) visits four viewpoints, the simulated mirror sweeps 107 lines at each, and a
-folder appears under `~/so101_scan/scans/` on the host. To watch, open
+The arm (mock) visits four viewpoints, the simulated mirror sweeps 107 lines at each, the
+simulated camera records them, and a folder appears under `~/so101_scan/scans/` on the host.
+`ros2 run so101_scan_camera scan_to_dataset /data/scans/<that folder> /data/datasets/ring` turns
+it into a dataset `splat_train` reads. To watch, open
 [Foxglove](https://foxglove.dev/download) on Windows, connect to `ws://<that machine's ip>:8765`, add a
 3D panel, and turn on `/scan/markers`: every scan line lands on the table in front of the arm.
 With ROS 2 on a desktop, `rviz:=true` does the same.
@@ -164,6 +182,35 @@ the motors holding the arm where it is; `torque:=false` or that switch lets it g
 
 `<plans>` is `src/linescan-hyperspectral-splatting/ros2/so101_scan_sweep/plans`.
 
+## Scanning with the spectrograph camera
+
+1. **Calibrate** the spectrograph with the kit in [`calibration/`](../calibration/README.md), in
+   the sensor mode `line_camera` scans in: `python3 -m hsical plan ~/sessions/first_light
+   --width 1640 --height 1232`. The 2x2 binned mode reads the slit's rows in about 20 ms, which
+   leaves time for the mirror to move between frames at 30 fps; at full resolution a line would
+   take two frames.
+2. **Start the camera with the arm:** `ros2 launch so101_scan_bringup scan_arm.launch.py
+   camera:=v4l2 camera_calibration:=/data/hsical/cal` (the folder `hsical calibrate` wrote).
+   [`config/line_camera.yaml`](so101_scan_camera/config/line_camera.yaml) has its settings;
+   `ros2 param set /line_camera exposure_us 8000` changes the exposure while it runs, and
+   `~/preview` and `~/scan_preview` show the frames and the sweep so far.
+3. **Take a white and a dark**, with the mirror still and the head over the PTFE sheet under the
+   scan's lamp: `ros2 run so101_scan_camera capture_reference white`, then cap the lens and
+   `capture_reference dark`. It says how bright the white is; aim for a peak of 50 to 90% of
+   full scale and take the dark at the same exposure. The next scans use them.
+4. **Scan:** `scan_sweep` has `line_camera` record into the scan's folder, and the bridge locks
+   the sweeps to its frames (the log says how many frames a line takes). A plan's
+   `camera: {record: required}` refuses to scan without the camera; `off` scans without it.
+5. **Convert:** `ros2 run so101_scan_camera scan_to_dataset <scan folder> <dataset folder>`, or
+   `python3 splat/tools/scan_to_dataset.py` on any computer with numpy, then `splat_train`.
+   Values are reflectance against the white, 46 bands from 500 to 950 nm, 256 pixels along the
+   slit, one head pose per sweep; `--help` lists the options.
+
+Two things to check on the first real scan: that pixel 0 is the head's -X end of the slit (scan
+something asymmetric; if the dataset comes out mirrored, set `slit_reversed: true`), and that
+frames are stamped when the sensor starts reading out (`frames.csv` has every line `ok` and
+sharp; if lines blur into their neighbours, `stamp_offset_us` shifts the driver's timestamps).
+
 ## What a scan writes
 
 `<output_dir>/<name>_<date>-<time>/` (by default under `$SO101_SCAN_DATA/scans`, which is
@@ -179,6 +226,11 @@ the motors holding the arm where it is; `torque:=false` or that switch lets it g
   logged, line period and jitter, and how much the arm moved during the sweep.
 - **`robot.urdf`** and **`plan.yaml`**: the URDF the poses came from (calibration included)
   and the plan as run, so the poses can be recomputed later.
+- With the camera: **`frames/`** (`camera.json`, and `frames.csv` saying which frame each line
+  got, when it was exposed, or why it got none), **`binned/`** (each sweep's lines as float32
+  `[lines, slit bins, bands]` of mean raw counts, and the binning grid) and **`reference/`**
+  (darks and whites). [`session.py`](so101_scan_camera/so101_scan_camera/session.py) describes
+  them in full.
 
 ## The mirror ESP32's serial protocol
 
@@ -189,8 +241,9 @@ with the same id, and the ESP32 sends `EV` lines when something happens (a scan 
 done, a fault, a restart). The bridge uses `INFO`, `PING`, `STATUS`, `ENABLE`, `HOME`, `MOVE`,
 `STOP` and stare-mode `SCAN`; its side of the protocol is
 [`mirror_protocol.py`](so101_scan_sweep/so101_scan_sweep/mirror_protocol.py), and
-`fake_scan_mirror` plays the ESP32 for the tests and for `mirror:=fake`. Locking the line clock
-to the camera's frames (the firmware's `NUDGE` and `PERIOD`) waits for the camera node.
+`fake_scan_mirror` plays the ESP32 for the tests and for `mirror:=fake`. Locking sweeps to the
+camera's frames uses `CFG` (the move and settle times), `NUDGE` (shift the line clock) and
+`PERIOD` (change its rate).
 
 ## Development
 
@@ -199,7 +252,10 @@ colcon build && colcon test && colcon test-result --verbose
 ```
 
 The tests need no hardware: the C++ driver runs against the fake servo bus, the bridge against
-the simulated ESP32, and one test brings up the whole stack and scans a two-viewpoint plan.
+the simulated ESP32, one test brings up the whole stack and scans a two-viewpoint plan, and the
+camera tests run `line_camera` on a simulated camera that sees what the simulated mirror really
+did, and replay a synthetic scan through `scan_to_dataset` to check that the trainer's camera
+model sees the scene in every pixel of every line.
 
 The URDF has two generated parts. `so101_arm.xacro` comes from the vendored SO-101 URDF
 (`scripts/so101_urdf_to_xacro.py`), and `scan_head_params.xacro` plus the head meshes come from

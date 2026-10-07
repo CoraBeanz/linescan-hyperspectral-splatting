@@ -96,8 +96,9 @@ def write_scan(folder, urdf, rig, slit_reversed=False, binned=True):
     binner = LineBinner(maps, SLIT_BINS) if binned else None
     folder.mkdir()
     (folder / "robot.urdf").write_text(urdf)
+    # recorded without a calibration, camera.json names none (as the simulator's sessions)
     camera = dict(source="fake", exposure_us=EXPOSURE_US, gain=GAIN, slit_reversed=slit_reversed,
-                  calibration=dict(path=maps.path, maps_sha256=maps.sha256))
+                  calibration=dict(path=maps.path, maps_sha256=maps.sha256) if binned else None)
     writer = SessionWriter(str(folder), camera, binner, raw_every=5 if binned else 1).start()
     lines_csv = LinesCsv(str(folder / "lines.csv"))
     t = 1_791_000_000_000_000_000
@@ -201,9 +202,9 @@ def test_radiance_and_raw_only_scans(urdf, rig, tmp_path):
     assert np.median(rel) < 0.015 and np.percentile(rel, 99) < 0.1, (np.median(rel), np.percentile(rel, 99))
 
     raw = write_scan(tmp_path / "raw", urdf, rig, binned=False)
-    with pytest.raises(s2d.ConvertError, match="calibration"):
-        s2d.convert(str(raw), str(tmp_path / "nope"), calibration=str(tmp_path / "missing"))
-    s2d.convert(str(raw), str(tmp_path / "from_raw"), slit_bins=SLIT_BINS)
+    with pytest.raises(s2d.ConvertError, match="give --calibration"):
+        s2d.convert(str(raw), str(tmp_path / "nope"))
+    s2d.convert(str(raw), str(tmp_path / "from_raw"), calibration=rig["cal"], slit_bins=SLIT_BINS)
     _, b = load_dataset(tmp_path / "from_raw")
     _, c = load_dataset(tmp_path / "reflectance")
     for k in c:
@@ -231,3 +232,25 @@ def test_lines_without_values_are_left_out(urdf, rig, tmp_path):
         (tmp_path / "busy").mkdir()
         (tmp_path / "busy" / "notes.txt").write_text("mine")
         s2d.convert(str(scan), str(tmp_path / "busy"))
+
+
+def test_references_kept_outside_the_scan(urdf, rig, tmp_path):
+    """Darks and whites taken before the scan, in the folder scan.json names."""
+    (tmp_path / "scans").mkdir()
+    scan = write_scan(tmp_path / "scans" / "one", urdf, rig)
+    (scan / "reference").rename(tmp_path / "references")
+    with pytest.raises(s2d.ConvertError, match="no white"):
+        s2d.convert(str(scan), str(tmp_path / "nope"), values="reflectance")
+    (tmp_path / "refs").mkdir()
+    (tmp_path / "references").rename(tmp_path / "refs" / "reference")
+    for name in ("white", "dark", "dark_white"):
+        (scan / "binned" / ("reference_%s.npy" % name)).rename(tmp_path / ("reference_%s.npy" % name))
+    info = json.loads((scan / "scan.json").read_text())
+    info["camera"] = {"references": "../../refs"}
+    (scan / "scan.json").write_text(json.dumps(info))
+    doc = s2d.convert(str(scan), str(tmp_path / "dataset"))
+    assert doc["values"] == "reflectance"
+    assert doc["metadata"]["white"]["folder"] == str(tmp_path / "refs" / "reference" / "white")
+    # binned here from its frames, as that folder has no binned/ of its own
+    _, a = load_dataset(tmp_path / "dataset")
+    assert np.median(np.abs(a["lines"] - seen_reflectance(doc, a))) < 0.004
