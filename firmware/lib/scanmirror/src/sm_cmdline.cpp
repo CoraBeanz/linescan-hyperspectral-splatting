@@ -34,15 +34,15 @@ bool parseI64(const char* s, int64_t* out) {
 }
 
 // "33333.333" -> 33333.333 * 65536, rounded. Up to 6 fraction digits and at
-// most about 1.4e14 us in the integer part.
+// most 1.4e14 us in the integer part, so the result fits in 64 bits.
 bool parseQ16(const char* s, uint64_t* out) {
   if (s == nullptr || *s == '\0' || *s == '-') return false;
   if (*s == '+') ++s;
   uint64_t whole = 0;
   int digits = 0;
   for (; *s >= '0' && *s <= '9'; ++s, ++digits) {
-    if (whole > UINT64_C(140000000000000)) return false;
     whole = whole * 10 + static_cast<uint64_t>(*s - '0');
+    if (whole > UINT64_C(140000000000000)) return false;
   }
   uint64_t frac = 0;
   uint64_t scale = 1;

@@ -31,6 +31,16 @@ static bool hasEdge(const SimRig& r, int64_t t, bool level) {
   return false;
 }
 
+// The furthest the rotor has been in + since the rig started at 0.
+static int32_t peakRotor(const SimRig& r) {
+  int32_t at = 0, peak = 0;
+  for (size_t i = 0; i < r.step_dirs.size(); ++i) {
+    at += r.step_dirs[i];
+    if (at > peak) peak = at;
+  }
+  return peak;
+}
+
 static std::string askf(SimRig& r, const char* fmt, long long a) {
   char line[200];
   snprintf(line, sizeof(line), fmt, a);
@@ -136,6 +146,48 @@ void test_new_move_replaces_the_old_one() {
   ASSERT_FIELD(-100, r.runUntil("EV MOVED", 3000000), "pos");
   TEST_ASSERT_EQUAL(1, (int)r.linesWith("EV MOVED", m).size());
   TEST_ASSERT_EQUAL_INT32(-100, r.rotor);
+}
+
+void test_move_inside_braking_distance_comes_back() {
+  SimRig r;
+  enable(r);
+  r.ask("MOVE pos=3000");
+  r.run(200000);  // cruising at vmax, which takes 192 steps to brake from
+  const int32_t target = r.pos() + 10;
+  const size_t m = r.mark();
+  askf(r, "MOVE pos=%lld", target);
+  int32_t peak = r.rotor;
+  for (int ms = 0; ms < 3000 && r.linesWith("EV MOVED", m).empty(); ++ms) {
+    r.run(1000);
+    if (r.rotor > peak) peak = r.rotor;
+  }
+  TEST_ASSERT_TRUE(peak > target + 150);  // braked past it at the usual rate
+  const std::vector<std::string> moved = r.linesWith("EV MOVED", m);
+  TEST_ASSERT_EQUAL(1, (int)moved.size());
+  ASSERT_FIELD(target, moved[0], "pos");
+  TEST_ASSERT_EQUAL_INT32(target, r.rotor);
+}
+
+void test_a_new_move_brakes_as_hard_as_the_one_it_replaces() {
+  // A fast, hard move to max is replaced near its end by a gentler one back.
+  // The mirror stops inside min..max, as the first move would have, then
+  // turns back at the new rate. Braking at the new rate instead, it ran
+  // 2336 microsteps past max at a=20000, and 76 turns at a=100.
+  const long long accels[] = {20000, 100};
+  for (int k = 0; k < 2; ++k) {
+    SimRig r;
+    enable(r);
+    r.ask("MOVE pos=3200 v=10000 a=1000000");
+    for (int i = 0; i < 100000 && r.rotor < 3100; ++i) r.run(100);
+    const size_t m = r.mark();
+    TEST_ASSERT_EQUAL(0, (int)askf(r, "MOVE pos=0 a=%lld", accels[k]).find("OK MOVE pos=0"));
+    r.runUntil("EV MOVED", 5000000, m);
+    TEST_ASSERT_TRUE(peakRotor(r) <= 3200);
+    const std::vector<std::string> moved = r.linesWith("EV MOVED", m);
+    TEST_ASSERT_EQUAL(1, (int)moved.size());
+    ASSERT_FIELD(0, moved[0], "pos");
+    TEST_ASSERT_EQUAL_INT32(0, r.rotor);
+  }
 }
 
 void test_stop_slows_down_and_reports() {
@@ -428,6 +480,33 @@ void test_sweep_period_change_is_checked_against_vstart() {
   ASSERT_LINE("OK PERIOD us=5000.000", r.ask("PERIOD us=5000"));
 }
 
+void test_a_stretched_sweep_ends_at_the_edge_of_the_range() {
+  // This sweep ends exactly on max, and does so normally ...
+  SimRig r;
+  enable(r);
+  size_t m = r.mark();
+  r.ask("SCAN mode=sweep start=3000 step=10 lines=20 period=20000");
+  std::string done = r.runUntil("EV SCAN_DONE", 3000000, m);
+  ASSERT_FIELD(20, done, "lines");
+  ASSERT_FIELD(3200, done, "pos");
+  ASSERT_FIELD(0, done, "aborted");
+
+  // ... but a NUDGE that holds its last lines back by a second would carry
+  // the mirror 500 microsteps past max. It stops on max and the scan ends.
+  m = r.mark();
+  r.ask("SCAN mode=sweep start=3000 step=10 lines=20 period=20000");
+  r.runUntil("EV LINE n=5 ", 3000000, m);
+  TEST_ASSERT_EQUAL(0, (int)r.ask("NUDGE dt=1000000").find("OK NUDGE"));
+  done = r.runUntil("EV SCAN_DONE", 2000000, m);
+  ASSERT_FIELD(6, done, "lines");
+  ASSERT_FIELD(3200, done, "pos");
+  ASSERT_FIELD(1, done, "aborted");
+  r.run(100000);
+  TEST_ASSERT_EQUAL_INT32(3200, peakRotor(r));
+  TEST_ASSERT_EQUAL_INT32(3200, r.rotor);
+  TEST_ASSERT_EQUAL_STRING("idle", fieldStr(r.ask("STATUS"), "state").c_str());
+}
+
 void test_slow_lines_are_reported_as_never_ready() {
   // 200 microsteps cannot be stepped and settled in a 5 ms line.
   SimRig r;
@@ -566,6 +645,29 @@ void test_driver_faults_switch_the_motor_off() {
   TEST_ASSERT_TRUE(r.drv.enabled);
 }
 
+void test_drv_acts_on_a_reset_it_reads() {
+  // Reading GSTAT clears it, so DRV raises the fault the watchdog would
+  // otherwise have missed, right after its reply.
+  SimRig r;
+  enable(r);
+  r.drv.st.gstat = sm::kGstatReset;
+  size_t m = r.mark();
+  r.cmd("DRV");
+  TEST_ASSERT_EQUAL(m + 2, r.mark());
+  TEST_ASSERT_EQUAL(0, (int)r.port.out[m].find("OK DRV "));
+  ASSERT_FIELD(1, r.port.out[m], "reset");
+  TEST_ASSERT_EQUAL(0, (int)r.port.out[m + 1].find("EV FAULT code=drv_reset"));
+  TEST_ASSERT_FALSE(r.drv.enabled);
+  TEST_ASSERT_EQUAL_STRING("fault", fieldStr(r.ask("STATUS"), "state").c_str());
+
+  // With the motor already off, DRV only reports.
+  r.drv.st.gstat = sm::kGstatReset;
+  m = r.mark();
+  r.cmd("DRV");
+  TEST_ASSERT_EQUAL(m + 1, r.mark());
+  ASSERT_FIELD(1, r.port.out[m], "reset");
+}
+
 void test_lost_driver_and_bypass() {
   SimRig r;
   enable(r);
@@ -662,6 +764,8 @@ int main(int, char**) {
   RUN_TEST(test_help_drv_and_reboot);
   RUN_TEST(test_move_arrives_settles_and_reports);
   RUN_TEST(test_new_move_replaces_the_old_one);
+  RUN_TEST(test_move_inside_braking_distance_comes_back);
+  RUN_TEST(test_a_new_move_brakes_as_hard_as_the_one_it_replaces);
   RUN_TEST(test_stop_slows_down_and_reports);
   RUN_TEST(test_disable_stops_dead);
   RUN_TEST(test_zero_and_dir_invert);
@@ -678,12 +782,14 @@ int main(int, char**) {
   RUN_TEST(test_stop_aborts_a_scan);
   RUN_TEST(test_nudge_and_period_retime_a_running_scan);
   RUN_TEST(test_sweep_period_change_is_checked_against_vstart);
+  RUN_TEST(test_a_stretched_sweep_ends_at_the_edge_of_the_range);
   RUN_TEST(test_slow_lines_are_reported_as_never_ready);
   RUN_TEST(test_a_stuck_main_loop_is_reported);
   RUN_TEST(test_scan_arguments_are_checked);
   RUN_TEST(test_cfg_get_set_save_and_defaults);
   RUN_TEST(test_cfg_reply_comes_before_the_fault_it_causes);
   RUN_TEST(test_driver_faults_switch_the_motor_off);
+  RUN_TEST(test_drv_acts_on_a_reset_it_reads);
   RUN_TEST(test_lost_driver_and_bypass);
   RUN_TEST(test_fault_during_a_scan);
   RUN_TEST(test_every_command_gets_exactly_one_reply);

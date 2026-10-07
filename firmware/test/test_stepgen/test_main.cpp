@@ -107,6 +107,54 @@ void test_reverse_mid_move() {
   TEST_ASSERT_TRUE(peak - at <= 260);
 }
 
+void test_retarget_inside_braking_distance_comes_back() {
+  // Braking from 3200/s to 1600/s at 20000/s^2 takes 192 steps. A new target
+  // 20 steps ahead is passed while braking and reached from the far side,
+  // rather than stopping dead at full speed.
+  Stepgen g;
+  const Profile p = prof(3200, 1600, 20000);
+  g.moveTo(3000, p);
+  for (long i = 0; i < 1000000 && g.position() < 1000; ++i) g.tick();
+  TEST_ASSERT_EQUAL_UINT32(p.v_max, g.speed());
+  const int32_t at = g.position();
+  g.moveTo(at + 20, p);
+  int32_t peak = at;
+  uint32_t last_v = g.speed();
+  for (long i = 0; i < 2000000 && g.busy(); ++i) {
+    g.tick();
+    if (g.position() > peak) peak = g.position();
+    if (g.speed() == 0) TEST_ASSERT_TRUE(last_v < sm::velocityQ32(1650));  // only ever stops from about vstart
+    last_v = g.speed();
+  }
+  TEST_ASSERT_FALSE(g.busy());
+  TEST_ASSERT_EQUAL_INT32(at + 20, g.position());
+  TEST_ASSERT_INT_WITHIN(5, at + 192, peak);
+}
+
+void test_replacing_move_brakes_as_hard_as_the_old_one() {
+  // A fast, hard move to 3200 is replaced near its end by a gentle one back
+  // to 0. The mirror brakes at the old move's rate and stops short of 3200,
+  // as that move would have (at a = 100 it would coast 76 turns past), then
+  // runs back exactly as a fresh move from where it stopped.
+  Stepgen g;
+  g.moveTo(3200, prof(10000, 1600, 1000000));
+  for (long i = 0; i < 1000000 && g.position() < 3100; ++i) g.tick();
+  TEST_ASSERT_EQUAL_UINT32(sm::velocityQ32(10000), g.speed());
+  const Profile gentle = prof(3200, 1600, 100);
+  g.moveTo(0, gentle);
+  for (long i = 0; i < 1000000 && g.speed() != 0; ++i) g.tick();
+  const int32_t peak = g.position();
+  TEST_ASSERT_TRUE(peak > 3100 && peak <= 3200);
+
+  Stepgen fresh;
+  fresh.setPosition(peak);
+  fresh.moveTo(0, gentle);
+  const std::vector<long> back = runSteps(g, 2000000), expected = runSteps(fresh, 2000000);
+  TEST_ASSERT_FALSE(g.busy());
+  TEST_ASSERT_EQUAL_INT32(0, g.position());
+  TEST_ASSERT_TRUE(back == expected);
+}
+
 void test_stop_brakes_and_halt_is_instant() {
   Stepgen g;
   g.moveTo(100000, prof(3200, 400, 20000));
@@ -132,7 +180,7 @@ void test_velocity_mode_is_a_straight_line() {
   // 30 microsteps/s, preloaded half a step: position = round(v * t).
   Stepgen g;
   const double rate = 30.0;
-  g.runVelocity(1, sm::velocityQ32(rate), 0x80000000u, prof(3200, 1600, 20000));
+  g.runVelocity(1, sm::velocityQ32(rate), 0x80000000u, 1000000, prof(3200, 1600, 20000));
   for (long i = 1; i <= 400000; ++i) {  // 20 s
     g.tick();
     if (i % 997 == 0) {
@@ -143,6 +191,23 @@ void test_velocity_mode_is_a_straight_line() {
   g.stop();
   runSteps(g, 10);
   TEST_ASSERT_FALSE(g.busy());
+}
+
+void test_velocity_run_stops_on_its_limit() {
+  // A speed above the start speed is capped to it, and the step that would
+  // pass the limit is never taken.
+  Stepgen g;
+  const Profile p = prof(3200, 1600, 20000);
+  g.runVelocity(1, sm::velocityQ32(3000), 0, 50, p);
+  TEST_ASSERT_EQUAL_UINT32(p.v_start, g.speed());
+  TEST_ASSERT_EQUAL(50, (int)runSteps(g, 100000).size());
+  TEST_ASSERT_FALSE(g.busy());
+  TEST_ASSERT_EQUAL_INT32(50, g.position());
+
+  g.runVelocity(-1, sm::velocityQ32(400), 0, -30, p);
+  TEST_ASSERT_EQUAL(80, (int)runSteps(g, 100000).size());
+  TEST_ASSERT_FALSE(g.busy());
+  TEST_ASSERT_EQUAL_INT32(-30, g.position());
 }
 
 void test_set_position_only_when_idle() {
@@ -207,8 +272,11 @@ int main(int, char**) {
   RUN_TEST(test_speed_never_exceeds_vmax);
   RUN_TEST(test_ramp_takes_expected_time);
   RUN_TEST(test_reverse_mid_move);
+  RUN_TEST(test_retarget_inside_braking_distance_comes_back);
+  RUN_TEST(test_replacing_move_brakes_as_hard_as_the_old_one);
   RUN_TEST(test_stop_brakes_and_halt_is_instant);
   RUN_TEST(test_velocity_mode_is_a_straight_line);
+  RUN_TEST(test_velocity_run_stops_on_its_limit);
   RUN_TEST(test_set_position_only_when_idle);
   RUN_TEST(test_zero_length_move_finishes);
   RUN_TEST(test_line_clock_fractional_period_has_no_drift);
