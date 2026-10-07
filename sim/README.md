@@ -39,7 +39,7 @@ python -m hsical apply ../sim/sim_out/cal ../sim/sim_out/frames/sweep_001 \
 cd ../sim
 python -m hsisim evaluate sim_out sim_out/cal             # applies every sweep and compares with the truth
 python -m hsisim preview sim_out                          # pictures in sim_out/preview/
-python -m pytest                                          # 39 tests, about a minute
+python -m pytest                                          # 41 tests, about a minute
 ```
 
 ## What is simulated
@@ -68,9 +68,14 @@ sim_out/
 │                      and "simulated" (every setting, the instrument's flaws, the objective)
 ├── robot.urdf         the URDF the poses came from, built from the ROS 2 package's xacro
 ├── plan.yaml          the scan plan as run
-├── frames/sweep_001/  one hsical frame set per sweep: meta.json, frame_0000.npy ... (the
-│                      raw 10-bit frame of each line, uint16) and frames.csv (index,
-│                      exposure start stamp_ns, exposure_us)
+├── frames/
+│   ├── frames.csv     one row per line, as the capture node logs it: sweep_id, index, status,
+│   │                  file (the raw frame), seq, sof_ns, exposure_start_ns, exposure_end_ns,
+│   │                  exposure_us, gain, saturated_px
+│   ├── camera.json    the sensor (size, bits, black level, Bayer order), exposure, gain,
+│   │                  slit_reversed (false: the convention below) and the timing model
+│   └── sweep_001/     one hsical frame set per sweep: meta.json and frame_0000.npy ..., the
+│                      raw 10-bit frame of each line (uint16)
 ├── reference/         dark/ and white/ (PTFE, reflectance 0.98): hsical frame sets at the
 │                      scan's exposure and gain
 ├── calibration/       an hsical calibration session of the same simulated instrument:
@@ -90,6 +95,7 @@ Conventions, the same as the rig's:
 - Sweeps are numbered from 1, as the mirror bridge numbers them, and frames by the line's index in its sweep.
 - The slit position h runs from −1 to +1 along the line camera's +x axis, and on the sensor the slit row grows with h. So the first rectified slit row is the camera's −x end, which is pixel 0 of the splat's dataset.
 - Frames are as the camera gives them, so `hsical apply` works on a sweep folder unchanged.
+- The camera exposes 1 ms after the mirror settles, and the whole exposure falls inside the line's hold window in lines.csv. Every row exposes in the same window: the frames are rendered with the mirror still, so the IMX219's rolling shutter is left out, and an exposure longer than the line period allows is refused.
 
 `hsisim.truth.ScanTruth` reads the truth back: `ScanTruth("sim_out").reflectance(line, nm)` is what each slit position of a line really saw.
 
@@ -134,7 +140,7 @@ In Python, `hsisim.session.simulate(out, plan, Settings(...))` takes the same se
 
 - **Matte surfaces only**: no specular highlights, no light bouncing between surfaces, no fluorescence.
 - **Ideal objective and mirror**: a thin lens with a Gaussian blur, a flat mirror that reflects every wavelength equally. Stray light and ghosts aren't modelled.
-- **Nothing moves during an exposure**: the mirror firmware holds each line still while the camera exposes, so there is no motion blur to model.
+- **No rolling shutter, no motion**: every row exposes in the same window while the mirror holds still. The real IMX219 reads its rows out one after another, so on the rig the rows at the slit's two ends expose at slightly different times.
 - **One camera**: the pose camera and its AprilTags aren't simulated; the arm's poses come from its joints alone.
 - **No drift**: the instrument stays as calibrated, with no temperature changes between the calibration session and the scan.
 
@@ -154,6 +160,6 @@ hsisim/
 ├── truth.py        reading the truth back
 ├── evaluate.py     the end-to-end check
 └── preview.py      pictures of a session
-tests/              39 tests: rays, scenes, rendering, the session format, end to end
+tests/              41 tests: rays, scenes, rendering, the session format, end to end
 tools/              readme_figure.py draws img/simulator.png
 ```

@@ -70,7 +70,7 @@ def apply_sweeps(session, cal_dir, out_dir, sweeps=None, log=print):
     white = session / "reference" / "white"
     white_meta = json.loads((white / "meta.json").read_text())
     out = {}
-    for d in sorted((session / "frames").iterdir()):
+    for d in sorted(p for p in (session / "frames").iterdir() if p.is_dir()):
         meta = json.loads((d / "meta.json").read_text())
         sid = int(meta["sweep_id"])
         if sweeps is not None and sid not in sweeps:
