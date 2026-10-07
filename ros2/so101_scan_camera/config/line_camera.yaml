@@ -1,0 +1,41 @@
+# line_camera: the spectrograph camera. Exposure and gain can be changed while it runs
+# (ros2 param set /line_camera exposure_us 8000).
+line_camera:
+  ros__parameters:
+    source: v4l2               # v4l2: the IMX219 on /dev/video0; fake: a simulated one
+    device: /dev/video0
+    # the sensor mode: 1640 x 1232 (2x2 binned) keeps the whole slit and spectrum at 30 fps;
+    # the calibration must have been made in the same mode
+    width: 1640
+    height: 1232
+    fps: 30.0
+    exposure_us: 5000.0
+    gain: 1.0
+    # an hsical calibration folder (calibration.json, maps.npz); without one the lines can't be
+    # binned and every line's raw frame is kept instead
+    calibration: ""
+    slit_bins: 256             # pixels along the slit in the binned lines (the trainer's width)
+    nm_step: 0.0               # band width, nm; 0: the calibration's grid
+    nm_min: 0.0                # band range, nm; 0 and 0: the calibration's
+    nm_max: 0.0
+    # true if binned pixel 0 is at the head's +X end of the slit (see the README's first light)
+    slit_reversed: false
+    match_margin: 0.0005       # s a frame's exposure must keep clear of the mirror's moves
+    raw_every: -1              # keep the raw frame of every n-th line; -1: all without a
+                               # calibration, none with one; 0: none
+    settle_frames: 3           # frames skipped after the exposure or gain changes
+    # V4L2 details, as the calibration kit uses them (v4l2-ctl -d /dev/video0 --list-ctrls)
+    exposure_ctrl: exposure    # us
+    gain_ctrl: gain
+    gain_scale: 16.0           # driver units per 1x of gain
+    rate_ctrl: frame_rate
+    rate_scale: 1000000.0      # driver units per frame per second
+    bypass_mode: 0             # -1: don't set it
+    raw_shift: -1              # bits the 10-bit values sit up in each 16-bit word; -1: find out
+    stamp_offset_us: 0.0       # added to the driver's frame timestamps
+    line_time_us: 0.0          # sensor row time; 0: the IMX219's 18.9 us
+    slit_row_first: -1         # sensor rows that see the slit; -1: from the calibration
+    slit_row_last: -1
+    preview_rate: 2.0          # Hz of ~/preview
+    preview_scale: 4
+    max_queue_mb: 256          # raw frames waiting for the disk before some are skipped
