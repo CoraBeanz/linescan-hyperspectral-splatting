@@ -38,9 +38,9 @@ def label(im, anchors):
     items = sorted(anchors.items(), key=lambda kv: kv[1][0])
     rows = {0: [], 1: []}
     for i, (text, (x, y)) in enumerate(items):
-        l, t, r, b = d.textbbox((0, 0), text, font=f)
-        rows[i % 2].append({"text": text, "ax": x * W, "ay": y * H, "w": r - l + 2 * pad,
-                            "h": b - t + 2 * pad, "dy": t})
+        left, top, right, bottom = d.textbbox((0, 0), text, font=f)
+        rows[i % 2].append({"text": text, "ax": x * W, "ay": y * H, "w": right - left + 2 * pad,
+                            "h": bottom - top + 2 * pad, "dy": top})
     for row, y_row in ((rows[0], 0.12 * H), (rows[1], 0.88 * H)):
         # centre each box over its anchor, then push right / left so none overlap
         for it in row:
