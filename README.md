@@ -146,6 +146,7 @@ The line-camera renderer, and a synthetic scan with known poses to develop it ag
 
 Details for each step are in the [build order](docs/parts_list_and_design.md#4-build-order).
 The ROS 2 side (arm driver, URDF, mirror bridge, scan sweeps) is in [ros2/](ros2/README.md).
+The Jetson Nano build of the renderer and the ROS 2 packages, with a day-one script, is in [jetson/](jetson/README.md).
 
 ## Stack
 

@@ -353,6 +353,8 @@ cmake -S splat -B build/splat -DCMAKE_BUILD_TYPE=Release \
 cmake --build build/splat -j4
 ```
 
+Or let [`jetson/splat.sh`](../jetson/README.md) build and run it in a container with JetPack's CUDA.
+
 On **Windows** with Visual Studio 2022 or newer and the CUDA toolkit, from an
 x64 Native Tools Command Prompt (which puts Visual Studio's own CMake on the
 PATH). This is tested with Visual Studio 2026 and CUDA 13.4:
