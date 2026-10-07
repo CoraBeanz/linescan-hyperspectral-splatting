@@ -41,13 +41,13 @@
   <!-- PCB back to the front of the lens module (RPI-CAM-V2 drawing) -->
   <xacro:property name="pose_camera_lens" value="0.0045"/>
   <!-- mass budget in cad/build_report.json, wrist puck included -->
-  <xacro:property name="head_mass" value="0.1882"/>
+  <xacro:property name="head_mass" value="0.1847"/>
   <!-- centre of mass in the head frame (build_report.json) -->
-  <xacro:property name="head_com_x" value="-0.0106"/>
-  <xacro:property name="head_com_y" value="-0.0011"/>
-  <xacro:property name="head_com_z" value="0.0555"/>
+  <xacro:property name="head_com_x" value="-0.0108"/>
+  <xacro:property name="head_com_y" value="-0.0012"/>
+  <xacro:property name="head_com_z" value="0.0554"/>
   <!-- inertia of a solid box the head's size (66 x 53 x 135 mm) about the centre of mass -->
-  <xacro:property name="head_ixx" value="0.000331"/>
-  <xacro:property name="head_iyy" value="0.000355"/>
-  <xacro:property name="head_izz" value="0.000113"/>
+  <xacro:property name="head_ixx" value="0.000324"/>
+  <xacro:property name="head_iyy" value="0.000349"/>
+  <xacro:property name="head_izz" value="0.00011"/>
 </robot>
