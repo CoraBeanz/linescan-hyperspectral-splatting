@@ -70,9 +70,9 @@ Prices marked ✓ were checked on the vendor page on 2026-10-05 or 2026-10-06. P
 
 | # | Part | Pick | Price | Notes |
 |---|---|---|---|---|
-| 11 | Mirror stepper, NEMA 8 | StepperOnline **8HS11-0204S** (NEMA 8, 1.8°, 0.2 A, 20 × 20 × 28 mm, 60 g, 4 mm D-cut shaft, M2 holes on 16 mm) | $15.98 ✓ | At 1/32 microstepping, one microstep moves the line 0.29 mm at 150 mm. A NEMA 17 also works on a bench, but on the arm the small motor keeps the scanner head at 188 g instead of 281 g. That takes the SO-101 shoulder servo from 94% to 75% of stall with the arm stretched out. |
+| 11 | Mirror stepper, NEMA 8 | StepperOnline **8HS11-0204S** (NEMA 8, 1.8°, 0.2 A, 20 × 20 × 28 mm, 60 g, 4 mm D-cut shaft, M2 holes on 16 mm) | $15.98 ✓ | At 1/32 microstepping, one microstep moves the line 0.29 mm at 150 mm. A NEMA 17 also works on a bench, but on the arm the small motor keeps the scanner head at 185 g instead of 278 g. That takes the SO-101 shoulder servo from 94% to 74% of stall with the arm stretched out. |
 | 12 | Stepper driver | Adafruit **#6121** TMC2209 breakout | ~$10 | It's quiet and can be controlled over UART. Set the run current to about 0.2 A for the NEMA 8. |
-| 13 | Microcontroller | Espressif **ESP32-DevKitC-32E** (Digi-Key) | ~$10 | Drives the stepper. It can run as a micro-ROS node so the mirror shows up in ROS2. Any Arduino-class board works if you skip micro-ROS. |
+| 13 | Microcontroller | Espressif **ESP32-DevKitC-32E** (Digi-Key) | ~$10 | Runs the [mirror firmware](../firmware/): it drives the stepper through the TMC2209's UART, homes on the hall sensor and stamps every scan line, and the Jetson talks to it in plain-text lines over USB serial. Any ESP32 DevKit with GPIO 16 to 27 works; the firmware relies on the ESP32's hardware timer and second core, so another kind of board would need a port. |
 | 14 | Stepper power supply | 12 V, 1 A or larger DC brick with a barrel jack, plus a jack adapter | ~$12 | The NEMA 8 draws only about 0.2 A per phase. |
 | 15 | Home switch | A3144 hall sensor + a small magnet | ~$3 | Gives each scan an absolute start angle. |
 | 16 | Breadboard and wiring | Half-size breadboard, jumper wires, 100 µF capacitor across the motor supply | ~$10 | |

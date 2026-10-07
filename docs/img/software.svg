@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="728" viewBox="0 0 1280 728" role="img" aria-labelledby="t d">
+  <title id="t">How the software fits together</title>
+  <desc id="d">Block diagram of the code. The scan-mirror firmware on the ESP32 talks to the ROS 2 scan arm on the Jetson Nano in plain text over USB serial and reports every scan line. The IMX219 camera's frames go to the ROS 2 side during scans and to the calibration kit as lamp frames; the calibration kit gives the ROS 2 side a wavelength map and a warp. The ROS 2 side passes calibrated lines, each with a pose, to the line-camera splat trainer, which stores a spectrum in every Gaussian. The splat goes to a browser viewer as one file. Each module lists what its tests cover. A band at the bottom shows the Optiland and FreeCAD models whose numbers the code uses, and the simulator that renders whole scans from them to test on.</desc>
+  <style>
+    text { font-family: ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    .h1 { font-size: 32px; font-weight: 800; fill: #f1f5ff; }
+    .sub { font-size: 17px; fill: #a3acc9; }
+    .lt { font-size: 19px; font-weight: 700; fill: #e6e9f2; }
+    .ls { font-size: 15px; fill: #8b93b0; font-family: ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    .desc { font-size: 15.5px; fill: #c9d3f5; }
+    .test { font-size: 14.5px; fill: #8fd9b6; }
+    .small { font-size: 14px; fill: #8b93b0; font-style: italic; }
+    .mono { font-size: 14.5px; font-weight: 700; fill: #e6e9f2; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .data { font-size: 14px; fill: #e6e9f2; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .band { font-size: 15px; fill: #a3acc9; }
+  </style>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101a3a"/><stop offset="0.55" stop-color="#0a1024"/><stop offset="1" stop-color="#060914"/>
+    </linearGradient>
+    <pattern id="holes" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="14" cy="14" r="1.7" fill="#1d2955"/></pattern>
+    <radialGradient id="fade" cx="0.5" cy="0.55" r="0.75"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <mask id="holesMask"><rect width="1280" height="728" fill="url(#fade)"/></mask>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#6b7699"/></marker>
+    <linearGradient id="specV" x1="0" y1="442" x2="0" y2="566" gradientUnits="userSpaceOnUse"><stop offset="0.000" stop-color="#00f5a0"/><stop offset="0.067" stop-color="#5cff3a"/><stop offset="0.133" stop-color="#c8ff00"/><stop offset="0.178" stop-color="#ffe600"/><stop offset="0.222" stop-color="#ffa600"/><stop offset="0.289" stop-color="#ff5e00"/><stop offset="0.356" stop-color="#ff2a1f"/><stop offset="0.444" stop-color="#e8173a"/><stop offset="0.667" stop-color="#d41a55"/><stop offset="0.889" stop-color="#a61a6e"/></linearGradient>
+  </defs>
+
+  <rect width="1280" height="728" rx="26" fill="url(#bg)"/>
+  <rect width="1280" height="728" rx="26" fill="url(#holes)" mask="url(#holesMask)"/>
+
+  <text x="48" y="68" class="h1">The software</text>
+  <text x="48" y="102" class="sub">Five modules take a scan from the mirror to a splat you can open in a browser.</text>
+  <text x="48" y="127" class="sub">CI builds each one and runs its tests on every pull request, on simulated hardware.</text>
+
+  <rect x="48" y="196" width="290" height="168" rx="16" fill="#0e1631" fill-opacity="0.96" stroke="#2c3b6e"/>
+  <path d="M49.5 218 L49.5 342" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+  <text x="70" y="228" class="mono" style="fill:#fbbf24">firmware/<tspan class="ls" dx="8">· ESP32</tspan></text>
+  <text x="70" y="258" class="lt">Scan-mirror firmware</text>
+  <text x="70" y="288" class="desc">Steps the mirror on the camera's</text>
+  <text x="70" y="309" class="desc">frame clock, stamps every line.</text>
+  <circle cx="78" cy="335" r="8" fill="#34d399" fill-opacity="0.16" stroke="#34d399" stroke-width="1.4"/><path d="M74 335 L77 338 L82.5 331.5" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><text x="94" y="340" class="test">a simulated rig, ASan and UBSan</text>
+  <rect x="466" y="196" width="340" height="168" rx="16" fill="#0e1631" fill-opacity="0.96" stroke="#2c3b6e"/>
+  <path d="M467.5 218 L467.5 342" stroke="#7dd3fc" stroke-width="3" stroke-linecap="round"/>
+  <text x="488" y="228" class="mono" style="fill:#7dd3fc">ros2/<tspan class="ls" dx="8">· Jetson Nano, Humble</tspan></text>
+  <text x="488" y="258" class="lt">ROS 2 scan arm</text>
+  <text x="488" y="288" class="desc">Moves the arm, sweeps the mirror,</text>
+  <text x="488" y="309" class="desc">and gives every scan line a pose.</text>
+  <circle cx="496" cy="335" r="8" fill="#34d399" fill-opacity="0.16" stroke="#34d399" stroke-width="1.4"/><path d="M492 335 L495 338 L500.5 331.5" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><text x="512" y="340" class="test">fake servos and mirror, a whole scan</text>
+  <rect x="466" y="420" width="340" height="168" rx="16" fill="#0e1631" fill-opacity="0.96" stroke="#2c3b6e"/>
+  <path d="M467.5 442 L467.5 566" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round"/>
+  <text x="488" y="452" class="mono" style="fill:#c4b5fd">calibration/<tspan class="ls" dx="8">· Jetson and PC</tspan></text>
+  <text x="488" y="482" class="lt">Calibration kit</text>
+  <text x="488" y="512" class="desc">Lamp lines give each pixel's wavelength,</text>
+  <text x="488" y="533" class="desc">and a warp removes smile and keystone.</text>
+  <circle cx="496" cy="559" r="8" fill="#34d399" fill-opacity="0.16" stroke="#34d399" stroke-width="1.4"/><path d="M492 559 L495 562 L500.5 555.5" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><text x="512" y="564" class="test">synthetic sessions with known answers</text>
+  <rect x="934" y="196" width="298" height="168" rx="16" fill="#0e1631" fill-opacity="0.96" stroke="#2c3b6e"/>
+  <path d="M935.5 218 L935.5 342" stroke="#34d399" stroke-width="3" stroke-linecap="round"/>
+  <text x="956" y="228" class="mono" style="fill:#34d399">splat/<tspan class="ls" dx="8">· C++ and CUDA</tspan></text>
+  <text x="956" y="258" class="lt">Line-camera splat</text>
+  <text x="956" y="288" class="desc">Trains spectral Gaussians on the</text>
+  <text x="956" y="309" class="desc">scan lines and refines the poses.</text>
+  <circle cx="964" cy="335" r="8" fill="#34d399" fill-opacity="0.16" stroke="#34d399" stroke-width="1.4"/><path d="M960 335 L963 338 L968.5 331.5" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><text x="980" y="340" class="test">gradients, CUDA against the CPU</text>
+  <rect x="934" y="420" width="298" height="168" rx="16" fill="#0e1631" fill-opacity="0.96" stroke="#2c3b6e"/>
+  <path d="M935.5 442 L935.5 566" stroke="url(#specV)" stroke-width="3" stroke-linecap="round"/>
+  <text x="956" y="452" class="mono" style="fill:#fb7185">viewer/<tspan class="ls" dx="8">· WebGL2</tspan></text>
+  <text x="956" y="482" class="lt">Splat viewer</text>
+  <text x="956" y="512" class="desc">Any wavelength, true color or NDVI,</text>
+  <text x="956" y="533" class="desc">and the spectrum of any point.</text>
+  <circle cx="964" cy="559" r="8" fill="#34d399" fill-opacity="0.16" stroke="#34d399" stroke-width="1.4"/><path d="M960 559 L963 562 L968.5 555.5" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><text x="980" y="564" class="test">against the C++ renderer</text>
+  <rect x="48" y="452" width="290" height="104" rx="16" fill="#0e1631" fill-opacity="0.6" stroke="#2c3b6e" stroke-dasharray="5 5"/>
+  <rect x="79" y="474" width="4" height="6" fill="#4b5f95"/><rect x="79" y="528" width="4" height="6" fill="#4b5f95"/><rect x="88" y="474" width="4" height="6" fill="#4b5f95"/><rect x="88" y="528" width="4" height="6" fill="#4b5f95"/><rect x="97" y="474" width="4" height="6" fill="#4b5f95"/><rect x="97" y="528" width="4" height="6" fill="#4b5f95"/><rect x="106" y="474" width="4" height="6" fill="#4b5f95"/><rect x="106" y="528" width="4" height="6" fill="#4b5f95"/><rect x="115" y="474" width="4" height="6" fill="#4b5f95"/><rect x="115" y="528" width="4" height="6" fill="#4b5f95"/>
+  <rect x="74" y="480" width="52" height="48" rx="6" fill="#151d38" stroke="#4b5f95" stroke-width="1.5"/>
+  <rect x="86" y="492" width="28" height="24" rx="2" fill="#34d399" fill-opacity="0.28" stroke="#34d399" stroke-width="1.2"/>
+  <text x="146" y="500" class="lt">IMX219 camera</text>
+  <text x="146" y="523" class="ls">behind the grating</text>
+
+  <path d="M342 280.0 L462 280.0" fill="none" stroke="#6b7699" stroke-width="2" marker-start="url(#ah)" marker-end="url(#ah)"/>
+  <text x="402" y="268.0" text-anchor="middle" class="data">EV LINE</text>
+  <text x="402" y="306.0" text-anchor="middle" class="small">serial, text</text>
+
+  <path d="M810 280.0 L930 280.0" fill="none" stroke="#6b7699" stroke-width="2" marker-end="url(#ah)"/>
+  <text x="870" y="268.0" text-anchor="middle" class="data">lines</text>
+  <text x="870" y="306.0" text-anchor="middle" class="small">with poses</text>
+
+  <path d="M342 480 L402 480 L402 330 L462 330" fill="none" stroke="#6b7699" stroke-width="2" marker-end="url(#ah)"/>
+  <text x="392" y="426" text-anchor="end" class="small">scan frames</text>
+  <path d="M342 528 L462 528" fill="none" stroke="#6b7699" stroke-width="2" marker-end="url(#ah)"/>
+  <text x="402" y="518" text-anchor="middle" class="small">lamp frames</text>
+
+  <path d="M636 416 L636 368" fill="none" stroke="#6b7699" stroke-width="2" marker-end="url(#ah)"/>
+  <text x="650" y="397" class="small">wavelength map and warp</text>
+
+  <path d="M1083 368 L1083 416" fill="none" stroke="#6b7699" stroke-width="2" marker-end="url(#ah)"/>
+  <text x="1097" y="397" class="data">.lsplat</text>
+
+  <rect x="48" y="620" width="1184" height="80" rx="16" fill="#0e1631" fill-opacity="0.5" stroke="#2c3b6e" stroke-dasharray="5 5"/>
+  <rect x="70" y="638" width="150" height="44" rx="12" fill="#121a33" stroke="#3c4c7c"/><text x="86" y="657" class="mono" style="fill:#c9d3f5">optics/</text><text x="86" y="676" class="ls">Optiland model</text>
+  <path d="M226 660.0 L262 660.0" fill="none" stroke="#6b7699" stroke-width="2" marker-end="url(#ah)"/>
+  <rect x="268" y="638" width="150" height="44" rx="12" fill="#121a33" stroke="#3c4c7c"/><text x="284" y="657" class="mono" style="fill:#c9d3f5">cad/</text><text x="284" y="676" class="ls">FreeCAD model</text>
+  <path d="M424 660.0 L460 660.0" fill="none" stroke="#6b7699" stroke-width="2" marker-end="url(#ah)"/>
+  <rect x="466" y="638" width="150" height="44" rx="12" fill="#121a33" stroke="#3c4c7c"/><text x="482" y="657" class="mono" style="fill:#c9d3f5">sim/</text><text x="482" y="676" class="ls">digital twin</text>
+  <text x="648" y="645" class="band">The code takes its numbers from the design: the URDF and the scan</text>
+  <text x="648" y="665" class="band">model use cad/'s head, calibration/ starts from the Optiland map, and</text>
+  <text x="648" y="685" class="band">sim/ renders whole scans from all of it, with known truth, to test on.</text>
+</svg>

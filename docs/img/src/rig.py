@@ -273,8 +273,8 @@ svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewB
   <!-- labels -->
   {label(1, 60, 300, "SO-101 follower arm", ["LeRobot, six STS3215 servos.", "Moves to a viewpoint,", "then holds still."])}
   {leader([(250, 352), (296, 400)])}
-  {label(5, 60, 520, "ESP32 + TMC2209", ["micro-ROS node that", "steps the mirror."])}
-  {leader([(220, 560), (398, TABLE_Y - 12)])}
+  {label(5, 60, 520, "ESP32 + TMC2209", ["Steps the mirror on", "serial commands."])}
+  {leader([(232, 560), (398, TABLE_Y - 12)])}
   {label(2, 470, 712, "AprilTag board", ["Pose of every viewpoint."])}
   {leader([(500, 690), (556, TABLE_Y - 14)])}
   {label(4, 900, 712, "Jetson Nano", ["Capture, calibration warp", "and the CUDA splat renderer."])}
