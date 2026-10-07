@@ -84,7 +84,7 @@ TEST(line_splat_is_the_2d_splat_on_the_slit) {
     for (int i = 0; i < scene.size(); ++i) {
       const GaussianGeomT<double> g = gaussian_geometry<double>(scene, i);
       const Ewa2D e = ewa_2d(cam, g);
-      LineSplatT<double> s;
+      LineSplatT<double> s{};  // {}: gcc 7 can't tell that s is only read when vis is true
       const bool vis = project_to_line(cam, g, &s);
       // Conditional width and centre of the 2D splat along v = v_slit.
       const double var_u = (e.S[0][0] * e.S[1][1] - e.S[0][1] * e.S[0][1]) / e.S[1][1];
