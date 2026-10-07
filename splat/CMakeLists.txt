@@ -117,7 +117,7 @@ if(LINESPLAT_HAVE_CUDA)
   target_link_libraries(linesplat INTERFACE linesplat_cuda)
 endif()
 
-foreach(tool splat_synth splat_render splat_train)
+foreach(tool splat_synth splat_render splat_train splat_export)
   add_executable(${tool} tools/${tool}.cpp)
   target_link_libraries(${tool} PRIVATE linesplat)
   target_compile_options(${tool} PRIVATE ${_warn})
