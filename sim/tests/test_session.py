@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from conftest import PLAN
-from hsisim.session import SETTLE_NS, TIMER_NS, Settings, load_plan, simulate
+from hsisim.session import FRAMES_COLUMNS, SETTLE_NS, TIMER_NS, Settings, load_plan, simulate
 from hsisim.truth import ScanTruth, pose_matrix, read_lines_csv
 from hsical.frames import load_session
 from hsical.session_check import inspect_session
@@ -86,22 +86,50 @@ def test_robot_urdf(scan):
 
 def test_frames_are_hsical_frame_sets(scan):
     base, _ = scan
-    lines = read_lines_csv(base / "lines.csv")
     sets, _ = load_session(base / "frames")
     assert sorted(sets) == ["sweep_001", "sweep_002"]
     for name, fs in sets.items():
         assert fs.kind == "scene" and fs.exposure_us == 20000.0
         files = fs.files()
         assert [f.name for f in files] == [f"frame_{k:04d}.npy" for k in range(PLAN["lines"])]
+        assert sorted(p.name for p in fs.path.iterdir()) == sorted(["meta.json"] + [f.name for f in files])
         frame = np.load(files[0])
         assert frame.dtype == np.uint16 and frame.shape == (616, 820)   # 3280 x 2464 binned by 4
         assert frame.max() <= 1023 and frame.min() >= 0
-        sid = fs.meta["sweep_id"]
-        with open(fs.path / "frames.csv", newline="") as f:
-            rows = list(csv.DictReader(f))
-        assert [int(r["index"]) for r in rows] == list(range(PLAN["lines"]))
-        stamps = lines["stamp_ns"][lines["sweep_id"] == sid]
-        assert [int(r["stamp_ns"]) for r in rows] == (stamps + SETTLE_NS).tolist()
+
+
+def test_frames_index_is_the_capture_nodes(scan):
+    """frames/frames.csv and frames/camera.json, as so101_scan_camera writes them."""
+    base, _ = scan
+    lines = read_lines_csv(base / "lines.csv")
+    with open(base / "frames" / "frames.csv", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows[0] == FRAMES_COLUMNS
+    rows = [dict(zip(rows[0], r)) for r in rows[1:]]
+    assert [(int(r["sweep_id"]), int(r["index"])) for r in rows] == list(zip(lines["sweep_id"], lines["index"]))
+    assert {r["status"] for r in rows} == {"ok"}
+    seq = np.array([int(r["seq"]) for r in rows])
+    assert (np.diff(seq) > 0).all()
+    n = PLAN["lines"]
+    assert (np.diff(seq[:n]) == 1).all() and (np.diff(seq[n:]) == 1).all()   # one frame per line
+    for r, stamp, hold in zip(rows, lines["stamp_ns"], lines["hold_until_ns"]):
+        start, end, sof = int(r["exposure_start_ns"]), int(r["exposure_end_ns"]), int(r["sof_ns"])
+        assert start == stamp + SETTLE_NS and end <= hold    # the mirror holds still all the exposure
+        assert end - start == round(float(r["exposure_us"]) * 1000) and sof >= start
+        frame = np.load(base / r["file"])                    # relative to the session
+        assert int(r["saturated_px"]) == int((frame >= 1023).sum())
+    cam = json.loads((base / "frames" / "camera.json").read_text())
+    assert cam["format"] == "so101_scan frames v1"
+    assert cam["sensor"] == {"width": 820, "height": 616, "bits": 10, "black_level": 64, "bayer": "RGGB"}
+    assert cam["slit_reversed"] is False and cam["calibration"] is None
+    assert cam["exposure_us"] == 20000.0 and cam["gain"] == 1.0
+
+
+def test_exposure_must_fit_in_the_line(tmp_path):
+    plan = load_plan("ring", lines=2, views=["down"])       # 33.3 ms a line
+    with pytest.raises(ValueError, match="doesn't fit"):
+        simulate(tmp_path / "out", plan, Settings(exposure_us=40000.0, calibration=False), log=lambda *m: None)
+    assert not (tmp_path / "out").exists()
 
 
 def test_references_and_calibration_session(scan):
