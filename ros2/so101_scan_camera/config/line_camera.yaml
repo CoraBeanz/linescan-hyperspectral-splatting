@@ -38,4 +38,6 @@ line_camera:
     slit_row_last: -1
     preview_rate: 2.0          # Hz of ~/preview
     preview_scale: 4
+    scan_preview_rate: 5.0     # Hz the waterfalls (~/scan_preview, _true_color, _cir) are redrawn at
+                               # most, while lines come in
     max_queue_mb: 256          # raw frames waiting for the disk before some are skipped

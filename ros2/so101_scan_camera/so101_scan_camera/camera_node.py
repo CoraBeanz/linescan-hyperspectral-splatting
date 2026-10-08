@@ -14,6 +14,8 @@ is open writes them into the scan folder (session.py says what goes where).
   ~/preview            sensor_msgs/Image the latest frame, shrunk, a few times a second (mono8)
   ~/scan_preview       sensor_msgs/Image the sweep so far: a row per line, the slit across, the
                                          mean over the spectrum (mono8; needs a calibration)
+  ~/scan_preview_true_color              the same in true colour, and in colour infrared (rgb8;
+  ~/scan_preview_cir   sensor_msgs/Image reflectance against the latest white; waterfall.py)
   ~/start_recording    StartRecording    write lines into a scan folder (scan_sweep calls it)
   ~/stop_recording     std_srvs/Trigger  finish writing; the message says how many lines got frames
   ~/capture_reference  CaptureReference  average a dark or a white at the current exposure
@@ -45,6 +47,7 @@ from sensor_msgs.msg import Image
 from std_srvs.srv import Trigger
 
 from so101_scan_camera import session as sess
+from so101_scan_camera import waterfall as wf
 from so101_scan_camera.binning import SATURATED, LineBinner, load_calibration
 from so101_scan_camera.matcher import FrameInfo, Line, LineMatcher
 from so101_scan_camera.sources import BLACK_LEVEL, FULL_SCALE, IMX219_MODES, FakeSource, SensorTiming, V4l2Source
@@ -63,11 +66,14 @@ class LineData:
         self.n = 0
         self.saturated = 0
         self.raw = None
+        self.exposure = None    # (exposure_us, gain) of its first frame
 
-    def add(self, binned, saturated, raw=None):
+    def add(self, binned, saturated, raw=None, exposure=None):
         if binned is not None:
             self.sum = binned.astype(np.float64) if self.sum is None else self.sum + binned
         self.n += 1
+        if self.exposure is None:
+            self.exposure = exposure
         self.saturated = max(self.saturated, saturated)
         if raw is not None and self.raw is None:
             self.raw = raw
@@ -79,8 +85,11 @@ class LineData:
 class SweepData:
     def __init__(self):
         self.lines = {}          # index -> binned mean, or None without frames
+        self.exposures = {}      # index -> (exposure_us, gain)
         self.touched = time.monotonic()
         self.counts = {}
+        self.previews = {}       # its lines as the colour waterfalls have worked them out
+        self.dirty = False       # lines came since the previews were last published
 
 
 class ReferenceJob:
@@ -127,6 +136,7 @@ class LineCamera(Node):
         self.frame_id = p("frame_id", "spectrograph_optical_frame")
         self.preview_period = 1.0 / max(p("preview_rate", 2.0), 0.01)
         self.preview_scale = max(1, p("preview_scale", 4))
+        scan_preview_rate = p("scan_preview_rate", 5.0)
         self.reference_dir = os.path.expanduser(p("reference_dir", os.path.join(DATA_DIR, "references")))
         self.max_queue_bytes = int(p("max_queue_mb", 256)) << 20
 
@@ -148,6 +158,7 @@ class LineCamera(Node):
             self.get_logger().warning("no calibration: lines can't be binned, so every line's raw frame is kept "
                                       "(set calibration:= to an hsical calibration folder)")
         self.raw_every = (0 if self.binner else 1) if raw_every < 0 else raw_every
+        self.waterfall = wf.Waterfall(self.binner, self.slit_reversed) if self.binner else None
         if not line_time_us:
             line_time_us = IMX219_MODES.get((self.width, self.height), {}).get("line_time_us", 18.904)
         if slit_rows[0] < 0 or slit_rows[1] < slit_rows[0]:
@@ -168,7 +179,8 @@ class LineCamera(Node):
         self._skip = 0
         self._last_frame_mono = None
         self._last_preview = 0.0
-        self._last_scan_preview = 0.0
+        self._preview_sweep = None     # the sweep the waterfalls show
+        self._preview_lock = threading.Lock()
         self._warned_no_frames = False
         self.frames_seen = 0
         self.lines_finished = 0
@@ -176,6 +188,8 @@ class LineCamera(Node):
         self.frame_pub = self.create_publisher(FrameStamp, "~/frame", 50)
         self.preview_pub = self.create_publisher(Image, "~/preview", 2)
         self.scan_preview_pub = self.create_publisher(Image, "~/scan_preview", 2)
+        self.color_preview_pubs = {mode: self.create_publisher(Image, "~/scan_preview_" + mode, 2)
+                                   for mode in ("true_color", "cir")}
         services = ReentrantCallbackGroup()
         self.create_subscription(ScanLine, "/scan_mirror/line", self.on_line, 200,
                                  callback_group=MutuallyExclusiveCallbackGroup())
@@ -183,6 +197,17 @@ class LineCamera(Node):
         self.create_service(Trigger, "~/stop_recording", self.handle_stop, callback_group=services)
         self.create_service(CaptureReference, "~/capture_reference", self.handle_reference, callback_group=services)
         self.create_timer(0.5, self.housekeeping, callback_group=MutuallyExclusiveCallbackGroup())
+        # the waterfalls are drawn on a timer of their own, so the camera never waits for them
+        self.create_timer(1.0 / max(scan_preview_rate, 0.1), self.publish_scan_previews,
+                          callback_group=MutuallyExclusiveCallbackGroup())
+        if self.waterfall is not None:
+            if self.last_references:
+                self.get_logger().info("colour previews: %s" % self.waterfall.load_references(self.last_references))
+            if len(self.waterfall.nm) < 3:
+                self.get_logger().warning("the calibration doesn't reach 500..950 nm: no colour previews")
+            elif not self.waterfall.usable:
+                self.get_logger().warning("the calibration has no response map: the colour previews start once "
+                                          "a white is taken")
         self.add_on_set_parameters_callback(self.on_parameters)
 
         self.source = None
@@ -333,8 +358,8 @@ class LineCamera(Node):
         with self._lock:
             writer = self.writer
             keep = writer is not None and writer.keep_raw(line.index)
-            self._acc.setdefault((line.sweep_id, line.index), LineData()).add(binned, saturated,
-                                                                               image if keep else None)
+            self._acc.setdefault((line.sweep_id, line.index), LineData()).add(
+                binned, saturated, image if keep else None, (frame.exposure_us, frame.gain))
 
     def finish(self, line):
         """A line no more frames can come for: into its sweep, and into the recording."""
@@ -346,7 +371,11 @@ class LineCamera(Node):
                 return
             sweep = self._sweeps.setdefault(line.sweep_id, SweepData())
             sweep.lines[line.index] = acc.mean() if acc else None
+            if acc and acc.exposure:
+                sweep.exposures[line.index] = acc.exposure
             sweep.touched = time.monotonic()
+            sweep.dirty = True
+            self._preview_sweep = sweep
             writer = self.writer
         status = line.status
         if writer is not None:
@@ -354,7 +383,6 @@ class LineCamera(Node):
                                        binned=self.binner is not None)
         sweep.counts[status] = sweep.counts.get(status, 0) + 1
         self.lines_finished += 1
-        self.publish_scan_preview(sweep)
         if line.last:
             self.finish_sweep(line.sweep_id)
 
@@ -397,11 +425,13 @@ class LineCamera(Node):
     # --- previews -----------------------------------------------------------------------------
 
     def image_msg(self, a):
+        """mono8 for [h, w], rgb8 for [h, w, 3]."""
         msg = Image()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.frame_id
-        msg.height, msg.width = a.shape
-        msg.encoding, msg.is_bigendian, msg.step = "mono8", 0, a.shape[1]
+        msg.height, msg.width = a.shape[:2]
+        msg.encoding = "rgb8" if a.ndim == 3 else "mono8"
+        msg.is_bigendian, msg.step = 0, a.shape[1] * (3 if a.ndim == 3 else 1)
         msg.data = np.ascontiguousarray(a, np.uint8).tobytes()
         return msg
 
@@ -411,24 +441,31 @@ class LineCamera(Node):
         s = self.preview_scale
         self.preview_pub.publish(self.image_msg((image[::s, ::s] >> 2).astype(np.uint8)))
 
-    def publish_scan_preview(self, sweep):
-        now = time.monotonic()
-        if self.binner is None or now - self._last_scan_preview < 0.2 \
-                or self.scan_preview_pub.get_subscription_count() == 0:
+    def publish_scan_previews(self):
+        """The waterfalls of the sweep that last had a line, if it has had more since."""
+        sweep = self._preview_sweep
+        if self.binner is None or sweep is None or not sweep.dirty:
             return
-        self._last_scan_preview = now
+        wanted = [m for m, pub in self.color_preview_pubs.items() if pub.get_subscription_count()]
+        grey = self.scan_preview_pub.get_subscription_count() > 0
+        if not (grey or wanted):
+            return
         with self._lock:
-            lines = dict(sweep.lines)
+            sweep.dirty = False
+            lines = {i: (v, *sweep.exposures.get(i, (self.exposure_us, self.gain))) for i, v in sweep.lines.items()}
         if not lines:
             return
-        n = max(lines) + 1
-        img = np.zeros((n, self.binner.shape[0]))
-        for i, v in lines.items():
-            if v is not None:
-                ok = np.isfinite(v)
-                img[i] = np.where(ok, v - BLACK_LEVEL, 0.0).sum(axis=1) / np.maximum(ok.sum(axis=1), 1)
-        top = float(np.percentile(img, 99.5)) or 1.0
-        self.scan_preview_pub.publish(self.image_msg(np.clip(img / top * 255.0, 0, 255)))
+        try:
+            if grey:
+                img = wf.grey(lines, self.binner.shape[0], self.slit_reversed)
+                self.scan_preview_pub.publish(self.image_msg(img))
+            for mode in wanted:
+                with self._preview_lock:
+                    img = self.waterfall.image(lines, mode, sweep.previews)
+                if img is not None:
+                    self.color_preview_pubs[mode].publish(self.image_msg(img))
+        except Exception as e:     # a preview must never stop the camera
+            self.get_logger().error("drawing the scan preview failed: %s" % e, throttle_duration_sec=10.0)
 
     # --- parameters ---------------------------------------------------------------------------
 
@@ -563,6 +600,14 @@ class LineCamera(Node):
         binned = None
         if self.binner is not None:
             binned = np.mean([self.binner.bin(f)[0] for f in frames], axis=0)
+            with self._preview_lock:
+                try:
+                    if kind == "dark":
+                        self.waterfall.add_dark(binned, self.exposure_us, self.gain)
+                    else:
+                        self.waterfall.set_white(binned, self.exposure_us, self.gain, name=name)
+                except ValueError as e:
+                    self.get_logger().warning("the colour previews can't use this %s: %s" % (kind, e))
         try:
             if writer is not None and os.path.abspath(directory) == writer.dir:
                 path = writer.write_reference(name, frames, meta, binned)

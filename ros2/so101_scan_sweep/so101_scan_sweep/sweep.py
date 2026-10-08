@@ -22,6 +22,9 @@ locks the lines to the camera's frames; the plan's camera.record says whether th
 
 It also publishes every line's pose on /scan/line_pose and the scan lines as RViz markers on
 /scan/markers. Ctrl-C stops the mirror and still writes what was logged.
+
+--dry-run plays the plan on the running stack without moving the arm or the mirror, checks
+it, and writes nothing (dry_run.py).
 """
 
 import argparse
@@ -436,8 +439,17 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Run a scan plan and log the pose of every scan line")
     ap.add_argument("--plan", required=True, help="plan YAML (see plans/)")
     ap.add_argument("--output", help="folder to write (default: <plan output_dir>/<name>_<date>-<time>)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="play the plan on the running stack without moving anything, and check it")
+    ap.add_argument("--speed", type=float, default=1.0, help="with --dry-run: play this many times faster")
+    ap.add_argument("--no-play", action="store_true", help="with --dry-run: just check, and draw the end result")
+    ap.add_argument("--clearance", type=float, default=0.01,
+                    help="with --dry-run: m the arm and head should keep from the table (and the object)")
     args, _ = ap.parse_known_args(argv)  # leaves --ros-args to rclpy
     plan = plan_mod.load(args.plan)
+    if args.dry_run:
+        from so101_scan_sweep import dry_run
+        return dry_run.run(plan, args.speed, not args.no_play, args.clearance)
     out_dir = args.output or os.path.join(plan.output_dir, "%s_%s" % (
         plan.name, datetime.now().strftime("%Y%m%d-%H%M%S")))
 

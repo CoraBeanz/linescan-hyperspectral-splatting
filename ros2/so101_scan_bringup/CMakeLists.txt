@@ -13,6 +13,8 @@ if(BUILD_TESTING)
   # The same with the spectrograph camera simulated: references, a locked sweep, the recording
   # and its conversion to the splat trainer's dataset.
   ament_add_pytest_test(test_capture_stack test/test_capture_stack.py TIMEOUT 300)
+  # A coverage plan around a box, played with scan_sweep --dry-run: drawn, checked, nothing moved.
+  ament_add_pytest_test(test_dry_run test/test_dry_run.py TIMEOUT 300)
 endif()
 
 ament_package()
