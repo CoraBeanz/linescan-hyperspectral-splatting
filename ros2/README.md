@@ -78,7 +78,9 @@ All lengths in metres, angles in radians, quaternions x y z w.
 | `spectrograph_optical_frame` | The objective as built, looking into the mirror |
 | `line_camera_optical_frame` | The objective as seen in the mirror: a pinhole for one scan line. z is the view, x runs along the slit in pixel order. It turns twice as fast as the mirror (a mimic joint) |
 | `scan_line_frame` | Middle of the in-focus scan line, 0.15 m along the view |
-| `pose_camera_optical_frame` | The Pi NoIR that sees the AprilTags (nominal, until hand-eye calibration) |
+| `pose_camera_optical_frame` | The Pi NoIR pose camera |
+
+The head's frames come from the CAD model until a head calibration exists: with `~/so101_scan/head_calibration.yaml` (from [`calibration/headcal`](../calibration/headcal/README.md)), `scan_arm.launch.py` builds the URDF with the measured mount, mirror, objective and pose camera instead.
 
 **Mirror angle:** 0 is the 45° rest, where the head looks straight out of its window (+Y);
 positive turns the view toward +Z. The hall sensor sits at -40°, which the firmware keeps as

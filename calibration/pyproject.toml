@@ -12,13 +12,16 @@ dependencies = ["numpy>=2.0", "scipy>=1.15"]
 [project.optional-dependencies]
 report = ["matplotlib>=3.9"]
 fast = ["opencv-python-headless>=4.10.0.84"]
+# headcal (the head's hand-eye calibration) imports ros2/ from this repo, so install editable
+headcal = ["opencv-python-headless>=4.10.0.84", "pyyaml>=6", "xacro>=2.0"]
 test = ["pytest>=7", "matplotlib>=3.9"]
 
 [tool.setuptools]
-packages = ["hsical"]
+packages = ["hsical", "headcal"]
 
 [tool.setuptools.package-data]
 hsical = ["data/*.csv", "data/*.json"]
+headcal = ["plans/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

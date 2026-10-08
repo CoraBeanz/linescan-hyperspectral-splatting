@@ -58,16 +58,17 @@ def rig(urdf, tmp_path_factory):
     cal = inst.save_calibration(str(tmp_path_factory.mktemp("cal")))
     maps = load_calibration(cal)
     poser = LinePoser(Robot(urdf))
-    k = poser.half_line / poser.scene_distance
 
-    def frames(slit_reversed):
-        """{(sweep, line): (head, camera, angle, joints, raw frame)}."""
+    def frames(slit_reversed, true_poser=poser):
+        """{(sweep, line): (head, camera, angle, joints, raw frame)}, the frames as seen by the head
+        true_poser has (the URDF's unless a test says otherwise)."""
         out = {}
+        k = true_poser.half_line / true_poser.scene_distance
         for sid, q in enumerate(VIEWS.values()):
             joints = dict(zip(ARM_JOINTS, np.radians(q)))
             for i in range(N_LINES):
                 angle = (-12 + 2 * i) * RAD_PER_STEP
-                head, cam = poser.poses(joints, angle)
+                head, cam = true_poser.poses(joints, angle)
 
                 def radiance(t, nm, cam=cam):
                     # pixel order runs along the line camera's x unless the slit reads backwards
@@ -87,12 +88,14 @@ def rig(urdf, tmp_path_factory):
     return dict(cal=cal, maps=maps, poser=poser, frames=frames, refs=refs, rendered={})
 
 
-def write_scan(folder, urdf, rig, slit_reversed=False, binned=True):
-    """A scan folder as scan_sweep and line_camera write it."""
+def write_scan(folder, urdf, rig, slit_reversed=False, binned=True, true_urdf=None):
+    """A scan folder as scan_sweep and line_camera write it. With true_urdf, the head really is
+    where that URDF puts it, while the scan still logs the poses `urdf` gives."""
     maps, poser = rig["maps"], rig["poser"]
-    if slit_reversed not in rig["rendered"]:
-        rig["rendered"][slit_reversed] = rig["frames"](slit_reversed)
-    frames = rig["rendered"][slit_reversed]
+    key = (slit_reversed, true_urdf)
+    if key not in rig["rendered"]:
+        rig["rendered"][key] = rig["frames"](slit_reversed, LinePoser(Robot(true_urdf)) if true_urdf else poser)
+    frames = rig["rendered"][key]
     binner = LineBinner(maps, SLIT_BINS) if binned else None
     folder.mkdir()
     (folder / "robot.urdf").write_text(urdf)
@@ -105,7 +108,8 @@ def write_scan(folder, urdf, rig, slit_reversed=False, binned=True):
     for sid in range(len(VIEWS)):
         sweep = np.full((N_LINES,) + (binner.shape if binner else (1, 1)), np.nan, np.float32)
         for i in range(N_LINES):
-            head, cam, angle, joints, raw = frames[(sid, i)]
+            _, _, angle, joints, raw = frames[(sid, i)]
+            head, cam = poser.poses(joints, angle)
             lines_csv.write(sid, sid, i, t, t + PERIOD_NS - 50_000, True, angle, head, cam, joints)
             line = Line(sid, i, t, t + PERIOD_NS - 50_000, True, i == N_LINES - 1, angle)
             saturated = 0
@@ -232,6 +236,69 @@ def test_lines_without_values_are_left_out(urdf, rig, tmp_path):
         (tmp_path / "busy").mkdir()
         (tmp_path / "busy" / "notes.txt").write_text("mine")
         s2d.convert(str(scan), str(tmp_path / "busy"))
+
+
+def _rpy(r):
+    return [math.atan2(r[2, 1], r[2, 2]), math.asin(-r[2, 0]), math.atan2(r[1, 0], r[0, 0])]
+
+
+def _set_origin(root, joint, t):
+    o = root.find("joint[@name='%s']/origin" % joint)
+    o.set("xyz", " ".join("%.9f" % v for v in t[:3, 3]))
+    o.set("rpy", " ".join("%.9f" % v for v in _rpy(t[:3, :3])))
+
+
+def calibrated_urdf(urdf):
+    """The URDF with the head a little off its CAD numbers, as a head calibration
+    (calibration/headcal) writes it: the mount, mirror and objective moved, the folded line
+    camera worked out from them, and the scan line 3 % longer."""
+    import xml.etree.ElementTree as ET
+    from so101_scan_description.kinematics import rpy_matrix, transform
+    robot, root = Robot(urdf), ET.fromstring(urdf)
+
+    def nudged(joint, mm, deg):
+        return robot.joints[joint]["origin"] @ transform(rpy_matrix(*np.radians(deg)), np.array(mm) * 1e-3)
+
+    mount = nudged("scan_head_mount", [0.8, -0.5, 0.6], [0.6, -0.8, 1.2])
+    mirror = nudged("scan_mirror_joint", [0.0, 0.3, -0.2], [1.5, 0.3, -0.2])
+    objective = nudged("spectrograph_optical_joint", [0.3, -0.2, 0.4], [0.4, -0.3, 0.2])
+    e = float(root.find("joint[@name='scan_mirror_face_joint']/origin").get("xyz").split()[1])
+    flip = np.diag([1.0, -1.0, 1.0, 1.0])
+    fold = np.eye(4)
+    fold[1, 3] = 2 * e
+    for joint, t in (("scan_head_mount", mount), ("scan_mirror_joint", mirror),
+                     ("spectrograph_optical_joint", objective), ("line_camera_fold_joint", fold),
+                     ("line_camera_optical_joint", flip @ np.linalg.inv(mirror) @ objective @ flip)):
+        _set_origin(root, joint, t)
+    box = root.find("link[@name='scan_line_frame']/visual/geometry/box")
+    size = box.get("size").split()
+    box.set("size", " ".join(["%.9f" % (1.03 * float(size[0]))] + size[1:]))
+    return ET.tostring(root, encoding="unicode")
+
+
+def test_a_later_head_calibration(urdf, rig, tmp_path):
+    """The head isn't quite where the CAD put it, and the scan logged the CAD poses. Converting
+    with the head calibration's robot.urdf puts every pixel back on the table where it looked."""
+    true_urdf = calibrated_urdf(urdf)
+    scan = write_scan(tmp_path / "scan", urdf, rig, true_urdf=true_urdf)
+    (tmp_path / "robot.urdf").write_text(true_urdf)
+    s2d.convert(str(scan), str(tmp_path / "cad"))
+    doc = s2d.convert(str(scan), str(tmp_path / "calibrated"), urdf=str(tmp_path / "robot.urdf"))
+    assert doc["metadata"]["head_urdf"] == str(tmp_path / "robot.urdf")
+    true = Robot(true_urdf)
+    np.testing.assert_allclose(doc["head"]["camera_in_head"], ls.head_from_urdf(true).to_json()["camera_in_head"],
+                               atol=1e-9)
+    poser = LinePoser(true)
+    assert doc["intrinsics"]["f_px"] == pytest.approx(SLIT_BINS * poser.scene_distance / (2 * poser.half_line))
+    _, a = load_dataset(tmp_path / "calibrated")
+    head, _ = poser.poses(dict(zip(ARM_JOINTS, np.radians(VIEWS["down"]))), 0.0)
+    head[2, 3] -= s2d.TABLE_Z
+    np.testing.assert_allclose(ls.pose_matrix(a["sweep_head_pose"][0]), head, atol=1e-9)
+    err = np.abs(a["lines"] - seen_reflectance(doc, a))
+    assert np.median(err) < 0.004 and np.percentile(err, 99) < 0.03, (np.median(err), np.percentile(err, 99))
+    # with the CAD head the pixels land a millimetre or two off, which the pattern shows
+    cad_doc, b = load_dataset(tmp_path / "cad")
+    assert np.median(np.abs(b["lines"] - seen_reflectance(cad_doc, b))) > 0.05
 
 
 def test_references_kept_outside_the_scan(urdf, rig, tmp_path):

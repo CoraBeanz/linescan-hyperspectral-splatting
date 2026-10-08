@@ -15,8 +15,13 @@
                                    frame right-handed; pixel order along the slit is unchanged.
                                    It moves with the mirror through a mimic joint (below).
        scan_line_frame             centre of the in-focus scan line, scene_distance along z
-       pose_camera_optical_frame   the Pi NoIR v2 that reads the AprilTag board (nominal; hand-eye
-                                   calibration replaces it)
+       pose_camera_optical_frame   the Pi NoIR v2 that reads the tag board
+
+     Head calibration. By default every origin below is the CAD model's (scan_head_params.xacro).
+     The xacro argument head_calibration names a head_calibration.yaml from the hand-eye
+     calibration (calibration/headcal): its joint origins replace the CAD ones for the mount, the
+     mirror shaft, the objective, the pose camera and the folded line camera, and its
+     scan_line_half_length sets the scan line's length (the line camera's focal length).
 
      How the reflected objective follows the mirror. With the shaft at s, the mirror face e in
      front of it along its normal n (n = n0 turned by the joint angle t), and the objective at p,
@@ -47,13 +52,56 @@
     </visual>
   </xacro:macro>
 
+  <xacro:arg name="head_calibration" default=""/>
+
   <xacro:macro name="scan_head" params="parent">
+    <xacro:property name="head_calibration_file" value="$(arg head_calibration)"/>
+    <xacro:if value="${head_calibration_file == ''}">
+      <!-- the CAD model's numbers; the folded line camera follows from them (see the note above) -->
+      <xacro:property name="obj_dy" value="${objective_y - mirror_shaft_y}"/>
+      <xacro:property name="obj_dz" value="${objective_z - mirror_shaft_z}"/>
+      <xacro:property name="obj_dn" value="${obj_dy * cos(mirror_rest) + obj_dz * sin(mirror_rest)}"/>
+      <xacro:property name="mount_xyz" value="0 0 ${head_mount_z}"/>
+      <xacro:property name="mount_rpy" value="${pi} 0 0"/>
+      <xacro:property name="mirror_xyz" value="0 ${mirror_shaft_y} ${mirror_shaft_z}"/>
+      <xacro:property name="mirror_rpy" value="${mirror_rest} 0 0"/>
+      <xacro:property name="face_offset" value="${mirror_face_offset}"/>
+      <xacro:property name="objective_xyz" value="0 ${objective_y} ${objective_z}"/>
+      <xacro:property name="objective_rpy" value="${pi} 0 0"/>
+      <xacro:property name="fold_rpy" value="${-mirror_rest} 0 0"/>
+      <xacro:property name="folded_xyz"
+                      value="0 ${obj_dy - 2 * obj_dn * cos(mirror_rest)} ${obj_dz - 2 * obj_dn * sin(mirror_rest)}"/>
+      <xacro:property name="folded_rpy" value="${2 * mirror_rest + pi} 0 0"/>
+      <xacro:property name="pose_camera_xyz" value="${pose_camera_x} ${pose_camera_y} ${pose_camera_z}"/>
+      <xacro:property name="pose_camera_rpy" value="${pose_camera_roll} 0 0"/>
+      <xacro:property name="line_half_length" value="${scan_line_half_length}"/>
+    </xacro:if>
+    <xacro:unless value="${head_calibration_file == ''}">
+      <!-- a hand-eye calibration: every origin as headcal wrote it (fold_rpy is 0 there, because
+           its line_camera_optical_joint is given in the mirror joint's own frame) -->
+      <xacro:property name="head_cal" value="${xacro.load_yaml(head_calibration_file)}"/>
+      <xacro:property name="head_cal_joints" value="${head_cal['joints']}"/>
+      <xacro:property name="mount_xyz" value="${head_cal_joints['scan_head_mount']['xyz']}"/>
+      <xacro:property name="mount_rpy" value="${head_cal_joints['scan_head_mount']['rpy']}"/>
+      <xacro:property name="mirror_xyz" value="${head_cal_joints['scan_mirror_joint']['xyz']}"/>
+      <xacro:property name="mirror_rpy" value="${head_cal_joints['scan_mirror_joint']['rpy']}"/>
+      <xacro:property name="face_offset" value="${head_cal['face_offset']}"/>
+      <xacro:property name="objective_xyz" value="${head_cal_joints['spectrograph_optical_joint']['xyz']}"/>
+      <xacro:property name="objective_rpy" value="${head_cal_joints['spectrograph_optical_joint']['rpy']}"/>
+      <xacro:property name="fold_rpy" value="${head_cal_joints['line_camera_fold_joint']['rpy']}"/>
+      <xacro:property name="folded_xyz" value="${head_cal_joints['line_camera_optical_joint']['xyz']}"/>
+      <xacro:property name="folded_rpy" value="${head_cal_joints['line_camera_optical_joint']['rpy']}"/>
+      <xacro:property name="pose_camera_xyz" value="${head_cal_joints['pose_camera_joint']['xyz']}"/>
+      <xacro:property name="pose_camera_rpy" value="${head_cal_joints['pose_camera_joint']['rpy']}"/>
+      <xacro:property name="line_half_length" value="${head_cal['scan_line_half_length']}"/>
+    </xacro:unless>
+
     <!-- wrist_roll_link's -Z points away from the wrist, so the head frame is that frame
          turned 180 deg about X, on the horn face -->
     <joint name="scan_head_mount" type="fixed">
       <parent link="${parent}"/>
       <child link="scan_head_link"/>
-      <origin xyz="0 0 ${head_mount_z}" rpy="${pi} 0 0"/>
+      <origin xyz="${mount_xyz}" rpy="${mount_rpy}"/>
     </joint>
 
     <link name="scan_head_link">
@@ -80,7 +128,7 @@
     <joint name="scan_mirror_joint" type="revolute">
       <parent link="scan_head_link"/>
       <child link="scan_mirror_link"/>
-      <origin xyz="0 ${mirror_shaft_y} ${mirror_shaft_z}" rpy="${mirror_rest} 0 0"/>
+      <origin xyz="${mirror_xyz}" rpy="${mirror_rpy}"/>
       <axis xyz="1 0 0"/>
       <limit lower="${-pi}" upper="${pi}" effort="0.014" velocity="20.0"/>
     </joint>
@@ -94,7 +142,7 @@
     <joint name="scan_mirror_face_joint" type="fixed">
       <parent link="scan_mirror_link"/>
       <child link="scan_mirror_face"/>
-      <origin xyz="0 ${mirror_face_offset} 0" rpy="${-pi/2} 0 0"/>
+      <origin xyz="0 ${face_offset} 0" rpy="${-pi/2} 0 0"/>
     </joint>
     <link name="scan_mirror_face"/>
 
@@ -102,18 +150,15 @@
     <joint name="spectrograph_optical_joint" type="fixed">
       <parent link="scan_head_link"/>
       <child link="spectrograph_optical_frame"/>
-      <origin xyz="0 ${objective_y} ${objective_z}" rpy="${pi} 0 0"/>
+      <origin xyz="${objective_xyz}" rpy="${objective_rpy}"/>
     </joint>
     <link name="spectrograph_optical_frame"/>
 
     <!-- the objective reflected in the mirror (see the note at the top) -->
-    <xacro:property name="obj_dy" value="${objective_y - mirror_shaft_y}"/>
-    <xacro:property name="obj_dz" value="${objective_z - mirror_shaft_z}"/>
-    <xacro:property name="obj_dn" value="${obj_dy * cos(mirror_rest) + obj_dz * sin(mirror_rest)}"/>
     <joint name="line_camera_fold_joint" type="revolute">
       <parent link="scan_mirror_link"/>
       <child link="line_camera_fold_link"/>
-      <origin xyz="0 ${2 * mirror_face_offset} 0" rpy="${-mirror_rest} 0 0"/>
+      <origin xyz="0 ${2 * face_offset} 0" rpy="${fold_rpy}"/>
       <axis xyz="1 0 0"/>
       <limit lower="${-pi}" upper="${pi}" effort="0" velocity="20.0"/>
       <mimic joint="scan_mirror_joint" multiplier="1" offset="0"/>
@@ -123,8 +168,7 @@
     <joint name="line_camera_optical_joint" type="fixed">
       <parent link="line_camera_fold_link"/>
       <child link="line_camera_optical_frame"/>
-      <origin xyz="0 ${obj_dy - 2 * obj_dn * cos(mirror_rest)} ${obj_dz - 2 * obj_dn * sin(mirror_rest)}"
-              rpy="${2 * mirror_rest + pi} 0 0"/>
+      <origin xyz="${folded_xyz}" rpy="${folded_rpy}"/>
     </joint>
     <!-- no collision: the thin cylinder only shows in RViz where the instrument looks -->
     <link name="line_camera_optical_frame">
@@ -143,7 +187,7 @@
     <!-- the in-focus scan line on the scene, x along the slit (shown in RViz, no collision) -->
     <link name="scan_line_frame">
       <visual>
-        <geometry><box size="${2 * scan_line_half_length} 0.0015 0.0015"/></geometry>
+        <geometry><box size="${2 * line_half_length} 0.0015 0.0015"/></geometry>
         <material name="scan_head_view"/>
       </visual>
     </link>
@@ -152,7 +196,7 @@
     <joint name="pose_camera_joint" type="fixed">
       <parent link="scan_head_link"/>
       <child link="pose_camera_link"/>
-      <origin xyz="${pose_camera_x} ${pose_camera_y} ${pose_camera_z}" rpy="${pose_camera_roll} 0 0"/>
+      <origin xyz="${pose_camera_xyz}" rpy="${pose_camera_rpy}"/>
     </joint>
     <link name="pose_camera_link"/>
 

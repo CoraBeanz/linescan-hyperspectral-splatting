@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import xacro
 
-from so101_scan_description.kinematics import Robot
+from so101_scan_description.kinematics import Robot, rpy_matrix
 
 PKG = Path(__file__).resolve().parent.parent
 REPO = PKG.parent.parent
@@ -199,6 +199,76 @@ def test_line_camera_is_the_objective_seen_in_the_mirror(robot, theta):
     np.testing.assert_allclose(cam[:3, 2], [0, math.cos(2 * theta), math.sin(2 * theta)], atol=1e-6)
     # pixel order along the slit is the objective's
     np.testing.assert_allclose(cam[:3, 0], obj[:3, 0], atol=1e-9)
+
+
+# --- a head calibration (calibration/headcal) -----------------------------------------------
+
+def _rpy(r):
+    """URDF roll, pitch, yaw of a rotation matrix (R = Rz(yaw) Ry(pitch) Rx(roll))."""
+    return [math.atan2(r[2, 1], r[2, 2]), math.asin(-max(-1.0, min(1.0, r[2, 0]))), math.atan2(r[1, 0], r[0, 0])]
+
+
+def _origin(t):
+    return {"xyz": " ".join("%.9f" % v for v in t[:3, 3]), "rpy": " ".join("%.9f" % v for v in _rpy(t[:3, :3]))}
+
+
+def _nudge(t, xyz_mm, rpy_deg):
+    from so101_scan_description.kinematics import rpy_matrix, transform
+    return t @ transform(rpy_matrix(*np.radians(rpy_deg)), np.asarray(xyz_mm) * 1e-3)
+
+
+@pytest.fixture(scope="module")
+def calibrated(robot, tmp_path_factory):
+    """A head a little off its CAD numbers, written the way headcal writes head_calibration.yaml:
+    the folded line camera is the objective seen from the mirror joint's frame, flipped in y."""
+    o = {n: robot.joints[n]["origin"] for n in ("scan_head_mount", "scan_mirror_joint",
+                                                 "spectrograph_optical_joint", "pose_camera_joint")}
+    mount = _nudge(o["scan_head_mount"], [0.4, -0.3, 0.5], [1.0, -0.6, 0.8])
+    mirror = _nudge(o["scan_mirror_joint"], [0.0, 0.3, -0.2], [2.0, 0.4, -0.3])   # home 2 deg off, axis tilted
+    objective = _nudge(o["spectrograph_optical_joint"], [0.2, -0.4, 0.3], [0.5, -0.4, 0.2])
+    pose_camera = _nudge(o["pose_camera_joint"], [1.0, 0.5, -0.8], [1.5, -1.0, 2.0])
+    flip = np.diag([1.0, -1.0, 1.0, 1.0])
+    folded = flip @ np.linalg.inv(mirror) @ objective @ flip
+    fold = np.eye(4)
+    fold[1, 3] = 2 * 0.0029   # twice the face offset (the xacro takes it from face_offset)
+    joints = {"scan_head_mount": _origin(mount), "scan_mirror_joint": _origin(mirror),
+              "spectrograph_optical_joint": _origin(objective), "line_camera_fold_joint": _origin(fold),
+              "line_camera_optical_joint": _origin(folded), "pose_camera_joint": _origin(pose_camera)}
+    path = tmp_path_factory.mktemp("headcal") / "head_calibration.yaml"
+    path.write_text("format: headcal head calibration v1\njoints:\n" + "".join(
+        '  %s: {xyz: "%s", rpy: "%s"}\n' % (n, j["xyz"], j["rpy"]) for n, j in joints.items())
+        + "face_offset: 0.0029\nscan_line_half_length: 0.0212\n")
+    return Robot(build(use_mock_hardware="true", head_calibration=path)), joints
+
+
+def test_no_head_calibration_is_the_cad(mock_urdf):
+    assert build(use_mock_hardware="true", head_calibration="") == mock_urdf
+
+
+def test_head_calibration_replaces_the_cad_origins(calibrated):
+    cal, joints = calibrated
+    for name, j in joints.items():
+        np.testing.assert_allclose(cal.joints[name]["origin"][:3, 3], [float(v) for v in j["xyz"].split()],
+                                   atol=1e-12, err_msg=name)
+        np.testing.assert_allclose(cal.joints[name]["origin"][:3, :3],
+                                   rpy_matrix(*[float(v) for v in j["rpy"].split()]), atol=1e-9, err_msg=name)
+    np.testing.assert_allclose(cal.joints["scan_mirror_face_joint"]["origin"][:3, 3], [0, 0.0029, 0])
+    np.testing.assert_allclose(cal.joints["line_camera_fold_joint"]["origin"][:3, 3], [0, 0.0058, 0])
+    box = cal.links["scan_line_frame"].find("visual/geometry/box").get("size")
+    assert float(box.split()[0]) == pytest.approx(0.0424)
+
+
+@pytest.mark.parametrize("theta", [0.0, 0.2, -0.698132, 1.0])
+def test_calibrated_line_camera_is_still_the_objective_in_the_mirror(calibrated, theta):
+    cal, _ = calibrated
+    q = {"scan_mirror_joint": theta}
+    obj = cal.fk("spectrograph_optical_frame", q, base="scan_head_link")
+    face = cal.fk("scan_mirror_face", q, base="scan_head_link")
+    cam = cal.fk("line_camera_optical_frame", q, base="scan_head_link")
+    n, m = face[:3, 2], face[:3, 3]
+    reflect = np.eye(3) - 2 * np.outer(n, n)
+    np.testing.assert_allclose(cam[:3, 3], obj[:3, 3] - 2 * np.dot(obj[:3, 3] - m, n) * n, atol=1e-8)
+    np.testing.assert_allclose(cam[:3, :3], reflect @ obj[:3, :3] @ np.diag([1, -1, 1]), atol=1e-8)
 
 
 def test_scan_line_is_in_front_of_the_window(robot):

@@ -7,6 +7,8 @@
        port               servo bus adapter (default /dev/so101, see ros2/udev)
        calibration_file   YAML from sts_calibrate; required unless use_mock_hardware
        torque             false: motors switched off, positions are only read (default true)
+       head_calibration   head_calibration.yaml from `python -m headcal solve` (calibration/headcal):
+                          where the head's cameras and mirror really are; empty: the CAD numbers
 
      Check it with:
        xacro so101_scan.urdf.xacro use_mock_hardware:=true > /tmp/so101_scan.urdf && check_urdf /tmp/so101_scan.urdf -->
@@ -16,6 +18,7 @@
   <xacro:arg name="port" default="/dev/so101"/>
   <xacro:arg name="calibration_file" default=""/>
   <xacro:arg name="torque" default="true"/>
+  <xacro:arg name="head_calibration" default=""/>
 
   <xacro:include filename="$(find so101_scan_description)/urdf/so101_arm.xacro"/>
   <xacro:include filename="$(find so101_scan_description)/urdf/scan_head.xacro"/>

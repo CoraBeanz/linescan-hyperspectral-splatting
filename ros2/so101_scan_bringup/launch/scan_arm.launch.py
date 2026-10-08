@@ -14,8 +14,13 @@
     # a simulated one with a made-up spectrograph)
     ros2 launch so101_scan_bringup scan_arm.launch.py camera:=v4l2 camera_calibration:=/data/hsical/cal
 
+    # the head's CAD geometry even if ~/so101_scan/head_calibration.yaml exists
+    ros2 launch so101_scan_bringup scan_arm.launch.py head_calibration:=none
+
 What starts:
-  robot_state_publisher   the URDF (so101_scan_description) and TF for every frame
+  robot_state_publisher   the URDF (so101_scan_description) and TF for every frame, with the
+                          head where calibration/headcal measured it if
+                          $SO101_SCAN_DATA/head_calibration.yaml exists (else the CAD numbers)
   ros2_control_node       the STS3215 driver (or mock hardware) at 100 Hz, with
                           joint_state_broadcaster -> /joint_states and arm_controller,
                           a trajectory controller (not started with torque:=false)
@@ -36,13 +41,14 @@ import os
 
 import xacro
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 
 DATA_DIR = os.environ.get("SO101_SCAN_DATA", os.path.expanduser("~/so101_scan"))
+HEAD_CALIBRATION = os.path.join(DATA_DIR, "head_calibration.yaml")
 FAKE_MIRROR_LINK = "/tmp/scan_mirror_fake"
 
 
@@ -50,9 +56,22 @@ def _true(text):
     return text.strip().lower() in ("1", "true", "yes", "on")
 
 
+def head_calibration(path):
+    """The head calibration file to build the URDF with, or "" for the CAD numbers: the default
+    file only if it exists, a named one always (a missing one is an error), none for none."""
+    if path.strip().lower() in ("", "none", "cad", "false"):
+        return ""
+    full = os.path.expanduser(path)
+    if os.path.exists(full):
+        return full
+    if path == HEAD_CALIBRATION:
+        return ""
+    raise RuntimeError("No head calibration at %s (head_calibration:=none for the CAD numbers)." % full)
+
+
 def _setup(context):
     arg = {name: LaunchConfiguration(name).perform(context) for name in (
-        "use_mock_hardware", "port", "calibration_file", "torque", "mirror", "mirror_port",
+        "use_mock_hardware", "port", "calibration_file", "torque", "head_calibration", "mirror", "mirror_port",
         "mirror_config", "camera", "camera_config", "camera_calibration", "foxglove", "rviz")}
     description = get_package_share_directory("so101_scan_description")
     bringup = get_package_share_directory("so101_scan_bringup")
@@ -67,11 +86,15 @@ def _setup(context):
     mappings = {"use_mock_hardware": str(mock).lower(), "port": arg["port"], "torque": str(torque).lower()}
     if not mock:
         mappings["calibration_file"] = calibration
+    head = head_calibration(arg["head_calibration"])
+    if head:
+        mappings["head_calibration"] = head
     urdf = xacro.process_file(os.path.join(description, "urdf", "so101_scan.urdf.xacro"),
                               mappings=mappings).toxml()
     robot_description = ParameterValue(urdf, value_type=str)
 
     nodes = [
+        LogInfo(msg="scanner head: %s" % ("calibrated, from " + head if head else "the CAD numbers")),
         Node(package="robot_state_publisher", executable="robot_state_publisher", output="screen",
              parameters=[{"robot_description": robot_description,
                           # TF for moving joints at the 100 Hz of /joint_states, not the default 20 Hz,
@@ -134,6 +157,9 @@ def generate_launch_description():
         DeclareLaunchArgument("torque", default_value="true",
                               description="false: motors switched off (hold the arm), positions only read; "
                                           "move the arm by hand"),
+        DeclareLaunchArgument("head_calibration", default_value=HEAD_CALIBRATION,
+                              description="from `python -m headcal solve`: where the head's cameras and mirror "
+                                          "are (used if the file exists; none: the CAD numbers)"),
         DeclareLaunchArgument("mirror", default_value="esp32", description="esp32 or fake"),
         DeclareLaunchArgument("mirror_port", default_value="/dev/scan_mirror",
                               description="the mirror ESP32's USB serial port"),
