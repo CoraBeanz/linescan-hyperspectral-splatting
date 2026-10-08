@@ -9,7 +9,10 @@
     FreeCAD model in cad/, and the ros2_control block for the STS3215 bus.
   </description>
   <maintainer email="vincentryanbaker@gmail.com">CoraBeanz</maintainer>
-  <license>TODO</license>
+  <license>MIT</license>
+  <!-- Apache-2.0: the arm in urdf/so101_arm.xacro and its meshes, from TheRobotStudio's SO-101 URDF
+       (licence text in docs/img/SO-ARM100_LICENSE.txt) -->
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>

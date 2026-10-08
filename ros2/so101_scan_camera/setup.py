@@ -18,7 +18,7 @@ setup(
     maintainer="CoraBeanz",
     maintainer_email="vincentryanbaker@gmail.com",
     description="The spectrograph camera of the SO-101 hyperspectral scanner",
-    license="TODO",
+    license="MIT",
     extras_require={"test": ["pytest"]},
     entry_points={
         "console_scripts": [
