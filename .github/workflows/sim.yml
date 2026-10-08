@@ -1,8 +1,9 @@
 # Instrument simulator: the self-test (scan the relief target, calibrate the
 # simulated instrument with hsical, turn the sweeps into reflectance, compare with
 # the truth) and the unit tests, on the oldest Python and packages it supports and
-# on the newest. It imports calibration/hsical and the ROS 2 packages' kinematics,
-# line log, plans, frame lock and camera timing, so changes there run it too.
+# on the newest. It imports calibration/hsical, headcal's tag board, head model and
+# lens, and the ROS 2 packages' kinematics, line log, plans, frame lock and camera
+# timing, so changes there run it too.
 name: sim
 
 on:
@@ -11,6 +12,7 @@ on:
     paths:
       - "sim/**"
       - "calibration/hsical/**"
+      - "calibration/headcal/**"
       - "ros2/so101_scan_description/**"
       - "ros2/so101_scan_sweep/**"
       - "ros2/so101_scan_camera/**"
@@ -19,6 +21,7 @@ on:
     paths:
       - "sim/**"
       - "calibration/hsical/**"
+      - "calibration/headcal/**"
       - "ros2/so101_scan_description/**"
       - "ros2/so101_scan_sweep/**"
       - "ros2/so101_scan_camera/**"

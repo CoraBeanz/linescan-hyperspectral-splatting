@@ -13,6 +13,8 @@ dependencies = ["numpy>=2.0", "scipy>=1.15", "pyyaml>=6.0", "xacro>=2.1"]
 [project.optional-dependencies]
 preview = ["matplotlib>=3.9"]
 fast = ["opencv-python-headless>=4.10.0.84"]
+# the pose camera, the tag board and --head-errors use headcal (calibration/headcal), which needs OpenCV
+posecam = ["opencv-python-headless>=4.10.0.84"]
 test = ["pytest>=7", "matplotlib>=3.9"]
 
 # hsisim imports calibration/ and ros2/ from this repo, so install it editable (pip install -e .)

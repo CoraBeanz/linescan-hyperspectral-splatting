@@ -80,6 +80,31 @@ class Bitmap:
                     centre=list(self.centre))
 
 
+class Raster:
+    """A drawing as a grid of pixels, True for `on` and False for `off`, `cell` metres a pixel,
+    centred on `centre`; row 0 is at +v (the top, seen from above), like Bitmap. For drawings
+    too fine to write out as text: the tag board."""
+
+    def __init__(self, grid, cell, on, off, centre=(0.0, 0.0), source=""):
+        self.grid = np.asarray(grid, bool)
+        self.cell, self.on, self.off = float(cell), on, off
+        self.centre = tuple(float(c) for c in centre)
+        self.source = source
+
+    def ids(self, u, v):
+        nr, nc = self.grid.shape
+        c = np.floor((u - self.centre[0]) / self.cell + nc / 2).astype(np.int64)
+        r = np.floor(nr / 2 - (v - self.centre[1]) / self.cell).astype(np.int64)
+        inside = (r >= 0) & (r < nr) & (c >= 0) & (c < nc)
+        lit = np.zeros(u.shape, bool)
+        lit[inside] = self.grid[r[inside], c[inside]]
+        return np.where(lit, spectra.material_id(self.on), spectra.material_id(self.off)).astype(np.int32)
+
+    def to_dict(self):
+        return dict(type="raster", shape=list(self.grid.shape), cell=self.cell, on=self.on, off=self.off,
+                    centre=list(self.centre), source=self.source)
+
+
 @dataclass
 class Speckle:
     """Round dots of `dot` material on `base`: one chance per `cell` x `cell` square, at a
@@ -367,24 +392,47 @@ class Scene:
         self.lighting = lighting or Uniform()
         self.name, self.description = name, description
         self.target = tuple(float(v) for v in target)
+        self.extra = {}   # anything else scene.json should record
 
-    def nearest(self, o, d, only=None):
+    def nearest(self, o, d, only=None, eye=None):
         """(t, solid index, normal) of the first surface each ray meets. `only`: indices of
-        the solids that can be hit, when the caller knows the others are out of reach."""
+        the solids that can be hit, when the caller knows the others are out of reach. `eye`:
+        the point every ray starts from, when they share one (a pinhole camera's); each solid
+        is then tried only on the rays that point into the cone around its bounding sphere."""
         o, d = np.asarray(o, float), np.asarray(d, float)
         t = np.full(len(o), np.inf)
         which = np.full(len(o), -1, np.int32)
         normal = np.zeros_like(d)
         for k in range(len(self.solids)) if only is None else only:
-            tk, nk = self.solids[k].intersect(o, d)
-            closer = tk < t
-            t[closer], which[closer], normal[closer] = tk[closer], k, nk[closer]
+            rays = self._cone(self.solids[k], d, eye)
+            if rays is None:
+                tk, nk = self.solids[k].intersect(o, d)
+                closer = tk < t
+                t[closer], which[closer], normal[closer] = tk[closer], k, nk[closer]
+            elif rays.size:
+                tk, nk = self.solids[k].intersect(o[rays], d[rays])
+                closer = tk < t[rays]
+                hit = rays[closer]
+                t[hit], which[hit], normal[hit] = tk[closer], k, nk[closer]
         return t, which, normal
 
-    def cast(self, o, d, only=None):
-        """Hits for rays from origins o along unit directions d (both N x 3)."""
+    @staticmethod
+    def _cone(solid, d, eye):
+        """Indices of the rays from `eye` along d that can reach the solid, or None for all."""
+        b = solid.bound() if eye is not None else None
+        if b is None:
+            return None
+        to = np.asarray(b[0], float) - np.asarray(eye, float)
+        dist = float(np.linalg.norm(to))
+        if dist <= b[1] * 1.001:
+            return None
+        cos = np.cos(np.arcsin(b[1] / dist) + 1e-3)
+        return np.flatnonzero(d @ (to / dist) >= cos)
+
+    def cast(self, o, d, only=None, eye=None):
+        """Hits for rays from origins o along unit directions d (both N x 3); `eye` as nearest()."""
         o, d = np.asarray(o, float), np.asarray(d, float)
-        t, which, n = self.nearest(o, d, only)
+        t, which, n = self.nearest(o, d, only, eye)
         hit = which >= 0
         p = o + np.where(hit, t, 0.0)[:, None] * d
         n = np.where((np.einsum("ij,ij->i", n, d) > 0)[:, None], -n, n)
@@ -407,4 +455,4 @@ class Scene:
     def to_dict(self):
         return dict(name=self.name, description=self.description, target=list(self.target),
                     lighting=self.lighting.to_dict(), materials=self.materials(),
-                    solids=[s.to_dict() for s in self.solids])
+                    solids=[s.to_dict() for s in self.solids], **self.extra)
