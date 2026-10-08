@@ -268,8 +268,9 @@ hot for instance. With `torque:=false` the checks only report, as warnings.
 
 **Check a plan before running it:** `ros2 run so101_scan_safety check_plan --plan <plans>/ring.yaml`
 prints how far each viewpoint keeps the arm inside the workspace and how much each joint holds
-against gravity, and checks the moves between viewpoints every 1°. It uses the same model and
-the same numbers as the driver (all in the URDF's `<ros2_control>` block,
+against gravity, and checks the moves between viewpoints every 1°, with the head where the
+launch puts it (headcal's calibration when there is one). It uses the same model and the same
+numbers as the driver (all in the URDF's `<ros2_control>` block,
 [`so101_scan.ros2_control.xacro`](so101_scan_description/urdf/so101_scan.ros2_control.xacro)), and
 `scan_sweep` and `move_arm` run it from where the arm is before they move it.
 

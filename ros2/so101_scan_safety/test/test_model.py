@@ -21,12 +21,18 @@ CAD_REPORT = ROS2.parent / "cad" / "build_report.json"
 
 
 @pytest.fixture(scope="module")
-def robot():
-    """The URDF from the source tree, whether or not the description package is installed."""
+def prefix():
+    """An ament prefix with the description package from the source tree in it."""
     prefix = Path(tempfile.mkdtemp())
     (prefix / "share" / "ament_index" / "resource_index" / "packages").mkdir(parents=True)
     (prefix / "share" / "ament_index" / "resource_index" / "packages" / "so101_scan_description").touch()
     (prefix / "share" / "so101_scan_description").symlink_to(DESCRIPTION)
+    return prefix
+
+
+@pytest.fixture(scope="module")
+def robot(prefix):
+    """The URDF from the source tree, whether or not the description package is installed."""
     old = os.environ.get("AMENT_PREFIX_PATH", "")
     os.environ["AMENT_PREFIX_PATH"] = str(prefix) + os.pathsep + old
     try:
@@ -141,8 +147,21 @@ def test_a_bad_plan_fails_from_the_command_line(tmp_path, monkeypatch, robot, ca
     plan.write_text("viewpoints:\n"
                     "  - name: reach\n"
                     "    joints_deg: {shoulder_pan: 0, shoulder_lift: 75, elbow_flex: -75, wrist_flex: 0, wrist_roll: 0}\n")
-    monkeypatch.setattr(check, "load_robot", lambda: robot)
+    monkeypatch.setattr(check, "load_robot", lambda head: (robot, ""))
     assert check.main(["--plan", str(plan)]) == 1
     out = capsys.readouterr().out
     assert "PROBLEM: viewpoint reach: shoulder_lift holds 74%" in out
     assert check.main(["--plan", str(PLANS / "ring.yaml")]) == 0
+
+
+def test_the_head_is_where_the_launch_puts_it(prefix, robot, tmp_path, monkeypatch):
+    """check_plan builds the URDF as scan_arm.launch.py does: the CAD head unless a head
+    calibration exists, and a named file that doesn't is an error."""
+    monkeypatch.setenv("AMENT_PREFIX_PATH", str(prefix) + os.pathsep + os.environ.get("AMENT_PREFIX_PATH", ""))
+    monkeypatch.setattr(check, "HEAD_CALIBRATION", str(tmp_path / "head_calibration.yaml"))
+    cad, head = check.load_robot(check.HEAD_CALIBRATION)   # the default file, absent: the CAD numbers
+    assert head == "" and cad.fk("scan_head_link", deg(0, 0, 0, 0, 0)) == pytest.approx(
+        robot.fk("scan_head_link", deg(0, 0, 0, 0, 0)))
+    assert check.load_robot("none")[1] == ""
+    with pytest.raises(SystemExit, match="no head calibration at"):
+        check.load_robot(str(tmp_path / "missing.yaml"))

@@ -11,7 +11,9 @@ gravity budget (so101_scan_safety/model.py has the details, and the URDF the num
 scan_sweep and move_arm run the same check, from wherever the arm is, before they move it.
 
 --start-deg checks the first move too, from that pose (joint order: shoulder_pan
-shoulder_lift elbow_flex wrist_flex wrist_roll).
+shoulder_lift elbow_flex wrist_flex wrist_roll). The head is where scan_arm.launch.py puts it:
+where calibration/headcal measured it if $SO101_SCAN_DATA/head_calibration.yaml exists, else
+the CAD numbers; --head-calibration names another file, or none.
 """
 
 import argparse
@@ -92,14 +94,28 @@ def viewpoints_from_yaml(path_):
     return out
 
 
-def load_robot():
+HEAD_CALIBRATION = os.path.join(os.environ.get("SO101_SCAN_DATA", os.path.expanduser("~/so101_scan")),
+                                "head_calibration.yaml")
+
+
+def load_robot(head_calibration=HEAD_CALIBRATION):
+    """The URDF as scan_arm.launch.py builds it, and the head calibration it used ("" for the
+    CAD numbers): the default file only if it exists, a named one always, none for none."""
     import xacro
     from ament_index_python.packages import get_package_share_directory
 
     from so101_scan_description.kinematics import Robot
+    head = os.path.expanduser(head_calibration or "")
+    if head.lower() in ("", "none", "cad") or (head_calibration == HEAD_CALIBRATION and not os.path.exists(head)):
+        head = ""
+    elif not os.path.exists(head):
+        raise SystemExit("no head calibration at %s (--head-calibration none for the CAD numbers)" % head)
+    mappings = {"use_mock_hardware": "true"}
+    if head:
+        mappings["head_calibration"] = head
     share = get_package_share_directory("so101_scan_description")
     return Robot(xacro.process_file(os.path.join(share, "urdf", "so101_scan.urdf.xacro"),
-                                    mappings={"use_mock_hardware": "true"}).toxml())
+                                    mappings=mappings).toxml()), head
 
 
 def format_report(model, report):
@@ -120,8 +136,12 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--plan", required=True, help="plan YAML (see so101_scan_sweep/plans)")
     ap.add_argument("--start-deg", type=float, nargs=5, metavar="DEG", help="check the first move from here")
+    ap.add_argument("--head-calibration", default=HEAD_CALIBRATION,
+                    help="head_calibration.yaml from headcal, or none for the CAD numbers")
     args, _ = ap.parse_known_args(argv)
-    model = ArmModel(load_robot())
+    robot, head = load_robot(args.head_calibration)
+    print("scanner head: " + ("calibrated, from " + head if head else "the CAD numbers"))
+    model = ArmModel(robot)
     start = {j: math.radians(v) for j, v in zip(ARM_JOINTS, args.start_deg)} if args.start_deg else None
     report = check_plan(model, viewpoints_from_yaml(args.plan), start)
     print(format_report(model, report))
