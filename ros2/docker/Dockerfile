@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-robot-state-publisher \
         ros-humble-joint-state-publisher \
         ros-humble-foxglove-bridge \
+        ros-humble-urdf \
+        ros-humble-eigen3-cmake-module \
+        libeigen3-dev \
         python3-colcon-common-extensions \
         python3-numpy \
         python3-pytest \
