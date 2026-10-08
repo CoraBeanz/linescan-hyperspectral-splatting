@@ -4,7 +4,7 @@
   <img src="renders/rig.png" width="100%" alt="Render of the SO-101 arm holding the black scanner head over a table, with a red fan of light from the scan window drawing a line on the table.">
 </p>
 
-A parametric FreeCAD model of the whole rig: the SO-101 follower arm, the spectrograph head with every bought part in place, the 3D-printed housing that holds them on the optical axis of [layout C](../optics/spectrograph_model.py), and a puck that bolts the head to the wrist-roll servo where the gripper used to be. One script builds it from a spreadsheet of numbers, checks it, and exports the STLs to print.
+A parametric FreeCAD model of the whole rig: the SO-101 follower arm, the spectrograph head with every bought part in place, the 3D-printed housing that holds them on the optical axis of [layout C](../optics/spectrograph_model.py), and a puck that bolts the head to the wrist-roll servo where the gripper used to be. A printed tray holds the scan-mirror controller board from [`pcb/`](../pcb/README.md) on the table behind the arm. One script builds it from a spreadsheet of numbers, checks it, and exports the STLs to print.
 
 <table>
   <tr>
@@ -19,8 +19,8 @@ A parametric FreeCAD model of the whole rig: the SO-101 follower arm, the spectr
 
 ## At a glance
 
-- **Head:** 185 g and 66 × 53 × 135 mm, wrist puck included. The NEMA 8 stepper is 60 g of that.
-- **Printed:** eight parts on the head, about 66 g of PETG, plus an optional bench mount.
+- **Head:** 185 g and 64 × 53 × 135 mm, wrist puck included. The NEMA 8 stepper is 60 g of that.
+- **Printed:** eight parts on the head, about 66 g of PETG, plus the controller tray (30 g) and an optional bench mount.
 - **Checks:** no parts overlap. The mirror turns a full circle with at least 0.5 mm to spare. The head clears the wrist at every roll angle (1.4 mm closest) and through ±95° of wrist flex.
 - **Watch out:** with the arm stretched out level, the shoulder servo has to hold 1.20 N·m, which is 74% of its stall torque. The stock gripper needs 0.86 N·m there. The scanning pose in the render needs only 0.29 N·m. See [Arm load](#arm-load).
 
@@ -51,7 +51,7 @@ The head has its own frame: the origin is on the face of the wrist-roll horn, +Z
 
 **Optics carriers.** The objective carrier, slit block and grating carrier are plates that slide into rib slots from the open side. That lets you build and align the optics before the lid goes on. The bench puck has the same rail on a 50 × 40 mm plate with a 1/4"-20 nut, so the head can sit on a tripod or the optics table for the bench steps in the [build order](../docs/parts_list_and_design.md#4-build-order).
 
-**Scan mirror.** A printed clamp grips the stepper's 4 mm shaft with an M3 pinch screw and holds the mirror on a flat pad parallel to the shaft. The pad is drawn for a 20 × 20 mm piece cut from a 3 mm front-surface mirror sheet, and notches in its edges mark where the mirror's ends go so it sits centred on the optical axis. Along the shaft the piece can be anything from 20 to 25 mm. Across the shaft keep it at 20 mm or a little under, because its corners pass 0.9 mm from the housing as it turns. For thinner glass, set `mirror_t` and rebuild, or glue the mirror onto a printed shim that makes up the difference to 3 mm. A 5 × 1.6 mm magnet in the clamp's tab passes an A3144 hall sensor in the +X wall when the mirror is turned 40° back from its 45° working angle, which gives each scan a home position.
+**Scan mirror.** A printed clamp grips the stepper's 4 mm shaft with an M3 pinch screw and holds the mirror on a flat pad parallel to the shaft. The pad is drawn for a 20 × 20 mm piece cut from a 3 mm front-surface mirror sheet, and notches in its edges mark where the mirror's ends go so it sits centred on the optical axis. Along the shaft the piece can be anything from 20 to 25 mm. Across the shaft keep it at 20 mm or a little under, because its corners pass 0.9 mm from the housing as it turns. For thinner glass, set `mirror_t` and rebuild, or glue the mirror onto a printed shim that makes up the difference to 3 mm. A 5 × 1.6 mm magnet in the clamp's tab passes an A3144 hall sensor in the +X wall when the mirror is turned 40° back from its 45° working angle, which gives each scan a home position. The sensor's leads leave the bottom of its body, bend out through a slot under its pocket, and pass through the [hall breakout](../pcb/README.md#hall-sensor-breakout), which is glued flat on the outside.
 
 **Camera.** The B0152 board sits outside the end wall on four standoffs. The CIL122 goes in the board's own M12 holder, which reaches through a 21 mm hole in the wall. The hole is sized from `brd_holder_w` so a square holder passes at any angle. Turn the board so the sensor's long side runs across the slit, since that is the axis the spectrum spreads along. Black tape around the board edge keeps light out of the end.
 
@@ -74,6 +74,7 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | Grating carrier | [`grating_carrier.stl`](stl/grating_carrier.stl) | Flat, film recess up | 2 g |
 | Filter cap | [`filter_cap.stl`](stl/filter_cap.stl) | Stop face down. Check that the sleeve is a snug push fit on the objective | 1 g |
 | Bench puck (optional) | [`bench_puck.stl`](stl/bench_puck.stl) | Flat side down. A 1/4"-20 hex nut presses in from below | 19 g |
+| Controller tray | [`controller_tray.stl`](stl/controller_tray.stl) | Floor on the bed. 3 perimeters, 20% infill. It stays on the table, so PLA is fine: see [Controller tray](#controller-tray) | 30 g |
 
 ### Bought
 
@@ -91,6 +92,7 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | Scan mirror: 20 × 20 mm piece cut from a RUEHALF 100 × 100 × 3 mm front-surface mirror | thickness from the listing |
 | Stepper: StepperOnline 8HS11-0204S, NEMA 8, 1.8°, 0.2 A | size, shaft and holes from the listing; boss and thread depth estimated |
 | A3144 hall sensor and a 5 × 1.6 mm magnet, magnetized through its thickness | measured |
+| Hall breakout from [`pcb/`](../pcb/README.md#hall-sensor-breakout), 14 × 12.4 × 0.8 mm, with its 3-wire cable soldered in | outline, holes and lead positions from `pcb/` |
 | Pose camera: Pi NoIR v2 (owned) | Raspberry Pi drawing |
 
 ### Hardware
@@ -105,8 +107,10 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | 8 + 8 | M2 × 5 and M2 × 4 heat-set inserts (Pofsnnx: 3.0 mm knurl, 2.85 mm holes) | camera board (4) and pose camera (4) |
 | 2 | M2 × 5 | objective's M12 holder to its carrier, self-tapping into the printed pilot holes |
 | 2 | M2 × 5 | collimator's M12 holder to the back of the slit block, self-tapping (3 mm of thread in the block) |
+| 4 + 4 | M3 × 6 and M3 heat-set inserts | controller board to its tray |
+| 2 + 2 | 1/4"-20 or M6 screws, to suit the table, and washers | tray to the optical table |
 
-Plus CA glue for the magnet, mirror and slit blades, and Kapton tape for the grating film. The [NEMA 17 build](#the-nema-17-option) holds its motor with two M3 × 6 instead, and the long bolts thread into the motor rather than into nuts.
+Plus CA glue for the magnet, mirror, slit blades and hall breakout, and Kapton tape for the grating film. The [NEMA 17 build](#the-nema-17-option) holds its motor with two M3 × 6 instead, and the long bolts thread into the motor rather than into nuts.
 
 ## Measure these first
 
@@ -132,9 +136,17 @@ These numbers came from estimates or listings, not datasheets. Check them when t
 1. Cut two of the uxcell M12 holders down to 10 mm, the lens thread plus 1 mm. Cut from the end the lens screws into, not the ear end, and square the cut on sandpaper. A lens screwed in until its barrel stops against the cut end then has its rear end 1 mm inside the holder, where the model puts it. If a lens's thread isn't 9 mm, cut its holder to the thread plus 1 mm; with 13 mm of thread or more, leave the holder whole. Then score and snap a 20 × 20 mm piece from the mirror sheet, scoring the bare back so the coated face isn't scratched.
 2. Press in the heat-set inserts: two M3 in the lid bosses on the housing, four M2 in the camera standoffs and four M2 in the pose-camera standoffs.
 3. Build the optics on their carriers. The objective's holder screws to the objective carrier, the long-pass disc drops into the filter cap, and the cap pushes onto the front of the lens. In the slit block, the field lens drops into its pocket from the front with its flat side toward the blades (a dot of glue on its rim stops it rattling), the two blade pieces go in the recess over it with the 0.05 mm feeler blade setting the gap, and the collimator's holder screws to the back. Tape the grating film into its carrier with the grooves along X. Slide the three carriers into their slots.
-4. Fit the camera board on the end wall, the pose camera on the +Y face, and the hall sensor in its pocket in the +X wall.
+4. Fit the camera board on the end wall and the pose camera on the +Y face. Then the hall sensor. Solder the 3-wire cable into the breakout's S, G and + pads from the front, and pass a thread through the two tie holes below them so it runs across the back of the board. Bend the A3144's three leads 90° toward its back, away from the printed face, about 0.5 mm below the body. Push it into its pocket in the +X wall from inside, printed face toward the magnet, so the leads go out through the slot under the pocket and the body sits on the ledges either side of it. Feed the leads through the breakout's three holes from behind; seen from outside, VCC is on the right, at the square pad. Press the board flat on the wall, solder and trim the leads, glue the board's top edge with a dot of CA, and tie the thread around the cable. A 0.8 mm recess behind the board's lower half leaves room for the thread and for solder that shows through the pads. The breakout's M2 hole stays empty: the wall behind it is 2.5 mm thick with the mirror clamp turning 1 mm inside it, so an M2 × 5 would reach 0.7 mm into the clamp's path.
 5. Screw the stepper to the lid with the four M2 × 4 from inside. The A3144 switches on one pole only, so pass each face of the magnet over the powered sensor first and glue it into the clamp's tab with the face that switches it facing out. Glue the mirror onto the pad between the notches, then put the clamp on the shaft.
 6. Take the gripper off the wrist-roll horn and screw the puck on. Slide the housing onto the rail, then fit the lid so the mirror goes in through the open side. The two M3 × 35 bolts go in from the +X face and take a washer and nut each on the lid's motor pad, and the two M3 × 8 go through the lid ears.
+
+## Controller tray
+
+The [scan-mirror controller](../pcb/README.md#scan-mirror-controller) sits on its tray on the table behind the arm, 4 mm behind the Waveshare plate on the back of the base. The board's hall connector faces the arm and its USB edge faces away, toward the Jetson. Four posts with M3 heat-set inserts hold the board 6 mm up, which clears the leads underneath (3 mm at most), and the floor keeps them off a metal table. The walls stop below the board, so the jack, the screw terminal and the USB plug on its edges clear them. The strip behind the board has two slots for 1/4"-20 or M6 table screws. Each slot is a full hole pitch long, so on a 1 in or 25 mm grid there is a hole under both slots wherever the tray sits along them.
+
+Press the four inserts into the posts, screw the board down with four M3 × 6, then screw the tray to the table. `tray_x` in the Params sheet moves it.
+
+The arm reaches the tray only when it leans back over its base, which a scan of something in front of it never does. In the scanning pose it stays 62 mm away.
 
 ## Checks
 

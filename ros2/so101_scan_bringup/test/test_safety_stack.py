@@ -13,6 +13,7 @@ and the fake bus's control socket plays the faults. Then:
 import json
 import math
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -275,7 +276,9 @@ def test_soft_limits_keep_the_head_off_the_table(stack, env, ros, model):
 
     code, output = move_arm(env, INTO_THE_TABLE)
     assert code == 1 and "the arm's soft limits would stop it short" in output, output
-    assert "viewpoint goal: the head goes 97.5 mm below the table top" in output
+    # about 97.5 mm, moving a little with the head's centre of mass in the CAD's mass budget
+    depth = re.search(r"viewpoint goal: the head goes ([\d.]+) mm below the table top", output)
+    assert depth and float(depth.group(1)) == pytest.approx(97.5, abs=1.0), output
     assert "moving from the start to goal: the head comes within" in output
     assert_still(ros, 0.3)
     assert max(abs(a - b) for a, b in zip(ros.arm(), start)) < 0.003

@@ -51,6 +51,7 @@ MASS_G = {
     "HSI_grating": (0.1, "est"),
     "HSI_magnet": (0.24, "est"),
     "HSI_hall": (0.3, "est"),
+    "HSI_hall_board": (0.5, "est"),
 }
 
 
@@ -252,6 +253,81 @@ def hall_sensor(doc, parent, P):
     b = Part(doc, c, "hall").m("chip")
     b.box("body", 0.1, -2.05, -1.5, 1.5, 4.1, 3.0)
     b.m("steel")
+    dz = P.hall_lead_dz
     for i, y in enumerate((-1.27, 0, 1.27)):
-        b.box("lead%d" % i, 1.6, y - 0.2, -1.2, P.wall + 3.0, 0.4, 0.4)
+        # out of the body's bottom face, bent 90 deg just under it, out through the slot under the
+        # pocket and through the breakout, trimmed 1 mm proud of it
+        b.box("leg%d" % i, 0.65, y - 0.2, 0.2 - dz, 0.4, 0.4, dz - 1.7)
+        b.box("lead%d" % i, 0.65, y - 0.2, -0.2 - dz, P.wall + P.hb_t + 0.35, 0.4, 0.4)
+    return c
+
+
+# local x -> +Y, local y -> +Z, local z -> +X: a board lying flat on the +X face
+_ON_PLUS_X = App.Rotation(App.Matrix(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1))
+
+
+def hall_board(doc, parent, P):
+    """Hall-sensor breakout (pcb/hall_breakout) glued flat on the outside of the +X wall.
+
+    The A3144's leads come out of the wall's slot and through the board from
+    behind. Local frame: origin at the board's top corner on the -Y side, on
+    its back face; KiCad's board coordinates (bx, by), y down, sit at
+    (bx, -by, 0). Hole and part positions from pcb/tools/boards.py."""
+    f = Frame((P.x_in + P.wall, P.hall_y - P.hb_lead_x, P.hall_z - P.hall_lead_dz + P.hb_lead_y))
+    c = container(doc, parent, "HSI_hall_board", "Hall-sensor breakout (pcb/hall_breakout)", f,
+                  fixed_rot=_ON_PLUS_X)
+    b = Part(doc, c, "hallpcb").m("pcb_green")
+    pcb = b.box("pcb_blank", 0, -P.hb_h, 0, P.hb_w, P.hb_h, P.hb_t)
+    holes = [b.cyl("lead_hole%d" % i, "z", (P.hb_lead_x + dx, -P.hb_lead_y, -1), 0.375, P.hb_t + 2)
+             for i, dx in enumerate((-1.27, 0, 1.27))]
+    pads = (4.46, 7.0, 9.54)                        # cable pads S, G, +: 1 mm holes
+    holes += [b.cyl("pad_hole%d" % i, "z", (x, -7.6, -1), 0.5, P.hb_t + 2) for i, x in enumerate(pads)]
+    # two 1.5 mm holes for a strain-relief tie, and the M2 hole
+    for i, (x, y, d) in enumerate(((2.4, 10.6, 1.5), (11.6, 10.6, 1.5), (12.0, 2.3, 2.2))):
+        holes.append(b.cyl("hole%d" % i, "z", (x, -y, -1), d / 2, P.hb_t + 2))
+    b.cut("pcb", pcb, holes)
+    b.m("connector").cbox("c1", 7.635, -1.9, P.hb_t, 2.0, 1.25, 0.85)
+    # the start of the 3-wire cable: soldered into the pads, it leaves past the board's lower edge
+    b.m("chip")
+    for i, x in enumerate(pads):
+        b.cyl("wire%d" % i, "-y", (x, -7.6, P.hb_t + 0.65), 0.65, P.hb_h - 6.6)
+    return c
+
+
+def controller_board(doc, parent, P, frame):
+    """Scan-mirror controller (pcb/scan_controller) with the DevKit and the driver plugged in.
+
+    Local frame: origin at the board's top-left corner (USB edge, Jetson
+    header side) on its underside, z up; KiCad's board coordinates (bx, by),
+    y down, sit at (bx, -by). Positions from pcb/tools/boards.py and the
+    footprints in pcb/lib; heights from pcb/README.md."""
+    c = container(doc, parent, "CTRL_board", "Scan-mirror controller (pcb/scan_controller)", frame)
+    b = Part(doc, c, "ctl").m("pcb_green")
+    w, h, t, hi = P.ctl_w, P.ctl_h, P.ctl_t, P.ctl_hole_in
+    pcb = b.rbox("pcb_blank", w / 2, -h / 2, 0, w, h, t, P.ctl_r)
+    holes = [b.cyl("hole%d" % i, "z", (x, -y, -1), 1.6, t + 2)
+             for i, (x, y) in enumerate(((hi, hi), (w - hi, hi), (hi, h - hi), (w - hi, h - hi)))]
+    b.cut("pcb", pcb, holes)
+    sock = 8.5                                      # female header height
+    seat = E.of(t) + sock + 2.5                     # a plugged-in module's underside (2.5 mm of male header)
+    b.m("chip")
+    for i, x in enumerate((13.97, 39.37)):          # ESP32-DevKitC, 2x 1x19
+        b.box("devkit_header%d" % i, x - 1.27, -54.61, t, 2.54, 48.26, sock)
+    for i, x in enumerate((46.99, 59.69)):          # TMC2209, 2x 1x8
+        b.box("driver_header%d" % i, x - 1.27, -34.29, t, 2.54, 20.32, sock)
+    b.m("pcb_black").box("devkit_pcb", 12.72, -57.68, seat, 27.9, 54.4, 1.6)
+    b.box("module_pcb", 17.67, -57.68, seat + 1.6, 18.0, 25.5, 0.8)
+    b.m("steel").box("module_shield", 18.67, -50.78, seat + 2.4, 16.0, 17.6, 2.3)
+    b.box("usb", 22.92, -7.8, seat + 1.6, 7.5, 5.5, 2.5)
+    b.m("pcb_black").box("driver_pcb", 45.72, -34.29, seat, 15.24, 20.32, 1.6)
+    b.m("aluminum").cbox("heatsink", 53.34, -24.13, seat + 1.6, 12.0, 12.0, 9.4)
+    b.m("chip").box("jack", 80.2, -18.5, t, 14.8, 9.0, 11.0)                 # J1, 12 V
+    b.m("connector").box("terminal", 83.69, -31.04, t, 11.04, 11.17, 14.0)   # J2, 12 V, to its screw tops
+    b.box("motor_conn", 62.14, -30.77, t, 6.75, 13.4, 7.0)                    # J3, JST XH 4-pin
+    b.box("hall_conn", 42.77, -64.9, t, 10.9, 6.75, 7.0)                      # J4, JST XH 3-pin
+    b.m("anodized_black").cyl("c1", "z", (61.75, -8.5, t), 3.15, 11.0)       # 100 uF
+    b.m("chip").box("jetson_header", 1.27, -39.37, t, 2.54, 7.62, 2.5)       # J5
+    b.m("steel")
+    for i, y in enumerate((33.02, 35.56, 38.1)):
+        b.cbox("jetson_pin%d" % i, 2.54, -y, E.of(t) + 2.5, 0.64, 0.64, 6.0)
     return c
