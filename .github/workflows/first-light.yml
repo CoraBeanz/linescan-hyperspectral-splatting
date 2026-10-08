@@ -1,0 +1,78 @@
+# Virtual first light: the simulator's scan of the relief target through the whole chain
+# (hsical calibration, scan_to_dataset, splat_train, splat_export and the viewer's own reader),
+# checked against the simulator's truth. Nightly, and on demand, at full size; a small run on pull
+# requests that change the pipeline or the tools it chains. pipeline/README.md says what each
+# check means.
+name: first-light
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  pull_request:
+    paths:
+      - "pipeline/**"
+      - "sim/hsisim/**"
+      - "ros2/so101_scan_camera/**"
+      - "splat/tools/**"
+      - "viewer/js/**"
+      - ".github/workflows/first-light.yml"
+  workflow_dispatch:
+    inputs:
+      config:
+        description: "A config in pipeline/configs"
+        default: sim.yaml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  chain:
+    name: Simulated scan to the viewer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CONFIG: ${{ github.event_name == 'pull_request' && 'sim-quick.yaml' || inputs.config || 'sim.yaml' }}
+      OUT: ${{ github.workspace }}/build/first_light/run
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sim/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends nlohmann-json3-dev
+          pip install -r sim/requirements.txt
+      - name: Build the trainer and the exporter
+        run: |
+          cmake -S splat -B build/splat -DCMAKE_BUILD_TYPE=Release -DLINESPLAT_CUDA=OFF
+          cmake --build build/splat -j "$(nproc)" --target splat_train splat_export
+      - name: Unit tests
+        run: python -m pytest -v pipeline/tests
+      - name: Scan, calibrate, convert, train, export and open in the viewer's reader
+        run: python pipeline/first_light.py "pipeline/configs/$CONFIG" --out "$OUT"
+      - name: Report
+        if: always()
+        run: |
+          if [ -f "$OUT/report.md" ]; then cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Keep the report, previews and splat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-light-${{ github.run_id }}
+          path: |
+            ${{ env.OUT }}/report.*
+            ${{ env.OUT }}/logs/
+            ${{ env.OUT }}/splat.lsplat
+            ${{ env.OUT }}/train/log.csv
+            ${{ env.OUT }}/train/preview/measured_vs_trained_*.png
+          if-no-files-found: ignore
+          retention-days: 14

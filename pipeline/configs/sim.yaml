@@ -1,0 +1,35 @@
+# The nightly virtual first light: the simulator's relief target on the ring plan (four
+# viewpoints of 107 lines), calibrated, converted at the trainer's full 256 px x 46 bands,
+# trained for 3000 steps, exported and opened with the viewer's reader. About 10 minutes on a
+# 4-core CPU, most of it training. Every limit is checked against the simulator's truth.
+name: sim-ring
+source: sim
+sim:
+  scene: relief
+  plan: ring
+  binning: 4
+  seed: 7
+  errors: 1.0          # the arm's and mirror's logged poses are off by the simulator's default errors
+convert:
+  slit_bins: 256
+  nm_min: 500
+  nm_max: 950
+  nm_step: 10
+train:
+  iterations: 3000
+export:
+  title: "Relief target, simulated ring scan"
+limits:
+  lines_left_out_max: 0.0
+  values_filled_max: 0.001
+  reflectance_ratio_median_max: 0.01
+  reflectance_ratio_rms_max: 0.03
+  profile_correlation_min: 0.99
+  profile_correlation_mirrored_max: 0.5
+  profile_shift_px_max: 0.25
+  rmse_measured_max: 0.025
+  rmse_truth_max: 0.03
+  pose_error_px_max: 2.5
+  pose_error_ratio_max: 0.7
+  export_decoded_rms_max: 0.005
+  viewer_covered_min: 0.5

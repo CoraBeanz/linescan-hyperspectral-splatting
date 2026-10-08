@@ -3,7 +3,7 @@
 //   splat_train DATASET OUT_DIR [--iterations N] [--batch N] [--spacing MM]
 //               [--no-poses] [--pose-from N] [--densify-grad X] [--log-every N]
 //               [--seed N] [--cpu] [--gpu-adam] [--basis K] [--profile]
-//               [--no-preview]
+//               [--no-preview] [--init-scene DIR [--freeze-scene]]
 //
 // Starts from Gaussians on the board plane (z = 0), trains (rendering and
 // backpropagating on the GPU if there is one, unless --cpu), and writes
@@ -20,6 +20,11 @@
 //                 principal directions)
 //   --profile     time every GPU pass and print where the time went
 //   --no-preview  skip the previews at the end
+//   --init-scene DIR  start from a scene trained before (OUT_DIR/scene of an
+//                 earlier run) instead of the board plane
+//   --freeze-scene  hold the --init-scene scene as it is and refine only the
+//                 sweep poses against it, as for a new scan of a scene
+//                 trained before
 // At the end it prints the time per step (and what took it), the GPU memory
 // by buffer, and the process's peak memory, for docs/nano_budget.md.
 #include <algorithm>
@@ -51,7 +56,8 @@ void usage() {
   std::fprintf(stderr,
                "usage: splat_train DATASET OUT_DIR [--iterations N] [--batch N] [--spacing MM]\n"
                "                   [--no-poses] [--pose-from N] [--densify-grad X] [--log-every N]\n"
-               "                   [--seed N] [--cpu] [--gpu-adam] [--basis K] [--profile] [--no-preview]\n");
+               "                   [--seed N] [--cpu] [--gpu-adam] [--basis K] [--profile] [--no-preview]\n"
+               "                   [--init-scene DIR [--freeze-scene]]\n");
   std::exit(2);
 }
 
@@ -111,8 +117,9 @@ int main(int argc, char** argv) {
   TrainOptions o;
   double spacing_mm = 1.0;
   int log_every = 100;
-  bool cpu = false, gpu_adam = false, profile = false, preview = true;
+  bool cpu = false, gpu_adam = false, profile = false, preview = true, freeze = false, pose_from_set = false;
   int basis = 0;
+  std::string init_scene;
   for (int i = 3; i < argc; ++i) {
     const std::string a = argv[i];
     auto next = [&]() -> const char* {
@@ -123,7 +130,10 @@ int main(int argc, char** argv) {
     else if (a == "--batch") o.batch_lines = std::atoi(next());
     else if (a == "--spacing") spacing_mm = std::atof(next());
     else if (a == "--no-poses") o.refine_poses = false;
-    else if (a == "--pose-from") o.pose_from = std::atoi(next());
+    else if (a == "--pose-from") {
+      o.pose_from = std::atoi(next());
+      pose_from_set = true;
+    }
     else if (a == "--densify-grad") o.densify_grad = std::atof(next());
     else if (a == "--log-every") log_every = std::max(1, std::atoi(next()));
     else if (a == "--seed") o.seed = std::strtoull(next(), nullptr, 10);
@@ -132,10 +142,20 @@ int main(int argc, char** argv) {
     else if (a == "--basis") basis = std::atoi(next());
     else if (a == "--profile") profile = true;
     else if (a == "--no-preview") preview = false;
+    else if (a == "--init-scene") init_scene = next();
+    else if (a == "--freeze-scene") freeze = true;
     else usage();
   }
-  if (basis < 0) usage();
+  // A scene trained before keeps the features it has.
+  if (basis < 0 || (basis > 0 && !init_scene.empty()) || (freeze && init_scene.empty())) usage();
   o.learn_basis = basis > 0;
+  if (freeze) {
+    // Poses only: no step moves or reshapes a Gaussian, and none is added or pruned.
+    o.lr_means = o.lr_log_scales = o.lr_rotations = o.lr_opacity = o.lr_features = o.lr_background = 0.0;
+    o.lr_basis = 0.0;
+    o.densify_until = 0;
+    if (!pose_from_set) o.pose_from = 1;
+  }
 
   try {
     Timer total;
@@ -153,7 +173,7 @@ int main(int argc, char** argv) {
 
     std::printf("dataset   %d sweeps, %d lines of %d px x %d bands (%.1f MB of lines)\n", d.num_sweeps(),
                 d.num_lines(), d.width(), d.num_bands(), mb(d.lines.size() * sizeof(float)));
-    GaussianScene init = init_on_plane(d, spacing_mm * 1e-3);
+    GaussianScene init = init_scene.empty() ? init_on_plane(d, spacing_mm * 1e-3) : GaussianScene::load(init_scene);
     const int start_n = init.size();
     if (basis > 0) init = reduce_features(init, basis);
     std::unique_ptr<SceneOptimizer> opt;
@@ -195,7 +215,10 @@ int main(int argc, char** argv) {
     (void)profile;
     Trainer t(d, std::move(opt), o);
     std::printf("device    %s, %s\n", device.c_str(), where.c_str());
-    std::printf("start     %d Gaussians on the board plane, %.2f mm apart", start_n, spacing_mm);
+    if (init_scene.empty())
+      std::printf("start     %d Gaussians on the board plane, %.2f mm apart", start_n, spacing_mm);
+    else
+      std::printf("start     %d Gaussians from %s%s", start_n, init_scene.c_str(), freeze ? ", held fixed" : "");
     if (basis > 0) std::printf(", %d features through a learned basis", basis);
     std::printf("\n");
     if (!truth.empty())
