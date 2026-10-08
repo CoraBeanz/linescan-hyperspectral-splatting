@@ -144,6 +144,9 @@ def build(c: Config) -> Optic:
             front.append((-c.stop_ahead + c.stop_t, dict(aperture=RadialAperture(r_stop),
                                                          comment="stop, back of the hole")))
     if c.filter_t:
+        if c.stop_ahead and c.stop_t and (min(c.stop_ahead, c.filter_ahead)
+                                          > max(c.stop_ahead - c.stop_t, c.filter_ahead - c.filter_t)):
+            raise ValueError(f"{c.name}: the stop plate overlaps the filter glass")
         front.append((-c.filter_ahead, dict(material=IdealMaterial(c.filter_n), comment="long-pass filter")))
         front.append((-c.filter_ahead + c.filter_t, dict(comment="long-pass filter, back")))
     i = 1
@@ -219,6 +222,14 @@ def transmission(o, Hx, wl, n=40):
     return float(np.sum(np.asarray(rays.i) > 0)) / np.asarray(rays.i).size
 
 
+def through_slit(o, Hx, wl, n=40):
+    """Fraction of the objective's light that gets through the slit (same grid)."""
+    o.trace(Hx, 0.0, wl, num_rays=n, distribution="uniform")
+    sg = o.surface_group
+    k = [s.comment for s in sg.surfaces].index("slit")
+    return float(np.mean(np.asarray(sg.intensity)[k] > 0))
+
+
 def analyse(c: Config):
     o = build(c)
     # chief-ray positions on the sensor
@@ -254,7 +265,8 @@ def traced(c: Config, o=None):
     The slit image width comes from chief rays through the two slit edges, so it
     includes the grating's anamorphic stretch (1 / cos 22 deg = 1.08, since the
     beam leaves the grating at an angle) and any field-lens magnification, which
-    analyse()'s paraxial estimate f_cam / f_coll leaves out."""
+    analyse()'s paraxial estimate f_cam / f_coll leaves out. When the line is
+    longer than the sensor, "end" means the last point of it on the sensor."""
     o = o or build(c)
     hy = c.slit_width / c.slit_len  # a slit edge, in units of the scene half-line
 
@@ -267,9 +279,26 @@ def traced(c: Config, o=None):
     dv = abs(chief(0.0, 0.0, 0.76)[1] - chief(0.0, 0.0, 0.74)[1]) / 20.0
     line_mm = abs(chief(1.0, 0.0, CENTER_WL)[0] - chief(-1.0, 0.0, CENTER_WL)[0])
 
+    # The line end: the slit's end, or the last point of the line that still
+    # lands on the sensor at 500, 750 and 1000 nm when the line overfills it.
+    def off(h):
+        return max(abs(chief(h, 0.0, w)[0]) for w in (0.5, 0.75, 1.0)) - SENSOR_MM[1] / 2
+    h_end = 1.0
+    if off(1.0) > 0:
+        lo, hi = 0.0, 1.0
+        for _ in range(40):
+            lo, hi = ((0.5 * (lo + hi), hi) if off(0.5 * (lo + hi)) <= 0 else (lo, 0.5 * (lo + hi)))
+        h_end = lo
+    pos = {(h, w): chief(h * h_end, 0.0, w) for h in (0.0, 1.0) for w in WAVELENGTHS}
+    smile_px = max(abs(pos[(1.0, w)][1] - pos[(0.0, w)][1]) for w in WAVELENGTHS) / PIXEL_MM
+    keystone_px = (max(abs(pos[(1.0, w)][0]) for w in WAVELENGTHS)
+                   - min(abs(pos[(1.0, w)][0]) for w in WAVELENGTHS)) / PIXEL_MM
+
     def wl_at(v):  # wavelength (um) whose chief ray lands at v on the sensor
         lo, hi = 0.40, 1.10
         sign = np.sign(chief(0.0, 0.0, lo)[1] - v)
+        if np.sign(chief(0.0, 0.0, hi)[1] - v) == sign:
+            return float("nan")  # the sensor edge is outside 400-1100 nm
         for _ in range(50):
             mid = 0.5 * (lo + hi)
             if np.sign(chief(0.0, 0.0, mid)[1] - v) == sign:
@@ -282,15 +311,16 @@ def traced(c: Config, o=None):
     spots = {}
     for h in (0.0, 1.0):
         for w in (0.5, 0.75, 1.0):
-            rays = o.trace(h, 0.0, w, num_rays=20, distribution="uniform")
+            rays = o.trace(h * h_end, 0.0, w, num_rays=20, distribution="uniform")
             sg = o.surface_group
             ok = np.asarray(rays.i) > 0
             x, v = _sensor_frame(o, *(np.asarray(a[-1], float)[ok] for a in (sg.x, sg.y, sg.z)))
             spots[(h, w)] = (np.sqrt(np.mean((x - x.mean()) ** 2)) * 1e3,
                              np.sqrt(np.mean((v - v.mean()) ** 2)) * 1e3)
     return dict(slit_img_um=slit_mm * 1e3, res_nm=slit_mm / dv, line_mm=line_mm,
-                band_nm=band, spots=spots,
-                trans={(h, w): transmission(o, h, w) for h in (0.0, 0.5, 1.0) for w in (0.5, 0.75, 1.0)})
+                band_nm=band, spots=spots, h_end=h_end, smile_px=smile_px, keystone_px=keystone_px,
+                trans={(h, w): transmission(o, h * h_end, w)
+                       for h in (0.0, 0.5, 1.0) for w in (0.5, 0.75, 1.0)})
 
 
 CONFIGS = [
@@ -342,7 +372,8 @@ def main():
         real = isinstance(c, Bought)
         if real:  # the real field lens magnifies the slit: trace its width
             x = traced(c, o)
-            r.update(slit_img_um=x["slit_img_um"], res_nm=x["res_nm"])
+            r.update(slit_img_um=x["slit_img_um"], res_nm=x["res_nm"],
+                     smile_px=x["smile_px"], keystone_px=x["keystone_px"])
         out(f"\n== {c.name}")
         out(f"  scene line length       : {r['line_mm_scene']:.1f} mm at {c.scene_dist:.0f} mm")
         out(f"  spectrum 500-1000 nm    : {r['spectrum_mm']:.2f} mm on sensor "
@@ -354,8 +385,9 @@ def main():
             + (", traced)" if real else ")"))
         out(f"  pixels along the line   : {r['line_px']:.0f}"
             + (f" (the sensor has {SENSOR_MM[1] / PIXEL_MM:.0f})" if real else ""))
-        out(f"  smile at line end       : {r['smile_px']:.1f} px")
-        out(f"  keystone                : {r['keystone_px']:.1f} px")
+        edge = ", at the last point on the sensor" if real and x["h_end"] < 1 else ""
+        out(f"  smile at line end       : {r['smile_px']:.1f} px{edge}")
+        out(f"  keystone                : {r['keystone_px']:.1f} px{edge}")
         if not real:
             out("  light reaching sensor   :  " + "  ".join(
                 f"{'center' if h == 0 else 'edge'}@{int(w*1000)}nm={v:4.0%}" for (h, w), v in t.items()))
@@ -366,6 +398,9 @@ def main():
                 f"collimator {o._z_coll - o._s_img:.2f} mm behind the slit")
             out(f"  line on the sensor      : {x['line_mm']:.2f} mm, {on:.0%} of it on the sensor "
                 f"({on * r['line_mm_scene']:.1f} mm of the scene)")
+            if x["h_end"] < 1:
+                out(f"  line end                : the rest falls off the sensor, so 'end' here and "
+                    f"below is {x['h_end']:.0%} of the way to the slit's end")
             out(f"  band on the sensor      : {x['band_nm'][0]:.0f}-{x['band_nm'][1]:.0f} nm "
                 f"at the line centre")
             out("  light reaching sensor   :  " + _pct(x["trans"]))
@@ -396,6 +431,8 @@ def main():
         ("slit image width", lambda x: f"{x['slit_img_um']:.1f} um"),
         ("spectral resolution", lambda x: f"{x['res_nm']:.1f} nm"),
         ("line on the sensor", lambda x: f"{x['line_mm']:.2f} mm"),
+        ("line end on the sensor", lambda x: f"{x['h_end']:.0%} of the way"),
+        ("smile / keystone there", lambda x: f"{x['smile_px']:.0f} / {x['keystone_px']:.0f} px"),
         ("light at line end 750", lambda x: f"{x['trans'][(1.0, 0.75)]:.0%}"),
         ("light at line end 500", lambda x: f"{x['trans'][(1.0, 0.5)]:.0%}"),
     ):
@@ -405,25 +442,27 @@ def main():
     # 750 nm, counting what a bigger stop lets in (f/2 admits 3.8x f/3.9);
     # "lost" is light that gets through the slit but misses the sensor, so it
     # ends up on the housing walls as stray light. Both relative to E's signal at
-    # the line centre.
+    # the line centre; "end" is the last point of the line on the sensor.
     E = tagged["E"]
     ref = transmission(build(E), 0.0, 0.75)
     out("\n== E with one thing changed (750 nm, line centre / line end, relative to E's centre)")
     for label, c in (
         ("E as it is", E),
         ("field lens flat side to slit", replace(E, field_flat_first=True)),
-        ("stop at the cap front, as D", replace(E, stop_ahead=11.7, stop_t=1.2)),
+        ("stop at the cap front, as D", replace(E, stop_ahead=11.7, stop_t=1.2, filter_ahead=10.5)),
         ("stop inside the lens", replace(E, stop_ahead=0.0, stop_t=0.0)),
         ("5 mm stop on the lens", replace(E, fno_obj=3.12)),
         ("no printed stop, f/2", replace(E, stop_ahead=0.0, stop_t=0.0, fno_obj=2.0)),
         ("40 um slit", replace(E, slit_width=0.040)),
     ):
-        x = traced(c)
+        o = build(c)
+        x = traced(c, o)
         t = x["trans"]
         gain = (E.fno_obj / c.fno_obj) ** 2 * c.slit_width / E.slit_width / ref
+        slit = {h: through_slit(o, h * x["h_end"], 0.75) for h in (0.0, 1.0)}
         out(f"  {label:30s}: {x['res_nm']:.1f} nm, line {x['line_mm']:.2f} mm, signal "
             + " / ".join(f"{gain * t[(h, 0.75)]:.2f}" for h in (0.0, 1.0))
-            + ", lost " + " / ".join(f"{gain * (1 - t[(h, 0.75)]):.2f}" for h in (0.0, 1.0)))
+            + ", lost " + " / ".join(f"{gain * (slit[h] - t[(h, 0.75)]):.2f}" for h in (0.0, 1.0)))
     (OUT_DIR / "results.txt").write_text("\n".join(lines).lstrip("\n") + "\n")
 
 
