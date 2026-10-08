@@ -222,6 +222,8 @@ The true scene (left), and splats trained from 16 sweeps (middle) and from 8 (ri
 
 Every Gaussian carries a spectrum, so the [viewer](viewer/) can draw a trained splat at any single wavelength, in true color, in color infrared, or as a band index such as NDVI, and it plots the full spectrum of any point you click. Above, in color infrared, the ball's leaf spectrum and the black panel's dye both rise past 700 nm, so both turn red and the hidden word shows. It is plain HTML, JavaScript and WebGL2 with no build step, and its tests check it against the C++ renderer. **[Open it in your browser](https://corabeanz.github.io/linescan-hyperspectral-splatting/viewer/)**, on GitHub Pages.
 
+It also shows what each part of the scene is made of: [`splat_materials`](splat/README.md#material-maps) labels every Gaussian by spectral angle against a library of spectra, clusters them and unmixes them, and on the trained splat 97% of the map's pixels get the right material.
+
 ## Roadmap
 
 - [x] First-order optical design and Optiland model (configs A, B, C)
