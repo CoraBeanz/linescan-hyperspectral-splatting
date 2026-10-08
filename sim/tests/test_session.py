@@ -7,11 +7,12 @@ import numpy as np
 import pytest
 
 from conftest import PLAN
-from hsisim.session import FRAMES_COLUMNS, SETTLE_NS, TIMER_NS, Settings, load_plan, simulate
+from hsisim.session import Settings, load_plan, simulate
 from hsisim.truth import ScanTruth, pose_matrix, read_lines_csv
 from hsical.frames import load_session
 from hsical.session_check import inspect_session
 from so101_scan_description.kinematics import Robot
+from so101_scan_camera.session import CSV_COLUMNS as CAMERA_COLUMNS
 from so101_scan_sweep.line_log import CSV_COLUMNS, LinePoser
 from so101_scan_sweep.plan import ARM_JOINTS
 
@@ -29,10 +30,17 @@ def test_lines_csv_is_scan_sweeps(scan):
     assert cols["index"].tolist() == list(range(n)) * 2
     assert (cols["settled"] == 1).all()
     stamps, hold = cols["stamp_ns"], cols["hold_until_ns"]
-    assert np.all(np.diff(stamps) > 0)
-    # within a sweep, the mirror holds until 50 us before the next line
-    for s in (slice(0, n - 1), slice(n, 2 * n - 1)):
-        assert (hold[s] == stamps[s.start + 1:s.stop + 1] - TIMER_NS).all()
+    assert np.all(np.diff(stamps) > 0) and np.all(hold > stamps)
+    # as the ESP32 runs a line: the mirror moves at 1600 steps/s from the line's tick, is stamped
+    # 3 ms after it gets there (line 0 is already there at its tick), and holds until 50 us
+    # before the next tick
+    t = read_lines_csv(base / "truth" / "frames_true.csv")
+    move = round(PLAN["steps_per_line"] / 1600 * 1e9)
+    for s in (slice(0, n), slice(n, 2 * n)):
+        tick = t["tick_ns"][s]
+        assert stamps[s][0] == tick[0]
+        assert (stamps[s][1:] == tick[1:] + move + 3_000_000).all()
+        assert (hold[s][:-1] == tick[1:] - 50_000).all()
     steps = np.diff(cols["mirror_angle"][:n]) / (2 * np.pi / 6400)
     assert steps == pytest.approx(np.full(n - 1, PLAN["steps_per_line"]), abs=1e-6)
 
@@ -100,34 +108,46 @@ def test_frames_are_hsical_frame_sets(scan):
 
 def test_frames_index_is_the_capture_nodes(scan):
     """frames/frames.csv and frames/camera.json, as so101_scan_camera writes them."""
-    base, _ = scan
+    base, info = scan
     lines = read_lines_csv(base / "lines.csv")
     with open(base / "frames" / "frames.csv", newline="") as f:
         rows = list(csv.reader(f))
-    assert rows[0] == FRAMES_COLUMNS
+    assert rows[0] == list(CAMERA_COLUMNS)
     rows = [dict(zip(rows[0], r)) for r in rows[1:]]
     assert [(int(r["sweep_id"]), int(r["index"])) for r in rows] == list(zip(lines["sweep_id"], lines["index"]))
     assert {r["status"] for r in rows} == {"ok"}
+    cam = json.loads((base / "frames" / "camera.json").read_text())
+    sensor = cam["sensor"]
     seq = np.array([int(r["seq"]) for r in rows])
-    assert (np.diff(seq) > 0).all()
     n = PLAN["lines"]
-    assert (np.diff(seq[:n]) == 1).all() and (np.diff(seq[n:]) == 1).all()   # one frame per line
+    for v, s in zip(info["viewpoints"], (slice(0, n), slice(n, 2 * n))):
+        # locked to the camera: a whole number of frames a line, and the first good one kept
+        assert v["frame_locked"] and v["line_period_s"] == pytest.approx(v["frames_per_line"] / sensor["fps"])
+        assert (np.diff(seq[s]) == v["frames_per_line"]).all()
+    r0, r1 = sensor["slit_rows"]
+    window = round(((r1 - r0) * sensor["line_time_us"] + cam["exposure_us"]) * 1000)
+    margin = round(cam["timing"]["match_margin_us"] * 1000)
     for r, stamp, hold in zip(rows, lines["stamp_ns"], lines["hold_until_ns"]):
         start, end, sof = int(r["exposure_start_ns"]), int(r["exposure_end_ns"]), int(r["sof_ns"])
-        assert start == stamp + SETTLE_NS and end <= hold    # the mirror holds still all the exposure
-        assert end - start == round(float(r["exposure_us"]) * 1000) and sof >= start
+        # the slit rows' rolling-shutter window, all of it while the mirror held still
+        assert abs(end - start - window) <= 1 and stamp + margin <= start and end <= hold - margin
+        assert end == sof + round(r1 * sensor["line_time_us"] * 1000)
+        assert float(r["exposure_us"]) == 20000.0 and int(r["n_frames"]) >= 1
         frame = np.load(base / r["file"])                    # relative to the session
-        assert int(r["saturated_px"]) == int((frame >= 1023).sum())
-    cam = json.loads((base / "frames" / "camera.json").read_text())
+        assert int(r["saturated_px"]) == int((frame[r0:r1 + 1] >= 1023).sum())
     assert cam["format"] == "so101_scan frames v1"
-    assert cam["sensor"] == {"width": 820, "height": 616, "bits": 10, "black_level": 64, "bayer": "RGGB"}
+    assert {k: sensor[k] for k in ("width", "height", "bits", "black_level", "bayer")} == {
+        "width": 820, "height": 616, "bits": 10, "black_level": 64, "bayer": "RGGB"}
+    assert sensor["fps"] == 30.0 and sensor["line_time_us"] == pytest.approx(2 * 18.904)  # 1640 x 1232, binned
+    assert 0 < r0 < 100 and 516 < r1 < 615                   # the slit's image, most of the sensor
     assert cam["slit_reversed"] is False and cam["calibration"] is None
+    assert cam["timing"]["stamp_offset_us"] == 0.0
     assert cam["exposure_us"] == 20000.0 and cam["gain"] == 1.0
 
 
-def test_exposure_must_fit_in_the_line(tmp_path):
-    plan = load_plan("ring", lines=2, views=["down"])       # 33.3 ms a line
-    with pytest.raises(ValueError, match="doesn't fit"):
+def test_exposure_must_fit_in_a_frame(tmp_path):
+    plan = load_plan("ring", lines=2, views=["down"])
+    with pytest.raises(ValueError, match="doesn't fit"):       # 33.3 ms frames at 30 fps
         simulate(tmp_path / "out", plan, Settings(exposure_us=40000.0, calibration=False), log=lambda *m: None)
     assert not (tmp_path / "out").exists()
 

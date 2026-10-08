@@ -10,10 +10,11 @@
       frames/frames.csv
                        one row per line, as the camera node logs it: sweep_id, index, status,
                        file, seq, sof_ns, exposure_start_ns, exposure_end_ns, exposure_us, gain,
-                       saturated_px
+                       saturated_px, n_frames
       frames/camera.json
-                       the sensor (size, bits, black level, Bayer order), exposure, gain, which
-                       way the slit runs, and the timing model
+                       the sensor (size, bits, black level, Bayer order, frame rate, row time and
+                       the rows that see the slit), exposure, gain, which way the slit runs, and
+                       the stamps' offset
       frames/sweep_<sweep_id:03d>/
                        one hsical frame set per sweep: meta.json and frame_<index:04d>.npy, the
                        raw 10-bit frame of each line as the camera gives it
@@ -42,22 +43,22 @@ import yaml
 
 from . import repo
 from . import spectra
+from . import timing as T
 from .arm import Arm, PoseErrors
 from .instrument import Spectrograph
 from .linecam import Objective, SlitRays
 from .scenes import DEFAULT_TARGET, make as make_scene
 from hsical.synth import Truth, write_session  # noqa: E402
+from so101_scan_camera.session import CSV_COLUMNS as FRAMES_COLUMNS, FRAMES_FORMAT  # noqa: E402
+from so101_scan_camera.sources import IMX219_MODES  # noqa: E402
 from so101_scan_sweep import plan as plan_mod  # noqa: E402
 from so101_scan_sweep.line_log import LinesCsv  # noqa: E402
 from so101_scan_sweep.plan import ARM_JOINTS  # noqa: E402
 
 FORMAT = "so101_scan lines v1"
-SETTLE_NS = 1_000_000          # the camera starts its exposure 1 ms after the mirror settles
-TIMER_NS = 50_000              # the ESP32's 50 us timer step: hold_until is rounded early by it
-FRAMES_FORMAT = "so101_scan frames v1"
-FRAMES_COLUMNS = ["sweep_id", "index", "status", "file", "seq", "sof_ns", "exposure_start_ns", "exposure_end_ns",
-                  "exposure_us", "gain", "saturated_px"]
 FULL_DN = 1023
+TIMING_COLUMNS = ["sweep_id", "index", "seq", "sof_ns", "exposure_start_ns", "exposure_end_ns", "tick_ns",
+                  "move_start_ns", "move_end_ns", "moving_share"]
 START_NS = 1_791_374_400 * 10 ** 9  # 2026-10-07 12:00 UTC: a fixed start keeps runs repeatable
 
 
@@ -79,10 +80,19 @@ class Settings:
     nm_step: float = 2.0
     start_ns: int = START_NS
     calibration: bool = True       # also render the hsical calibration session
+    fps: float | None = None       # the camera's frame rate; None: its mode's (timing.camera_mode)
+    stamp_error_us: float = 0.0    # how late the camera's frame stamps are against row 0's read-out
+    stamp_offset_us: float = 0.0   # line_camera's stamp_offset_us, added to every stamp
+    slit_reversed: bool = False    # the camera mounted the other way along the slit
     truth: dict = field(default_factory=dict)  # hsical Truth overrides, e.g. {"blur_px": 12.0}
 
     def instrument_truth(self):
-        return Truth(scale=self.binning, seed=self.seed, halogen_k=self.halogen_k, **self.truth)
+        kw = dict(flip_y=self.slit_reversed)
+        kw.update(self.truth)
+        return Truth(scale=self.binning, seed=self.seed, halogen_k=self.halogen_k, **kw)
+
+    def frame_rate(self):
+        return float(self.fps or T.camera_mode(self.binning)[1])
 
 
 def load_plan(plan, lines=None, steps_per_line=None, start_angle_deg=None, line_period_s=None, views=None):
@@ -141,11 +151,9 @@ def simulate(out_dir, plan, settings: Settings | None = None, calibration_sessio
     for vp in plan.viewpoints:
         if not vp.joints:
             raise ValueError(f"viewpoint {vp.name} has no joints: the simulator needs every viewpoint's arm pose")
-        hold_ns = vp.sweep.line_period * 1e9 - TIMER_NS - SETTLE_NS
-        if s.exposure_us * 1000 > hold_ns:
-            raise ValueError(f"a {s.exposure_us / 1000:g} ms exposure doesn't fit in viewpoint {vp.name}'s "
-                             f"{vp.sweep.line_period * 1000:g} ms line period: the mirror holds still for "
-                             f"{hold_ns / 1e6:.2f} ms after the camera starts")
+    if s.exposure_us * 1000 >= 1e9 / s.frame_rate():
+        raise ValueError(f"a {s.exposure_us / 1000:g} ms exposure doesn't fit in the camera's "
+                         f"{1e3 / s.frame_rate():.1f} ms frame at {s.frame_rate():g} fps")
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     target = tuple(plan.source.get("target_m") or DEFAULT_TARGET)
@@ -174,6 +182,8 @@ def simulate(out_dir, plan, settings: Settings | None = None, calibration_sessio
                dict(ref_meta, kind="white", source="ptfe", reflectance=spectra.PTFE_REFLECTANCE))
     _write_set(out / "reference" / "dark", sp.dark(s.exposure_us, s.reference_frames, s.gain),
                dict(ref_meta, kind="dark", source="capped"))
+    camera, rows_of, raw_shape = _camera(sp, s, white_sig)
+    mirror = T.Mirror()
 
     lines = LinesCsv(str(out / "lines.csv"))
     tl = _TruthLog(out / "truth")
@@ -181,8 +191,9 @@ def simulate(out_dir, plan, settings: Settings | None = None, calibration_sessio
     frames_csv = open(out / "frames" / "frames.csv", "w", newline="")
     frames_log = csv.writer(frames_csv)
     frames_log.writerow(FRAMES_COLUMNS)
-    seq, last_sof = -1, None
-    exposure_ns = int(round(s.exposure_us * 1000))
+    timing_csv = open(out / "truth" / "frames_true.csv", "w", newline="")
+    timing_log = csv.writer(timing_csv)
+    timing_log.writerow(TIMING_COLUMNS)
     info = {"format": FORMAT, "name": plan.name, "started": _iso(s.start_ns), "plan": plan.source,
             "viewpoints": [], "interrupted": False}
     t_ns = s.start_ns
@@ -196,53 +207,69 @@ def simulate(out_dir, plan, settings: Settings | None = None, calibration_sessio
         previous = vp.joints
         sw = vp.sweep
         start_step = int(round(sw.start_angle / rad_per_step))
-        period_ns = int(round(sw.line_period * 1e9))
         flex = arm.flex()
         sweep_dir = out / "frames" / f"sweep_{sweep_id:03d}"
         sweep_dir.mkdir(parents=True, exist_ok=True)
-        stamps, logged_joints = [], []
-        log(f"  {vp.name}: {sw.n_lines} lines")
+        # the bridge locks the sweep to the camera's frames, as on the rig
+        st = T.plan_sweep(camera, mirror, sweep_id, sw.n_lines, sw.steps_per_line, sw.line_period, t_ns)
+        angles = [(start_step + k * sw.steps_per_line) * rad_per_step for k in range(sw.n_lines)]
+        q_reads, angles_true = [], []
         for k in range(sw.n_lines):
-            stamp = t_ns + k * period_ns
-            hold_until = stamp + period_ns - TIMER_NS
-            angle = (start_step + k * sw.steps_per_line) * rad_per_step
-            q_read = arm.read_joints(vp.joints)
-            head, cam = arm.poses(q_read, angle)
-            angle_true = arm.mirror_true(angle)
-            head_t, cam_t = arm.poses(vp.joints, angle_true, flex)
+            q_reads.append(arm.read_joints(vp.joints))
+            angles_true.append(arm.mirror_true(angles[k]))
+        stamps, logged_joints = [], []
+        log(f"  {vp.name}: {sw.n_lines} lines, {st.lock.frames_per_line} camera frame"
+            f"{'s' if st.lock.frames_per_line > 1 else ''} a line")
+        for k, lt in enumerate(st.lines):
+            head, cam = arm.poses(q_reads[k], angles[k])
+            head_t, cam_t = arm.poses(vp.joints, angles_true[k], flex)
             w, depth = rays.weights(scene, cam_t, len(names))
-            sig = sp.signal(w @ table, rays.slice_centre)
-            frame = sp.expose(sig, level, s.exposure_us, 1, s.gain)[0]
-            name = f"frame_{k:04d}.npy"
-            np.save(sweep_dir / name, frame)
-            # the camera is frame-locked to the mirror: it starts exposing 1 ms after the mirror
-            # settles, every row in the same window (the frames are rendered with the mirror
-            # still, so the IMX219's rolling shutter is left out), and row 0 is read out as the
-            # exposure ends
-            start = stamp + SETTLE_NS
-            sof = start + exposure_ns
-            seq += 1 if last_sof is None else max(1, int(round((sof - last_sof) / period_ns)))
-            last_sof = sof
-            frames_log.writerow([sweep_id, k, "ok", f"frames/{sweep_dir.name}/{name}", seq, sof, start,
-                                 start + exposure_ns, s.exposure_us, s.gain, int((frame >= FULL_DN).sum())])
-            lines.write(i, sweep_id, k, stamp, hold_until, True, angle, head, cam, q_read)
-            tl.csv.write(i, sweep_id, k, stamp, hold_until, True, angle_true, head_t, cam_t, vp.joints)
+            row = [sweep_id, k]
+            if lt.frames:
+                f = lt.frames[0]
+                # where the mirror was while each row exposed: still on the line, unless the stamps'
+                # error moved the exposure onto a move, and then each row sees its share of each angle
+                views = T.mix(camera, st, k, f.sequence, angles_true, np.arange(raw_shape[0]))
+                sig = 0.0
+                for angle, share in views:
+                    wa = w if angle == angles_true[k] else rays.weights(
+                        scene, arm.poses(vp.joints, angle, flex)[1], len(names))[0]
+                    one = sp.signal(wa @ table, rays.slice_centre)
+                    sig = one if len(views) == 1 else sig + share[rows_of] * one
+                frame = sp.expose(sig, level, s.exposure_us, 1, s.gain)[0]
+                name = f"frame_{k:04d}.npy"
+                np.save(sweep_dir / name, frame)
+                saturated = int((frame[camera.r0:camera.r1 + 1] >= FULL_DN).sum())
+                row += ["ok", f"frames/{sweep_dir.name}/{name}", f.sequence, f.sof_ns, f.start_ns, f.end_ns,
+                        "%.1f" % f.exposure_us, "%.4f" % f.gain, saturated, len(lt.frames)]
+                still = max((share[camera.r0:camera.r1 + 1] for angle, share in views if angle == angles_true[k]),
+                            key=lambda a: a.sum(), default=np.zeros(1))
+                start, end = camera.true_window(f.sequence)
+                timing_log.writerow([sweep_id, k, f.sequence, camera.sof(f.sequence), start, end, lt.tick_ns,
+                                     *(lt.move or ("", "")), f"{1.0 - float(still.min()):.4f}"])
+            else:
+                row += ["no_frame", "", "", "", "", "", "", "", "", 0]
+            frames_log.writerow(row)
+            lines.write(i, sweep_id, k, lt.stamp_ns, lt.hold_until_ns, True, angles[k], head, cam, q_reads[k])
+            tl.csv.write(i, sweep_id, k, lt.stamp_ns, lt.hold_until_ns, True, angles_true[k], head_t, cam_t,
+                         vp.joints)
             tl.weights.append(w.mean(0).astype(np.float16))
             tl.depth.append(depth.astype(np.float32))
-            stamps.append(stamp)
-            logged_joints.append([q_read[j] for j in ARM_JOINTS])
-        h, w_px = frame.shape
+            stamps.append(lt.stamp_ns)
+            logged_joints.append([q_reads[k][j] for j in ARM_JOINTS])
+        h, w_px = raw_shape
         (sweep_dir / "meta.json").write_text(json.dumps(dict(
             kind="scene", source=s.scene, exposure_us=s.exposure_us, gain=s.gain, frames=sw.n_lines, width=w_px,
             height=h, format="npy", bits=10, sweep_id=sweep_id, viewpoint=i, synthetic=True,
             design_scale=s.binning), indent=2) + "\n")
         info["viewpoints"].append(_summary(vp, sweep_id, move_s, start_step * rad_per_step, rad_per_step,
-                                           stamps, logged_joints))
-        t_ns = stamps[-1] + period_ns + int(0.6e9)
+                                           stamps, logged_joints, st.lock))
+        t_ns = st.end_ns + int(0.6e9)
     lines.close()
     tl.csv.close()
     frames_csv.close()
-    (out / "frames" / "camera.json").write_text(json.dumps(_camera_json(sp, s, frame.shape), indent=2) + "\n")
+    timing_csv.close()
+    (out / "frames" / "camera.json").write_text(json.dumps(_camera_json(sp, s, camera, mirror), indent=2) + "\n")
 
     info["frames"] = {
         "base": arm.poser.base, "head": arm.poser.head, "line_camera": arm.poser.camera,
@@ -283,24 +310,63 @@ def _number(x):
     return int(x) if float(x).is_integer() else float(x)
 
 
-def _camera_json(sp, s, shape):
+def _camera(sp, s, white_sig):
+    """The camera's frame clock; for every pixel of the rendering, the row of the raw frame it
+    lands on; and the raw frames' shape."""
+    inst = sp.inst
+    raw_shape = inst.orient(np.zeros((sp.H, sp.W))).shape
+    # the rows that see the slit, as line_camera is told them (by a calibration's maps, or
+    # slit_row_first and slit_row_last): every row the white reference lights
+    lit = np.flatnonzero((inst.orient(white_sig) > 0.02 * white_sig.max()).any(1))
+    mode, _ = T.camera_mode(s.binning)
+    line_time = IMX219_MODES[mode]["line_time_us"] * mode[1] / raw_shape[0]
+    camera = T.Camera(t0_ns=s.start_ns, fps=s.frame_rate(), line_time_us=line_time, r0=int(lit[0]),
+                      r1=int(lit[-1]), exposure_us=s.exposure_us, gain=s.gain, stamp_error_us=s.stamp_error_us,
+                      stamp_offset_us=s.stamp_offset_us)
+    idx = inst.orient(np.arange(sp.H * sp.W).reshape(sp.H, sp.W))
+    rows_of = np.empty(sp.H * sp.W, dtype=np.intp)
+    rows_of[idx.ravel()] = np.repeat(np.arange(idx.shape[0]), idx.shape[1])
+    return camera, rows_of.reshape(sp.H, sp.W), raw_shape
+
+
+def _slit_reversed(sp):
+    """True when rectified slit row 0 is the line camera's +x end (h = +1).
+
+    hsical calibrate turns a sideways camera's frames so the spectrum runs along x, and leaves
+    the slit running the way the rows do unless told to flip it (--flip-y), so this is whether
+    h falls down the rows once the frames are turned."""
+    h = sp.inst.orient(sp.inst.h_map)
+    if sp.truth.transpose:
+        h = h.T
+    return bool(np.median(np.diff(h[:, h.shape[1] // 2])) < 0)
+
+
+def _camera_json(sp, s, camera, mirror):
     """frames/camera.json, in the capture node's format."""
     inst = sp.inst
     cfa = inst.orient(inst.cfa)[:2, :2]
+    shape = inst.orient(inst.cfa).shape
     return {
-        "format": FRAMES_FORMAT,
+        "source": "simulated",
+        "device": None,
         "sensor": {"width": int(shape[1]), "height": int(shape[0]), "bits": 10,
-                   "black_level": _number(sp.truth.black_dn), "bayer": "".join("RGB"[int(c)] for c in cfa.ravel())},
+                   "black_level": _number(sp.truth.black_dn), "bayer": "".join("RGB"[int(c)] for c in cfa.ravel()),
+                   "fps": camera.fps, "line_time_us": camera.line_time_us, "slit_rows": [camera.r0, camera.r1]},
         "exposure_us": s.exposure_us,
         "gain": s.gain,
-        # the slit coordinate (h, and hsical's s) grows toward line_camera_optical_frame +x,
-        # so rectified slit row 0 is the dataset's pixel 0
-        "slit_reversed": False,
+        # false when the slit coordinate (h, and hsical's s) grows toward line_camera_optical_frame
+        # +x, so that rectified slit row 0 is the dataset's pixel 0
+        "slit_reversed": _slit_reversed(sp),
         "calibration": None,
-        "timing": {"model": "simulated", "shutter": "global: every row exposes in the same window",
-                   "frame_locked": True, "exposure_start_after_settle_ns": SETTLE_NS,
-                   "sof": "row 0 read out as the exposure ends"},
-        "simulated": {"binning": s.binning},
+        "binning": None,
+        "timing": {"stamps": "ROS time; sof_ns is when a frame's row 0 was read out, and its exposure window "
+                             "covers the slit rows from the first one's start to the last one's read-out",
+                   "match_margin_us": mirror.match_margin_s * 1e6, "stamp_offset_us": s.stamp_offset_us},
+        "format": FRAMES_FORMAT,
+        "started": _iso(s.start_ns),
+        "raw_every": 1,
+        "simulated": {"binning": s.binning, "camera_mode": list(T.camera_mode(s.binning)[0]),
+                      "stamp_error_us": s.stamp_error_us, "frame_locked": True, "mirror": asdict(mirror)},
     }
 
 
@@ -311,13 +377,15 @@ def _relative(path, start):
         return str(Path(path).resolve())
 
 
-def _summary(vp, sweep_id, move_s, start_angle, rad_per_step, stamps, joints):
+def _summary(vp, sweep_id, move_s, start_angle, rad_per_step, stamps, joints, lock):
     """A viewpoint's entry in scan.json, as scan_sweep writes it."""
     periods = np.diff(np.array(stamps, dtype=np.int64)) * 1e-9
     j = np.array(joints)
     out = {"name": vp.name, "joints_goal": vp.joints, "move": {"ok": True, "message": "", "duration_s": move_s},
            "settled": True, "sweep_id": sweep_id, "start_angle": start_angle, "rad_per_step": rad_per_step,
-           "lines_expected": vp.sweep.n_lines, "lines_logged": len(stamps), "lines_unsettled": 0}
+           "line_period_s": lock.line_period_ns * 1e-9, "frame_locked": True,
+           "frames_per_line": lock.frames_per_line, "lines_expected": vp.sweep.n_lines,
+           "lines_logged": len(stamps), "lines_unsettled": 0}
     if len(stamps) > 1:
         out["line_period_mean_s"] = float(periods.mean())
         out["line_period_max_deviation_s"] = float(np.abs(periods - periods.mean()).max())
@@ -353,5 +421,8 @@ def _write_truth(tl, sp, scene, arm, names, table):
             "nm.npy": "wavelengths (nm) of materials.npy",
             "materials.npy": "[material, nm] reflectance of each material",
             "pixel_maps.npz": "nm and h of every sensor pixel, in the frames' orientation",
+            "frames_true.csv": "when each kept frame really exposed: its true sof_ns and slit rows' window, "
+                               "the tick and move (start, end) onto its line, and moving_share, the most "
+                               "of any slit row's exposure spent while the mirror was off the line",
             "scene.json": "the scene: solids, textures, lighting",
         }), indent=1) + "\n")

@@ -25,7 +25,9 @@ QUICK = dict(plan="ring", views=["down", "tilt25_az90"], lines=12, steps_per_lin
 def _settings(a):
     from .session import Settings
     kw = dict(scene=a.scene, lighting=a.lighting, binning=a.binning, seed=a.seed, errors=a.errors,
-              exposure_us=a.exposure_ms * 1000.0, gain=a.gain, slices=a.slices, rays_per_point=a.rays)
+              exposure_us=a.exposure_ms * 1000.0, gain=a.gain, slices=a.slices, rays_per_point=a.rays,
+              fps=a.fps, stamp_error_us=a.stamp_error_us, stamp_offset_us=a.stamp_offset_us,
+              slit_reversed=a.slit_reversed)
     return Settings(**kw)
 
 
@@ -134,6 +136,14 @@ def main(argv=None):
         g.add_argument("--gain", type=float, default=1.0)
         g.add_argument("--slices", type=int, default=3, help="cuts across the slit's width")
         g.add_argument("--rays", type=int, default=12, help="rays through the objective per slit point")
+        g.add_argument("--slit-reversed", action="store_true",
+                       help="the camera mounted the other way along the slit (camera.json says so)")
+        g = q.add_argument_group("the camera's clock")
+        g.add_argument("--fps", type=float, help="frame rate (default 30, or 21 at --binning 1)")
+        g.add_argument("--stamp-error-us", type=float, default=0.0,
+                       help="how late the camera's frame stamps are against when row 0 was really read out")
+        g.add_argument("--stamp-offset-us", type=float, default=0.0,
+                       help="line_camera's stamp_offset_us, added to every stamp (-error cancels it)")
 
     q = sub.add_parser("scan", help="render a scan session")
     q.add_argument("out")
