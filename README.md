@@ -10,6 +10,7 @@
   <img alt="optics: Optiland" src="https://img.shields.io/badge/optics-Optiland-0ea5e9?style=for-the-badge&logo=python&logoColor=white">
   <img alt="renderer: C++ and CUDA" src="https://img.shields.io/badge/renderer-C%2B%2B%20%2F%20CUDA-76b900?style=for-the-badge&logo=nvidia&logoColor=white">
   <img alt="robotics: ROS 2 and SO-101" src="https://img.shields.io/badge/robotics-ROS%202%20%2B%20SO--101-22314e?style=for-the-badge&logo=ros&logoColor=white">
+  <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-64748b?style=for-the-badge"></a>
 </p>
 
 <p align="center">
@@ -301,3 +302,7 @@ jetson/
 - SO-101 photo: [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100) (`media/SO101_Follower.webp`), used unmodified under the Apache License 2.0; a copy of the license is in [`docs/img/SO-ARM100_LICENSE.txt`](docs/img/SO-ARM100_LICENSE.txt). The SO-101 is designed by The Robot Studio in collaboration with Hugging Face.
 - SO-101 URDF and meshes in the CAD model: [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100) (`Simulation/SO101`), Apache License 2.0.
 - Ray tracing: [Optiland](https://github.com/HarrisonKramer/optiland) (MIT).
+
+## License
+
+The code, the CAD model and the docs are under the [MIT License](LICENSE). The SO-101's URDF and meshes (and their decimated copies in the CAD model) and the SO-101 photo are TheRobotStudio's, under the Apache License 2.0, as listed in [Credits](#credits).
