@@ -75,6 +75,7 @@ def build(doc):
     vendor.scan_mirror(doc, head, P, rf)
     vendor.magnet(doc, head, P, rf)
     vendor.hall_sensor(doc, head, P)
+    vendor.hall_board(doc, head, P)
     zf = P.obj_back - P.obj_len
     vendor.filter_disc(doc, head, P, zf - P.filt_t)
     vendor.m12_lens(doc, head, "HSI_objective", "Objective: Commonlands CIL161 16 mm (at f/4)",
@@ -94,6 +95,18 @@ def build(doc):
                     cf.sub(0, 0, P.f_cam - P.cam_bfl), P.cam_od, P.cam_len, P.cam_thread)
     vendor.camera_board(doc, head, P, cf)
     vendor.pose_camera(doc, head, P, P.y_axis + P.y_in_pos + P.wall + 3.5)
+
+    # The scan-mirror controller on its printed tray, on the table behind the
+    # base. The tray's frame is turned 90 deg so its +Y points away from the
+    # arm (world -X): the board's hall connector faces the arm.
+    ctl = doc.addObject("App::Part", "Controller")
+    ctl.Label = "Scan-mirror controller on its tray, behind the base"
+    ctl.Placement = App.Placement(App.Vector(P.tray_x.v, 0, P.table_z.v), App.Rotation(App.Vector(0, 0, 1), 90))
+    ctl.setExpression(".Placement.Base.x", P.tray_x.s)
+    ctl.setExpression(".Placement.Base.z", P.table_z.s)
+    parts.append(printed.tray(doc, ctl, P))
+    vendor.controller_board(doc, ctl, P, Frame((-P.ctl_w / 2, P.tray_wall + P.tray_gap + P.ctl_h,
+                                                P.tray_floor + P.tray_post)))
     doc.recompute()
 
     bad = [o.Name for o in doc.Objects if "Invalid" in o.State or "Error" in o.State]
@@ -214,7 +227,7 @@ def flex_clearance(frames, head, doc):
     rot = gr.Placement.Rotation
     roll_now = math.degrees(rot.Angle) * (1 if rot.Axis.z >= 0 else -1)
     boxes = []
-    for n in ("HSI_shell", "HSI_lid", "HSI_stepper", "HSI_camera", "HSI_puck"):
+    for n in ("HSI_shell", "HSI_lid", "HSI_stepper", "HSI_camera", "HSI_puck", "HSI_hall_board"):
         bb = shape_in(doc.getObject(n), head).BoundBox
         boxes.append(bb)
     arm_pts = []

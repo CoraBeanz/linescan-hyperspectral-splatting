@@ -245,6 +245,16 @@ class Builder:
         L, W = E.of(L), E.of(W)
         return self.box(name, E.of(cx) - L / 2, E.of(cy) - W / 2, z, L, W, H, frame)
 
+    def rbox(self, name, cx, cy, z, L, W, H, r, frame=WORLD):
+        """Box centred on (cx, cy) in X/Y, from z up by H, with its four vertical edges rounded to r."""
+        cx, cy, L, W, r = E.of(cx), E.of(cy), E.of(L), E.of(W), E.of(r)
+        shapes = [self.cbox(name + "_x", cx, cy, z, L - 2 * r, W, H, frame),
+                  self.cbox(name + "_y", cx, cy, z, L, W - 2 * r, H, frame)]
+        for i, (sx, sy) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1))):
+            shapes.append(self.cyl("%s_r%d" % (name, i), "z", (cx + sx * (L / 2 - r), cy + sy * (W / 2 - r), z),
+                                   r, H, frame))
+        return self.fuse(name, shapes)
+
     def cyl(self, name, axis, base, r, h, frame=WORLD):
         """Cylinder of radius r and length h starting at `base` along `axis`."""
         o = self._new("Part::Cylinder", name)

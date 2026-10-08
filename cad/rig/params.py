@@ -11,7 +11,8 @@ Source tags used in the last column:
   listing   vendor product page
   measured  measured on the part in hand, or from TheRobotStudio's SO-101 meshes
   est       estimate: no published number; check the part when it arrives
-  design    a choice made for this head
+  pcb       the KiCad boards in pcb/ (pcb/README.md, pcb/tools/boards.py)
+  design    a choice made for this rig
 """
 
 import os
@@ -213,6 +214,19 @@ def rows():
     p("mag_d", 5.0, "mm", "home magnet diameter (NdFeB disc, magnetized through its thickness)", "measured")
     p("mag_t", 1.6, "mm", "home magnet thickness; the clamp pocket is cut to match", "measured")
 
+    sec("Boards (KiCad, pcb/)")
+    p("ctl_w", 95.0, "mm", "scan-mirror controller, along its USB edge", "pcb")
+    p("ctl_h", 66.0, "mm", "scan-mirror controller, from the USB edge to the hall-connector edge", "pcb")
+    p("ctl_t", 1.6, "mm", "controller board thickness", "pcb")
+    p("ctl_r", 2.0, "mm", "controller board corner radius", "pcb")
+    p("ctl_hole_in", 3.5, "mm", "controller's four M3 holes, in from each edge", "pcb")
+    p("ctl_leads", 3.0, "mm", "through-hole leads under the controller, longest", "pcb")
+    p("hb_w", 14.0, "mm", "hall breakout, along Y on the head", "pcb")
+    p("hb_h", 12.4, "mm", "hall breakout, along Z on the head", "pcb")
+    p("hb_t", 0.8, "mm", "hall breakout thickness (ordered 0.8 mm)", "pcb")
+    p("hb_lead_x", 7.0, "mm", "hall breakout: the A3144's middle lead hole, from the board's -Y edge", "pcb")
+    p("hb_lead_y", 4.6, "mm", "hall breakout: the A3144's lead holes, down from the board's +Z edge", "pcb")
+
     sec("Printed parts")
     p("wall", 2.5, "mm", "housing wall thickness", "design")
     p("fit", 0.25, "mm", "clearance for sliding fits, per side", "design")
@@ -247,6 +261,21 @@ def rows():
     p("insert_l", 6.0, "mm", "M3 heat-set insert length", "listing")
     p("insert_m2_d", 2.85, "mm", "hole for M2 heat-set inserts (Pofsnnx: knurl 3.0, lead-in 2.7)", "design")
     p("insert_m2_l", 4.0, "mm", "M2 heat-set insert length", "listing")
+
+    sec("Controller tray (printed; base_link frame: it sits on the table behind the SO-101's base)")
+    p("table_z", -2.4, "mm", "table top: the underside of the SO-101's base", "measured")
+    p("tray_x", -35.0, "mm", "tray's edge nearest the arm (the back of the Waveshare plate is at x = -31)", "design")
+    p("tray_floor", 3.0, "mm", "tray floor thickness", "design")
+    p("tray_wall", 2.0, "mm", "tray wall thickness", "design")
+    p("tray_gap", 0.5, "mm", "board edge to the tray wall", "design")
+    p("tray_post", "=ctl_leads + 3", "mm", "standoff height: the board's underside above the floor", "design")
+    p("tray_post_d", 8.6, "mm", "standoff diameter around its M3 heat-set insert (merges with the walls)", "design")
+    p("tray_strip", 18.0, "mm", "strip along the board's USB edge with the two table-screw slots", "design")
+    p("tray_slot_w", 6.6, "mm", "table-screw slot width (1/4-20 or M6 screws)", "design")
+    p("tray_slot_travel", 25.4, "mm",
+      "table-screw slot travel: a full pitch of a 1 in or 25 mm hole grid, so both slots always find a hole",
+      "design")
+    p("tray_slot_y", 25.0, "mm", "table-screw slot centres, either side of the tray's middle", "design")
 
     sec("Arm pose (degrees from the URDF zero: upper arm up, forearm level). "
         "Shown: scanning a table 150 mm below the objective")

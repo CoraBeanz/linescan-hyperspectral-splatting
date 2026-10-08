@@ -16,6 +16,7 @@ Parts:
   slit_block  slit blades, field lens, collimator holder on its back
   grat_plate  grating film
   filter_cap  long-pass filter and the 4 mm aperture stop on the objective
+  tray        holds the scan-mirror controller board on the table behind the arm
 
 Each function returns a dict with the container, the final solid feature and
 how to lay it on the print bed; build_rig.py exports STLs from these.
@@ -133,6 +134,10 @@ def shell(doc, parent, P):
     # hall sensor pocket and lead slot in the +X wall
     cuts.append(b.box("hall_pocket", xi - 0.01, P.hall_y - 2.25, P.hall_z - 1.65, 1.71, 4.5, 3.3))
     cuts.append(b.box("hall_leads", xi + 1.0, P.hall_y - 2.2, P.hall_z - 1.5, P.wall, 4.4, 1.0))
+    # the hall breakout lies on the +X face over the slot; a 0.8 mm recess behind its lower half takes
+    # the solder on the back of its cable pads and the strain-relief thread between its tie holes
+    yb, zb_top = P.hall_y - P.hb_lead_x, P.hall_z - 1.0 + P.hb_lead_y     # board's -Y edge and top edge
+    cuts.append(b.box("hall_board_recess", xo - 0.8, yb + 1.4, zb_top - 11.8, 0.81, 11.2, 5.4))
     # end wall: opening the board's square M12 holder passes through at any angle; M2 inserts in the standoffs
     cuts.append(b.cyl("cam_opening", "z", (0, 0, zw_in - 1), P.brd_holder_w / 2 ** 0.5 + 0.5, P.carrier_t + 2, cf))
     for i, (sx, sy) in enumerate(cam_holes):
@@ -379,6 +384,45 @@ def filter_cap(doc, parent, P):
     final.Label = "Filter cap"
     return _print("filter_cap", "Filter cap", cont, final, App.Rotation(),
                   "stop face on the bed; check the sleeve is a snug push fit on the lens")
+
+
+def tray(doc, parent, P):
+    """Tray for the scan-mirror controller board (pcb/scan_controller).
+
+    Local frame: z up from the table, origin on the middle of the edge that
+    faces the arm, +Y away from the arm. The board stands on four posts with
+    M3 heat-set inserts, its hall-connector edge toward the arm and its USB
+    edge toward the strip with the two table-screw slots. The walls stop below
+    the board, so the connectors on its edges clear them, and the floor keeps
+    the leads underneath off a metal table."""
+    cont = container(doc, parent, "CTRL_tray", "Controller tray (printed)")
+    b = Part(doc, cont, "tray")
+    wl, g, fl, hi = P.tray_wall, P.tray_gap, P.tray_floor, P.ctl_hole_in
+    hw_in = P.ctl_w / 2 + g                         # pocket half-width
+    d_in = P.ctl_h + 2 * g                          # pocket depth
+    d_box = d_in + 2 * wl
+    r_in = P.ctl_r + g
+    floor = b.rbox("floor", 0, (d_box + P.tray_strip) / 2, 0, 2 * (hw_in + wl), d_box + P.tray_strip, fl, r_in + wl)
+    ring_out = b.rbox("ring_out", 0, d_box / 2, fl - 0.01, 2 * (hw_in + wl), d_box, P.tray_post - 0.49, r_in + wl)
+    ring_in = b.rbox("ring_in", 0, d_box / 2, fl - 0.1, 2 * hw_in, d_in, P.tray_post, r_in)
+    walls = b.cut("walls", ring_out, [ring_in])
+    posts, cuts = [], []
+    for i, (sx, by) in enumerate(((-1, hi), (1, hi), (-1, P.ctl_h - hi), (1, P.ctl_h - hi))):
+        x, y = sx * (P.ctl_w / 2 - hi), wl + g + P.ctl_h - by
+        posts.append(b.cyl("post%d" % i, "z", (x, y, fl - 0.01), P.tray_post_d / 2, P.tray_post + 0.01))
+        cuts.append(b.cyl("insert%d" % i, "z", (x, y, fl + P.tray_post - P.insert_l - 0.5), P.insert_d / 2,
+                          P.insert_l + 0.6))
+    body = b.fuse("body", [floor, walls] + posts)
+    ys = d_box + P.tray_strip / 2
+    for i, s in enumerate((-1, 1)):
+        xc = s * P.tray_slot_y
+        cuts.append(b.cbox("slot%d" % i, xc, ys, -0.1, P.tray_slot_travel, P.tray_slot_w, fl + 0.2))
+        cuts += [b.cyl("slot%d_end%d" % (i, j), "z", (xc + e * P.tray_slot_travel / 2, ys, -0.1), P.tray_slot_w / 2,
+                       fl + 0.2) for j, e in enumerate((-1, 1))]
+    final = b.cut("Controller_tray", body, cuts)
+    final.Label = "Controller tray"
+    return _print("controller_tray", "Controller tray", cont, final, App.Rotation(),
+                  "floor on the bed; 0.2 mm layers, 3 perimeters, 20% infill; 4x M3 heat-set inserts in the posts")
 
 
 ALL = [shell, lid, rotor, puck, bench_puck, obj_plate, slit_block, grat_plate, filter_cap]
