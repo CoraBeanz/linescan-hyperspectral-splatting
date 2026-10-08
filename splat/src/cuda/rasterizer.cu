@@ -9,6 +9,7 @@
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
 #include <thrust/sort.h>
+#include <thrust/system/cuda/execution_policy.h>
 #include <thrust/transform_scan.h>
 
 #include <algorithm>
@@ -17,66 +18,21 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "cuda_common.cuh"
 #include "linesplat/gradients.hpp"
 #include "linesplat/util.hpp"
+#include "rasterizer_impl.cuh"
 
 namespace linesplat {
 
+using namespace cudadetail;
+
 namespace {
-
-void throw_cuda(cudaError_t e, const char* expr, const char* file, int line) {
-  std::ostringstream ss;
-  ss << "CUDA error " << cudaGetErrorName(e) << " (" << cudaGetErrorString(e) << ") in " << expr << " at " << file
-     << ":" << line;
-  throw std::runtime_error(ss.str());
-}
-
-#define LS_CUDA_CHECK(expr)                                         \
-  do {                                                              \
-    const cudaError_t err_ = (expr);                                \
-    if (err_ != cudaSuccess) throw_cuda(err_, #expr, __FILE__, __LINE__); \
-  } while (0)
 
 constexpr int kTile = 32;          // pixels per tile: one warp, one lane per pixel
 constexpr int kWarpsPerBlock = 4;  // tiles per raster block
 constexpr int kProjectBlock = 256;
-
-// A grow-only device array.
-template <typename T>
-class DeviceBuffer {
- public:
-  DeviceBuffer() = default;
-  DeviceBuffer(const DeviceBuffer&) = delete;
-  DeviceBuffer& operator=(const DeviceBuffer&) = delete;
-  ~DeviceBuffer() {
-    if (ptr_) cudaFree(ptr_);
-  }
-  // Grows by at least 1.5x so a slowly rising size doesn't reallocate every
-  // call. The old contents are dropped.
-  void reserve(size_t n) {
-    if (n <= cap_) return;
-    const size_t want = std::max(n, cap_ + cap_ / 2);
-    if (ptr_) cudaFree(ptr_);
-    ptr_ = nullptr;
-    cap_ = 0;
-    LS_CUDA_CHECK(cudaMalloc(&ptr_, std::max<size_t>(want, 1) * sizeof(T)));
-    cap_ = want;
-  }
-  void upload(const T* src, size_t n) {
-    reserve(n);
-    if (n) LS_CUDA_CHECK(cudaMemcpy(ptr_, src, n * sizeof(T), cudaMemcpyHostToDevice));
-  }
-  void download(T* dst, size_t n) const {
-    if (n) LS_CUDA_CHECK(cudaMemcpy(dst, ptr_, n * sizeof(T), cudaMemcpyDeviceToHost));
-  }
-  T* get() const { return ptr_; }
-
- private:
-  T* ptr_ = nullptr;
-  size_t cap_ = 0;
-};
-
-unsigned blocks_for(size_t n, int per_block) { return unsigned((n + per_block - 1) / per_block); }
+constexpr int kBasisBlock = 256;
 
 // Pixel range [p0, p1) packed into 32 bits; 0 means "doesn't touch the line".
 __host__ __device__ inline uint32_t pack_range(int p0, int p1) { return uint32_t(p0) | (uint32_t(p1) << 16); }
@@ -275,10 +231,21 @@ __device__ __forceinline__ int warp_max(int v) {
   return v;
 }
 
+// The basis transposed, [k, bands], for band_error_kernel.
+__global__ void transpose_kernel(int rows, int cols, const float* __restrict__ in, float* __restrict__ out) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= rows * cols) return;
+  const int r = i / cols, c = i - r * cols;
+  out[size_t(c) * rows + r] = in[i];
+}
+
 // Backward pass 6a: one thread per (pixel, band): the band value (basis x
 // features), its squared error, and dL/dband for L = scale * sum of squares.
+// Neighbouring threads take neighbouring bands of one pixel, so they read
+// the transposed basis (basis_t[c, b]) from one cache line instead of 32;
+// the basis itself would be a row (k floats) apart per thread.
 __global__ void band_error_kernel(int n, int width, int k, int bands, float scale, const float* __restrict__ feat,
-                                  const float* __restrict__ basis, const float* __restrict__ targets,
+                                  const float* __restrict__ basis_t, const float* __restrict__ targets,
                                   const int* __restrict__ line_ids, float* __restrict__ sq_err,
                                   float* __restrict__ g_bands) {
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -286,9 +253,8 @@ __global__ void band_error_kernel(int n, int width, int k, int bands, float scal
   const int pix = i / bands, b = i - pix * bands;
   const int line = pix / width, p = pix - line * width;
   const float* f = feat + size_t(pix) * k;
-  const float* row = basis + size_t(b) * k;
   float v = 0.0f;
-  for (int c = 0; c < k; ++c) v += row[c] * f[c];
+  for (int c = 0; c < k; ++c) v += basis_t[size_t(c) * bands + b] * f[c];
   const float d = v - targets[(size_t(line_ids[line]) * width + p) * bands + b];
   sq_err[i] = d * d;
   g_bands[i] = 2.0f * scale * d;
@@ -307,6 +273,34 @@ __global__ void feature_grad_kernel(int n, int k, int kp, int bands, const float
     for (int b = 0; b < bands; ++b) g += basis[size_t(b) * k + c] * gb[b];
   }
   g_pix[i] = g;
+}
+
+// Backward pass 6c, when the basis is learned: dL/dbasis[b, c] is the sum
+// over pixels of dL/dband b times feature c. One thread per (b, c) entry
+// (grid.y covers them all); each block takes a share of the pixels, 32 at a
+// time through shared memory, and adds its sums with one atomic per entry.
+__global__ void basis_grad_kernel(int n_px, int k, int bands, const float* __restrict__ feat,
+                                  const float* __restrict__ g_bands, float* __restrict__ g_basis) {
+  extern __shared__ float sh[];  // [32, bands] of dL/dbands, then [32, k] of features
+  float* s_g = sh;
+  float* s_f = sh + kTile * bands;
+  const int o = blockIdx.y * blockDim.x + threadIdx.x;
+  const bool mine = o < bands * k;
+  const int b = mine ? o / k : 0, c = mine ? o - b * k : 0;
+  const int tiles = (n_px + kTile - 1) / kTile;
+  const int per = (tiles + gridDim.x - 1) / gridDim.x;
+  const int t0 = blockIdx.x * per, t1 = min(tiles, t0 + per);
+  float acc = 0.0f;
+  for (int t = t0; t < t1; ++t) {
+    const int p0 = t * kTile, np = min(kTile, n_px - p0);
+    __syncthreads();
+    for (int e = threadIdx.x; e < np * bands; e += blockDim.x) s_g[e] = g_bands[size_t(p0) * bands + e];
+    for (int e = threadIdx.x; e < np * k; e += blockDim.x) s_f[e] = feat[size_t(p0) * k + e];
+    __syncthreads();
+    if (mine)
+      for (int j = 0; j < np; ++j) acc += s_g[j * bands + b] * s_f[j * k + c];
+  }
+  if (mine && acc != 0.0f) atomicAdd(&g_basis[o], acc);
 }
 
 // Backward pass 7: one warp per (line, tile), C feature channels per launch
@@ -488,6 +482,7 @@ __global__ void geometry_backward_kernel(int n, const float* __restrict__ log_sc
                              g_log_scales + 3 * size_t(i), g_rotations + 4 * size_t(i), g_logits + i);
 }
 
+
 }  // namespace
 
 bool cuda_device_available(std::string* why) {
@@ -510,86 +505,86 @@ std::string cuda_device_name() {
   return ss.str();
 }
 
-namespace {
-
-// CUDA events that time the GPU work of a call, batch by batch.
-class GpuTimer {
- public:
-  GpuTimer() {
-    LS_CUDA_CHECK(cudaEventCreate(&start_));
-    LS_CUDA_CHECK(cudaEventCreate(&stop_));
-  }
-  ~GpuTimer() {
-    cudaEventDestroy(start_);
-    cudaEventDestroy(stop_);
-  }
-  void start() { LS_CUDA_CHECK(cudaEventRecord(start_)); }
-  void stop() {
-    LS_CUDA_CHECK(cudaEventRecord(stop_));
-    LS_CUDA_CHECK(cudaEventSynchronize(stop_));
-    float ms = 0.0f;
-    LS_CUDA_CHECK(cudaEventElapsedTime(&ms, start_, stop_));
-    total_ms += ms;
-  }
-  double total_ms = 0.0;
-
- private:
-  cudaEvent_t start_, stop_;
-};
-
-template <typename T>
-void zero(DeviceBuffer<T>& b, size_t n) {
-  b.reserve(n);
-  if (n) LS_CUDA_CHECK(cudaMemset(b.get(), 0, n * sizeof(T)));
+bool cuda_memory_info(size_t* free_bytes, size_t* total_bytes) {
+  if (cudaMemGetInfo(free_bytes, total_bytes) == cudaSuccess) return true;
+  cudaGetLastError();
+  return false;
 }
 
-}  // namespace
+const char* cuda_pass_name(int pass) {
+  static const char* const names[kCudaPasses] = {"project", "scan", "emit", "sort", "raster", "loss",
+                                                 "raster back", "project back", "geometry back", "copies",
+                                                 "adam", "densify"};
+  return pass >= 0 && pass < kCudaPasses ? names[pass] : "?";
+}
 
-struct CudaRasterizer::Impl {
-  int n = 0;         // Gaussians
-  int k = 0;         // features
-  int chunk = 16;    // feature channels per raster launch row
-  int kp = 0;        // features padded to a multiple of chunk
-  int bands = 0;     // rows of the spectral basis
-  bool has_scene = false;
-  DeviceBuffer<float4> geom;
-  DeviceBuffer<float> means, log_scales, rotations, logits;
-  DeviceBuffer<float> features, background, basis;
-  DeviceBuffer<LineCamera> cams;
-  DeviceBuffer<uint32_t> packed, vis_off, tile_off, values;
-  DeviceBuffer<unsigned long long> keys;
-  DeviceBuffer<float4> splats;
-  DeviceBuffer<int> splat_gid, splat_line, contrib;
-  DeviceBuffer<uint2> ranges;
-  DeviceBuffer<float> out, trans;
+int CudaRasterizer::Impl::batch_lines(long long max_pairs, int w) const {
+  const long long n_tiles = (w + kTile - 1) / kTile;
+  long long b = std::max(1LL, max_pairs / std::max(1, n));
+  b = std::min<long long>(b, 65535);
+  b = std::min<long long>(b, std::max(1LL, (1LL << 31) / (std::max(1LL, (long long)n) * n_tiles)));
+  return int(b);
+}
 
-  // Training.
-  int t_lines = 0, t_width = 0, t_bands = 0;
-  DeviceBuffer<float> targets;
-  DeviceBuffer<int> line_ids;
-  DeviceBuffer<float> sq_err, g_bands, g_pix;
-  DeviceBuffer<float4> g_splat;
-  DeviceBuffer<float> g_mean, g_cov, g_opacity, g_feat, g_bg, g_screen, g_cam;
-  DeviceBuffer<int> g_pairs;
-  DeviceBuffer<float> g_log_scales, g_rotations, g_logits;
+void CudaRasterizer::Impl::upload_scene(const GaussianScene& scene) {
+  n = scene.size();
+  k = scene.num_features;
+  chunk = k <= 8 ? 8 : 16;
+  kp = (k + chunk - 1) / chunk * chunk;
+  bands = scene.num_bands();
 
-  // Lines per batch for width w: bounded by the pair budget, the grid's y
-  // limit, and keeping every key count inside 32 bits.
-  int batch_lines(long long max_pairs, int w) const {
-    const long long n_tiles = (w + kTile - 1) / kTile;
-    long long b = std::max(1LL, max_pairs / std::max(1, n));
-    b = std::min<long long>(b, 65535);
-    b = std::min<long long>(b, std::max(1LL, (1LL << 31) / (std::max(1LL, (long long)n) * n_tiles)));
-    return int(b);
+  std::vector<float> feat(size_t(n) * kp, 0.0f), bg(size_t(kp), 0.0f);
+  for (int i = 0; i < n; ++i)
+    std::copy(&scene.features[size_t(i) * k], &scene.features[size_t(i) * k] + k, &feat[size_t(i) * kp]);
+  std::copy(scene.background.begin(), scene.background.end(), bg.begin());
+  features.upload(feat.data(), feat.size());
+  background.upload(bg.data(), bg.size());
+  basis.upload(scene.basis.data(), scene.basis.size());
+
+  // The stored parameters stay on the GPU for the backward pass.
+  if (n > 0) {
+    means.upload(scene.means.data(), scene.means.size());
+    log_scales.upload(scene.log_scales.data(), scene.log_scales.size());
+    rotations.upload(scene.rotations.data(), scene.rotations.size());
+    logits.upload(scene.opacity_logits.data(), scene.opacity_logits.size());
   }
+  prepare();
+  has_scene = true;
+}
 
-  // Passes 1-5 for lb lines of width w, whose cameras are already in `cams`.
-  // Leaves the sorted lists, splats, features (out), transmittance and
-  // contributors on the GPU.
-  void forward(int lb, int w, uint32_t* n_vis_out, uint32_t* n_entries_out);
-};
+void CudaRasterizer::Impl::prepare() {
+  geom.reserve(size_t(n) * 3);
+  if (n > 0) {
+    prepare_kernel<<<blocks_for(size_t(n), kProjectBlock), kProjectBlock>>>(n, means.get(), log_scales.get(),
+                                                                           rotations.get(), logits.get(), geom.get());
+    LS_CUDA_CHECK(cudaGetLastError());
+  }
+  LS_CUDA_CHECK(cudaDeviceSynchronize());
+}
 
-void CudaRasterizer::Impl::forward(int lb, int w, uint32_t* n_vis_out, uint32_t* n_entries_out) {
+void CudaRasterizer::Impl::download_scene(GaussianScene* s) const {
+  s->num_features = k;
+  s->means.resize(3 * size_t(n));
+  s->log_scales.resize(3 * size_t(n));
+  s->rotations.resize(4 * size_t(n));
+  s->opacity_logits.resize(size_t(n));
+  s->features.resize(size_t(n) * k);
+  s->background.resize(size_t(k));
+  s->basis.resize(size_t(bands) * k);
+  means.download(s->means.data(), s->means.size());
+  log_scales.download(s->log_scales.data(), s->log_scales.size());
+  rotations.download(s->rotations.data(), s->rotations.size());
+  logits.download(s->opacity_logits.data(), s->opacity_logits.size());
+  basis.download(s->basis.data(), s->basis.size());
+  std::vector<float> padded(std::max(size_t(n) * kp, size_t(kp)));
+  features.download(padded.data(), size_t(n) * kp);
+  for (int i = 0; i < n; ++i)
+    std::copy(&padded[size_t(i) * kp], &padded[size_t(i) * kp] + k, &s->features[size_t(i) * k]);
+  background.download(padded.data(), size_t(kp));
+  std::copy(padded.begin(), padded.begin() + k, s->background.begin());
+}
+
+void CudaRasterizer::Impl::forward(int lb, int w, uint32_t* n_vis_out, uint32_t* n_entries_out, PassClock& clock) {
   const int n_tiles = (w + kTile - 1) / kTile;
   const size_t pairs = size_t(lb) * n;
   const size_t n_cells = size_t(lb) * n_tiles;
@@ -602,16 +597,18 @@ void CudaRasterizer::Impl::forward(int lb, int w, uint32_t* n_vis_out, uint32_t*
     const dim3 grid(blocks_for(size_t(n), kProjectBlock), unsigned(lb));
     count_kernel<<<grid, kProjectBlock>>>(n, geom.get(), cams.get(), packed.get());
     LS_CUDA_CHECK(cudaGetLastError());
-    thrust::transform_exclusive_scan(thrust::device, packed.get(), packed.get() + pairs, tile_off.get(), TilesOf(),
-                                     0u, AddU32());
-    thrust::transform_exclusive_scan(thrust::device, packed.get(), packed.get() + pairs, vis_off.get(), IsVisible(),
-                                     0u, AddU32());
+    clock.mark(kPassProject);
+    thrust::transform_exclusive_scan(thrust::cuda::par(scratch), packed.get(), packed.get() + pairs, tile_off.get(),
+                                     TilesOf(), 0u, AddU32());
+    thrust::transform_exclusive_scan(thrust::cuda::par(scratch), packed.get(), packed.get() + pairs, vis_off.get(),
+                                     IsVisible(), 0u, AddU32());
     uint32_t last_packed = 0, last_tile = 0, last_vis = 0;
     LS_CUDA_CHECK(cudaMemcpy(&last_packed, packed.get() + pairs - 1, 4, cudaMemcpyDeviceToHost));
     LS_CUDA_CHECK(cudaMemcpy(&last_tile, tile_off.get() + pairs - 1, 4, cudaMemcpyDeviceToHost));
     LS_CUDA_CHECK(cudaMemcpy(&last_vis, vis_off.get() + pairs - 1, 4, cudaMemcpyDeviceToHost));
     n_entries = last_tile + TilesOf()(last_packed);
     n_vis = last_vis + IsVisible()(last_packed);
+    clock.mark(kPassScan);
     if (n_entries > 0) {
       splats.reserve(n_vis);
       splat_gid.reserve(n_vis);
@@ -619,10 +616,11 @@ void CudaRasterizer::Impl::forward(int lb, int w, uint32_t* n_vis_out, uint32_t*
       keys.reserve(n_entries);
       values.reserve(n_entries);
       emit_kernel<<<grid, kProjectBlock>>>(n, n_tiles, geom.get(), cams.get(), packed.get(), vis_off.get(),
-                                           tile_off.get(), splats.get(), splat_gid.get(), splat_line.get(),
-                                           keys.get(), values.get());
+                                           tile_off.get(), splats.get(), splat_gid.get(), splat_line.get(), keys.get(),
+                                           values.get());
       LS_CUDA_CHECK(cudaGetLastError());
-      thrust::sort_by_key(thrust::device, keys.get(), keys.get() + n_entries, values.get());
+      clock.mark(kPassEmit);
+      thrust::sort_by_key(thrust::cuda::par(scratch), keys.get(), keys.get() + n_entries, values.get());
     }
   }
 
@@ -632,6 +630,7 @@ void CudaRasterizer::Impl::forward(int lb, int w, uint32_t* n_vis_out, uint32_t*
     ranges_kernel<<<blocks_for(n_entries, 256), 256>>>(n_entries, keys.get(), ranges.get());
     LS_CUDA_CHECK(cudaGetLastError());
   }
+  clock.mark(kPassSort);
 
   const size_t px = size_t(lb) * w;
   out.reserve(px * k);
@@ -649,8 +648,157 @@ void CudaRasterizer::Impl::forward(int lb, int w, uint32_t* n_vis_out, uint32_t*
                                          contrib.get());
   }
   LS_CUDA_CHECK(cudaGetLastError());
+  clock.mark(kPassRaster);
   *n_vis_out = n_vis;
   *n_entries_out = n_entries;
+}
+
+double CudaRasterizer::Impl::backward(const std::vector<LineCamera>& cams_in, const std::vector<int>& lines,
+                                      bool learn_basis, std::vector<CameraGradT<float>>* cam_grad, long long max_pairs,
+                                      bool profile, CudaRenderStats* stats) {
+  if (!has_scene) throw std::runtime_error("CudaRasterizer::mse_backward: call set_scene first");
+  if (lines.size() != cams_in.size())
+    throw std::runtime_error("CudaRasterizer::mse_backward: need one measured line per camera");
+  const int L = int(cams_in.size()), W = t_width, K = k, B = bands;
+  if (B != t_bands)
+    throw std::runtime_error("CudaRasterizer::mse_backward: the scene has " + std::to_string(B) +
+                             " bands and the measured lines " + std::to_string(t_bands));
+  for (const auto& c : cams_in)
+    if (c.width != W) throw std::runtime_error("CudaRasterizer::mse_backward: cameras and measured lines differ in width");
+  for (int l : lines)
+    if (l < 0 || l >= t_lines) throw std::runtime_error("CudaRasterizer::mse_backward: no such measured line");
+  if (W > 0xffff) throw std::runtime_error("CudaRasterizer::mse_backward: lines are limited to 65535 pixels");
+  // basis_grad_kernel holds 32 pixels' bands and features in shared memory.
+  if (learn_basis && size_t(kTile) * (B + K) * sizeof(float) > 48 * 1024)
+    throw std::runtime_error("CudaRasterizer::mse_backward: too many bands and features to learn the basis");
+  Timer timer;
+  CudaRenderStats st;
+  GpuTimer gpu;
+  PassClock clock(profile);
+
+  clock.start();
+  zero(g_mean, 3 * size_t(n));
+  zero(g_cov, 6 * size_t(n));
+  zero(g_opacity, size_t(n));
+  zero(g_screen, size_t(n));
+  zero(g_pairs, size_t(n));
+  zero(g_feat, size_t(n) * kp);
+  zero(g_bg, size_t(kp));
+  zero(g_cam, 12 * size_t(L));
+  if (learn_basis) zero(g_basis, size_t(B) * K);
+  basis_t.reserve(size_t(B) * K);
+  if (B * K > 0) {
+    transpose_kernel<<<blocks_for(size_t(B) * K, 256), 256>>>(B, K, basis.get(), basis_t.get());
+    LS_CUDA_CHECK(cudaGetLastError());
+  }
+  clock.mark(kPassCopy);
+  clock.collect(st.pass_ms);
+  double sum_sq = 0.0;
+  const float scale = float(1.0 / (double(std::max(1, L)) * std::max(1, W) * std::max(1, B)));
+  const int n_tiles = (W + kTile - 1) / kTile;
+  // The loss kernels index (pixel, band) and (pixel, channel) with an int.
+  const int batch =
+      std::min(batch_lines(max_pairs, W), std::max(1, int(INT_MAX / (std::max(1, W) * std::max(B, kp)))));
+
+  for (int l0 = 0; l0 < L && W > 0; l0 += batch) {
+    const int lb = std::min(batch, L - l0);
+    cams.upload(&cams_in[size_t(l0)], size_t(lb));
+    line_ids.upload(&lines[size_t(l0)], size_t(lb));
+    gpu.start();
+    clock.start();
+    uint32_t n_vis = 0, n_entries = 0;
+    forward(lb, W, &n_vis, &n_entries, clock);
+
+    // The loss and dL/dfeatures per pixel.
+    const size_t px = size_t(lb) * W;
+    const size_t n_pb = px * B, n_pk = px * kp;
+    sq_err.reserve(n_pb);
+    g_bands.reserve(n_pb);
+    g_pix.reserve(n_pk);
+    if (n_pb > 0) {
+      band_error_kernel<<<blocks_for(n_pb, 256), 256>>>(int(n_pb), W, K, B, scale, out.get(), basis_t.get(),
+                                                        targets.get(), line_ids.get(), sq_err.get(), g_bands.get());
+      LS_CUDA_CHECK(cudaGetLastError());
+      sum_sq += thrust::reduce(thrust::cuda::par(scratch), sq_err.get(), sq_err.get() + n_pb, 0.0, AddF64());
+    }
+    feature_grad_kernel<<<blocks_for(n_pk, 256), 256>>>(int(n_pk), K, kp, B, basis.get(), g_bands.get(),
+                                                        g_pix.get());
+    LS_CUDA_CHECK(cudaGetLastError());
+    if (learn_basis && px > 0) {
+      const unsigned tiles = blocks_for(px, kTile);
+      const dim3 bgrid(std::min(64u, tiles), blocks_for(size_t(B) * K, kBasisBlock));
+      basis_grad_kernel<<<bgrid, kBasisBlock, size_t(kTile) * (B + K) * sizeof(float)>>>(
+          int(px), K, B, out.get(), g_bands.get(), g_basis.get());
+      LS_CUDA_CHECK(cudaGetLastError());
+    }
+    clock.mark(kPassLoss);
+
+    // Back through the compositing, per (line, tile).
+    zero(g_splat, n_vis);
+    const size_t n_cells = size_t(lb) * n_tiles;
+    const dim3 rgrid(blocks_for(n_cells, kWarpsPerBlock), unsigned(kp / chunk));
+    const dim3 rblock(kTile, kWarpsPerBlock);
+    if (chunk == 8) {
+      raster_backward_kernel<8><<<rgrid, rblock>>>(int(n_cells), n_tiles, W, kp, ranges.get(), values.get(),
+                                                   splats.get(), splat_gid.get(), features.get(), background.get(),
+                                                   trans.get(), contrib.get(), g_pix.get(), g_splat.get(),
+                                                   g_feat.get(), g_bg.get());
+    } else {
+      raster_backward_kernel<16><<<rgrid, rblock>>>(int(n_cells), n_tiles, W, kp, ranges.get(), values.get(),
+                                                    splats.get(), splat_gid.get(), features.get(), background.get(),
+                                                    trans.get(), contrib.get(), g_pix.get(), g_splat.get(),
+                                                    g_feat.get(), g_bg.get());
+    }
+    LS_CUDA_CHECK(cudaGetLastError());
+    clock.mark(kPassRasterBack);
+
+    // Back through the projection, per visible pair.
+    if (n_vis > 0) {
+      project_backward_kernel<<<blocks_for(n_vis, kProjectBlock), kProjectBlock>>>(
+          n_vis, l0, geom.get(), cams.get(), g_splat.get(), splat_gid.get(), splat_line.get(), g_mean.get(),
+          g_cov.get(), g_opacity.get(), g_screen.get(), g_pairs.get(), g_cam.get());
+      LS_CUDA_CHECK(cudaGetLastError());
+    }
+    clock.mark(kPassProjectBack);
+    gpu.stop();
+    clock.collect(st.pass_ms);
+    st.batches += 1;
+    st.visible_pairs += n_vis;
+    st.tile_entries += n_entries;
+  }
+
+  g_log_scales.reserve(3 * size_t(n));
+  g_rotations.reserve(4 * size_t(n));
+  g_logits.reserve(size_t(n));
+  if (n > 0) {
+    gpu.start();
+    clock.start();
+    geometry_backward_kernel<<<blocks_for(size_t(n), kProjectBlock), kProjectBlock>>>(
+        n, log_scales.get(), rotations.get(), logits.get(), g_cov.get(), g_opacity.get(), g_log_scales.get(),
+        g_rotations.get(), g_logits.get());
+    LS_CUDA_CHECK(cudaGetLastError());
+    clock.mark(kPassGeometryBack);
+    gpu.stop();
+    clock.collect(st.pass_ms);
+  }
+
+  if (cam_grad) {
+    clock.start();
+    std::vector<float> c(12 * size_t(L));
+    g_cam.download(c.data(), c.size());
+    cam_grad->resize(size_t(L));
+    for (int l = 0; l < L; ++l) {
+      CameraGradT<float>& cg = (*cam_grad)[size_t(l)];
+      std::copy(&c[12 * size_t(l)], &c[12 * size_t(l)] + 9, cg.R);
+      std::copy(&c[12 * size_t(l)] + 9, &c[12 * size_t(l)] + 12, cg.t);
+    }
+    clock.mark(kPassCopy);
+    clock.collect(st.pass_ms);
+  }
+  st.ms = timer.ms();
+  st.gpu_ms = gpu.total_ms;
+  if (stats) *stats = st;
+  return sum_sq * double(scale);
 }
 
 CudaRasterizer::CudaRasterizer() : impl_(new Impl) {}
@@ -658,34 +806,7 @@ CudaRasterizer::~CudaRasterizer() = default;
 
 void CudaRasterizer::set_scene(const GaussianScene& scene) {
   scene.validate();
-  Impl& m = *impl_;
-  m.n = scene.size();
-  m.k = scene.num_features;
-  m.chunk = m.k <= 8 ? 8 : 16;
-  m.kp = (m.k + m.chunk - 1) / m.chunk * m.chunk;
-  m.bands = scene.num_bands();
-
-  std::vector<float> feat(size_t(m.n) * m.kp, 0.0f), bg(size_t(m.kp), 0.0f);
-  for (int i = 0; i < m.n; ++i)
-    std::copy(&scene.features[size_t(i) * m.k], &scene.features[size_t(i) * m.k] + m.k, &feat[size_t(i) * m.kp]);
-  std::copy(scene.background.begin(), scene.background.end(), bg.begin());
-  m.features.upload(feat.data(), feat.size());
-  m.background.upload(bg.data(), bg.size());
-  m.basis.upload(scene.basis.data(), scene.basis.size());
-
-  // The stored parameters stay on the GPU for the backward pass.
-  m.geom.reserve(size_t(m.n) * 3);
-  if (m.n > 0) {
-    m.means.upload(scene.means.data(), scene.means.size());
-    m.log_scales.upload(scene.log_scales.data(), scene.log_scales.size());
-    m.rotations.upload(scene.rotations.data(), scene.rotations.size());
-    m.logits.upload(scene.opacity_logits.data(), scene.opacity_logits.size());
-    prepare_kernel<<<blocks_for(size_t(m.n), kProjectBlock), kProjectBlock>>>(
-        m.n, m.means.get(), m.log_scales.get(), m.rotations.get(), m.logits.get(), m.geom.get());
-    LS_CUDA_CHECK(cudaGetLastError());
-    LS_CUDA_CHECK(cudaDeviceSynchronize());
-  }
-  m.has_scene = true;
+  impl_->upload_scene(scene);
 }
 
 LineImage CudaRasterizer::render(const std::vector<LineCamera>& cams, CudaRenderStats* stats) {
@@ -717,19 +838,23 @@ void CudaRasterizer::render(const std::vector<LineCamera>& cams, LineImage* out,
     return;
   }
   GpuTimer gpu;
+  PassClock clock(profile);
   const int batch = m.batch_lines(max_pairs_per_batch, W);
   for (int l0 = 0; l0 < L; l0 += batch) {
     const int lb = std::min(batch, L - l0);
     m.cams.upload(&cams[size_t(l0)], size_t(lb));
     gpu.start();
+    clock.start();
     uint32_t n_vis = 0, n_entries = 0;
-    m.forward(lb, W, &n_vis, &n_entries);
+    m.forward(lb, W, &n_vis, &n_entries, clock);
     gpu.stop();
 
     const size_t px = size_t(lb) * W;
     m.out.download(&img.values[size_t(l0) * W * K], px * K);
     m.trans.download(&img.transmittance[size_t(l0) * W], px);
     m.contrib.download(&img.contributors[size_t(l0) * W], px);
+    clock.mark(kPassCopy);
+    clock.collect(st.pass_ms);
 
     st.batches += 1;
     st.visible_pairs += n_vis;
@@ -754,106 +879,14 @@ double CudaRasterizer::mse_backward(const std::vector<LineCamera>& cams, const s
                                     SceneGradT<float>* grad, std::vector<CameraGradT<float>>* cam_grad,
                                     CudaRenderStats* stats) {
   Impl& m = *impl_;
-  if (!m.has_scene) throw std::runtime_error("CudaRasterizer::mse_backward: call set_scene first");
-  if (lines.size() != cams.size())
-    throw std::runtime_error("CudaRasterizer::mse_backward: need one measured line per camera");
-  const int L = int(cams.size()), W = m.t_width, K = m.k, B = m.bands, n = m.n;
-  if (B != m.t_bands)
-    throw std::runtime_error("CudaRasterizer::mse_backward: the scene has " + std::to_string(B) +
-                             " bands and the measured lines " + std::to_string(m.t_bands));
-  for (const auto& c : cams)
-    if (c.width != W) throw std::runtime_error("CudaRasterizer::mse_backward: cameras and measured lines differ in width");
-  for (int l : lines)
-    if (l < 0 || l >= m.t_lines) throw std::runtime_error("CudaRasterizer::mse_backward: no such measured line");
-  if (W > 0xffff) throw std::runtime_error("CudaRasterizer::mse_backward: lines are limited to 65535 pixels");
-  Timer timer;
   CudaRenderStats st;
-  GpuTimer gpu;
-
-  zero(m.g_mean, 3 * size_t(n));
-  zero(m.g_cov, 6 * size_t(n));
-  zero(m.g_opacity, size_t(n));
-  zero(m.g_screen, size_t(n));
-  zero(m.g_pairs, size_t(n));
-  zero(m.g_feat, size_t(n) * m.kp);
-  zero(m.g_bg, size_t(m.kp));
-  zero(m.g_cam, 12 * size_t(L));
-  double sum_sq = 0.0;
-  const float scale = float(1.0 / (double(std::max(1, L)) * std::max(1, W) * std::max(1, B)));
-  const int n_tiles = (W + kTile - 1) / kTile;
-  // The loss kernels index (pixel, band) and (pixel, channel) with an int.
-  const int batch = std::min(m.batch_lines(max_pairs_per_batch, W),
-                             std::max(1, int(INT_MAX / (std::max(1, W) * std::max(B, m.kp)))));
-
-  for (int l0 = 0; l0 < L && W > 0; l0 += batch) {
-    const int lb = std::min(batch, L - l0);
-    m.cams.upload(&cams[size_t(l0)], size_t(lb));
-    m.line_ids.upload(&lines[size_t(l0)], size_t(lb));
-    gpu.start();
-    uint32_t n_vis = 0, n_entries = 0;
-    m.forward(lb, W, &n_vis, &n_entries);
-
-    // The loss and dL/dfeatures per pixel.
-    const size_t px = size_t(lb) * W;
-    const size_t n_pb = px * B, n_pk = px * m.kp;
-    m.sq_err.reserve(n_pb);
-    m.g_bands.reserve(n_pb);
-    m.g_pix.reserve(n_pk);
-    if (n_pb > 0) {
-      band_error_kernel<<<blocks_for(n_pb, 256), 256>>>(int(n_pb), W, K, B, scale, m.out.get(), m.basis.get(),
-                                                        m.targets.get(), m.line_ids.get(), m.sq_err.get(),
-                                                        m.g_bands.get());
-      LS_CUDA_CHECK(cudaGetLastError());
-      sum_sq += thrust::reduce(thrust::device, m.sq_err.get(), m.sq_err.get() + n_pb, 0.0, AddF64());
-    }
-    feature_grad_kernel<<<blocks_for(n_pk, 256), 256>>>(int(n_pk), K, m.kp, B, m.basis.get(), m.g_bands.get(),
-                                                        m.g_pix.get());
-    LS_CUDA_CHECK(cudaGetLastError());
-
-    // Back through the compositing, per (line, tile).
-    zero(m.g_splat, n_vis);
-    const size_t n_cells = size_t(lb) * n_tiles;
-    const dim3 rgrid(blocks_for(n_cells, kWarpsPerBlock), unsigned(m.kp / m.chunk));
-    const dim3 rblock(kTile, kWarpsPerBlock);
-    if (m.chunk == 8) {
-      raster_backward_kernel<8><<<rgrid, rblock>>>(int(n_cells), n_tiles, W, m.kp, m.ranges.get(), m.values.get(),
-                                                   m.splats.get(), m.splat_gid.get(), m.features.get(),
-                                                   m.background.get(), m.trans.get(), m.contrib.get(), m.g_pix.get(),
-                                                   m.g_splat.get(), m.g_feat.get(), m.g_bg.get());
-    } else {
-      raster_backward_kernel<16><<<rgrid, rblock>>>(int(n_cells), n_tiles, W, m.kp, m.ranges.get(), m.values.get(),
-                                                    m.splats.get(), m.splat_gid.get(), m.features.get(),
-                                                    m.background.get(), m.trans.get(), m.contrib.get(),
-                                                    m.g_pix.get(), m.g_splat.get(), m.g_feat.get(), m.g_bg.get());
-    }
-    LS_CUDA_CHECK(cudaGetLastError());
-
-    // Back through the projection, per visible pair.
-    if (n_vis > 0) {
-      project_backward_kernel<<<blocks_for(n_vis, kProjectBlock), kProjectBlock>>>(
-          n_vis, l0, m.geom.get(), m.cams.get(), m.g_splat.get(), m.splat_gid.get(), m.splat_line.get(),
-          m.g_mean.get(), m.g_cov.get(), m.g_opacity.get(), m.g_screen.get(), m.g_pairs.get(), m.g_cam.get());
-      LS_CUDA_CHECK(cudaGetLastError());
-    }
-    gpu.stop();
-    st.batches += 1;
-    st.visible_pairs += n_vis;
-    st.tile_entries += n_entries;
-  }
-
-  m.g_log_scales.reserve(3 * size_t(n));
-  m.g_rotations.reserve(4 * size_t(n));
-  m.g_logits.reserve(size_t(n));
-  if (n > 0) {
-    gpu.start();
-    geometry_backward_kernel<<<blocks_for(size_t(n), kProjectBlock), kProjectBlock>>>(
-        n, m.log_scales.get(), m.rotations.get(), m.logits.get(), m.g_cov.get(), m.g_opacity.get(),
-        m.g_log_scales.get(), m.g_rotations.get(), m.g_logits.get());
-    LS_CUDA_CHECK(cudaGetLastError());
-    gpu.stop();
-  }
+  const double loss = m.backward(cams, lines, grad->learn_basis, cam_grad, max_pairs_per_batch, profile, &st);
 
   // Copy the gradients back, without the feature padding.
+  Timer timer;
+  PassClock clock(profile);
+  clock.start();
+  const int n = m.n, K = m.k;
   SceneGradT<float>& g = *grad;
   g.means.resize(3 * size_t(n));
   g.log_scales.resize(3 * size_t(n));
@@ -875,20 +908,36 @@ double CudaRasterizer::mse_backward(const std::vector<LineCamera>& cams, const s
     std::copy(&padded[size_t(i) * m.kp], &padded[size_t(i) * m.kp] + K, &g.features[size_t(i) * K]);
   m.g_bg.download(padded.data(), size_t(m.kp));
   std::copy(padded.begin(), padded.begin() + K, g.background.begin());
-  if (cam_grad) {
-    std::vector<float> c(12 * size_t(L));
-    m.g_cam.download(c.data(), c.size());
-    cam_grad->resize(size_t(L));
-    for (int l = 0; l < L; ++l) {
-      CameraGradT<float>& cg = (*cam_grad)[size_t(l)];
-      std::copy(&c[12 * size_t(l)], &c[12 * size_t(l)] + 9, cg.R);
-      std::copy(&c[12 * size_t(l)] + 9, &c[12 * size_t(l)] + 12, cg.t);
-    }
+  if (g.learn_basis) {
+    g.basis.resize(size_t(m.bands) * K);
+    m.g_basis.download(g.basis.data(), g.basis.size());
+  } else {
+    g.basis.clear();
   }
-  st.ms = timer.ms();
-  st.gpu_ms = gpu.total_ms;
+  clock.mark(kPassCopy);
+  clock.collect(st.pass_ms);
+  st.ms += timer.ms();
   if (stats) *stats = st;
-  return sum_sq * double(scale);
+  return loss;
+}
+
+CudaMemoryUse CudaRasterizer::memory_use() const {
+  const Impl& m = *impl_;
+  CudaMemoryUse u;
+  u.scene = m.geom.bytes() + m.means.bytes() + m.log_scales.bytes() + m.rotations.bytes() + m.logits.bytes() +
+            m.features.bytes() + m.background.bytes() + m.basis.bytes() + m.basis_t.bytes();
+  u.gradients = m.g_mean.bytes() + m.g_cov.bytes() + m.g_opacity.bytes() + m.g_feat.bytes() + m.g_bg.bytes() +
+                m.g_basis.bytes() + m.g_screen.bytes() + m.g_pairs.bytes() + m.g_log_scales.bytes() +
+                m.g_rotations.bytes() + m.g_logits.bytes();
+  u.pairs = m.packed.bytes() + m.vis_off.bytes() + m.tile_off.bytes();
+  u.splats = m.splats.bytes() + m.splat_gid.bytes() + m.splat_line.bytes() + m.g_splat.bytes();
+  u.keys = m.keys.bytes() + m.values.bytes() + m.ranges.bytes();
+  u.pixels = m.out.bytes() + m.trans.bytes() + m.contrib.bytes() + m.sq_err.bytes() + m.g_bands.bytes() +
+             m.g_pix.bytes();
+  u.cameras = m.cams.bytes() + m.line_ids.bytes() + m.g_cam.bytes();
+  u.targets = m.targets.bytes();
+  u.thrust = m.scratch.bytes();
+  return u;
 }
 
 }  // namespace linesplat

@@ -148,6 +148,7 @@ struct BackwardResult {
   double loss = 0;
   SceneGradT<float> g;
   std::vector<CameraGradT<float>> cam;
+  explicit BackwardResult(bool learn_basis = false) { g.learn_basis = learn_basis; }
 };
 
 // Like render_backward_cpu, the GPU's float sums can tip a splat across a
@@ -165,10 +166,11 @@ void check_backward_close(const BackwardResult& gpu, const BackwardResult& cpu) 
                 {"opacity logits", gpu.g.opacity_logits, cpu.g.opacity_logits},
                 {"features", gpu.g.features, cpu.g.features},
                 {"background", gpu.g.background, cpu.g.background},
+                {"basis", gpu.g.basis, cpu.g.basis},
                 {"screen grad", gpu.g.screen_grad, cpu.g.screen_grad}};
   for (const auto& a : arrays) {
     CHECK(a.a.size() == a.b.size());
-    if (a.a.size() != a.b.size()) continue;
+    if (a.a.size() != a.b.size() || a.b.empty()) continue;
     const double e = rel_err(a.a, a.b);
     std::printf("       %-15s relative error %.2e\n", a.name, e);
     CHECK(e < 1e-2);
@@ -189,10 +191,10 @@ void check_backward_close(const BackwardResult& gpu, const BackwardResult& cpu) 
 
 // The mean squared error against `targets` [L, W, B], both ways.
 BackwardResult cpu_mse_backward(const GaussianScene& s, const std::vector<LineCamera>& cams,
-                                const std::vector<float>& targets) {
+                                const std::vector<float>& targets, bool learn_basis = false) {
   const int W = cams[0].width, B = s.num_bands();
   const double inv = 1.0 / (double(cams.size()) * W * B);
-  BackwardResult r;
+  BackwardResult r(learn_basis);
   r.loss = render_backward_cpu<float>(
       s, cams,
       [&](int l, const float* bands, float* g) {
@@ -208,10 +210,10 @@ BackwardResult cpu_mse_backward(const GaussianScene& s, const std::vector<LineCa
   return r;
 }
 
-BackwardResult gpu_mse_backward(CudaRasterizer& gpu, const std::vector<LineCamera>& cams) {
+BackwardResult gpu_mse_backward(CudaRasterizer& gpu, const std::vector<LineCamera>& cams, bool learn_basis = false) {
   std::vector<int> lines(cams.size());
   for (size_t i = 0; i < lines.size(); ++i) lines[i] = int(i);
-  BackwardResult r;
+  BackwardResult r(learn_basis);
   CudaRenderStats st;
   r.loss = gpu.mse_backward(cams, lines, &r.g, &r.cam, &st);
   std::printf("       GPU backward: %d batches, %lld visible pairs, %.2f ms on the GPU\n", st.batches,
@@ -223,8 +225,9 @@ BackwardResult gpu_mse_backward(CudaRasterizer& gpu, const std::vector<LineCamer
 
 TEST(gpu_backward_matches_cpu) {
   if (!have_gpu()) return;
-  // 5 features through a random 7-band basis (one 8-channel pass), then 37
-  // features as bands (three 16-channel passes with padding).
+  // 5 features through a random 7-band basis (one 8-channel pass) with the
+  // basis gradient, then 37 features as bands (three 16-channel passes with
+  // padding).
   for (int K : {5, 37}) {
     GaussianScene s = lsfix::random_scene(K == 5 ? 3000 : 1200, K, 60 + K);
     Rng rng(70 + K);
@@ -240,7 +243,8 @@ TEST(gpu_backward_matches_cpu) {
     gpu.set_scene(s);
     gpu.set_targets(targets.data(), int(cams.size()), W, B);
     std::printf("       %d features, %d bands\n", K, B);
-    check_backward_close(gpu_mse_backward(gpu, cams), cpu_mse_backward(s, cams, targets));
+    const bool learn_basis = K == 5;
+    check_backward_close(gpu_mse_backward(gpu, cams, learn_basis), cpu_mse_backward(s, cams, targets, learn_basis));
   }
 }
 
@@ -320,6 +324,218 @@ TEST(gpu_training_fits_the_lines_and_improves_the_poses) {
               t.scene().size());
   CHECK(last < 0.25 * first);
   CHECK(e1.rms < 0.8 * e0.rms);
+}
+
+namespace {
+
+// A small synthetic scan (32 px), with `bands` bands.
+SyntheticData small_scan(int bands) {
+  SyntheticOptions so;
+  so.width = 32;
+  so.bands = bands;
+  so.sweeps = 4;
+  so.microsteps_per_line = 8;
+  so.slit_samples = 3;
+  return make_synthetic_dataset(so);
+}
+
+BatchBackwardFn no_backward() {
+  return [](const GaussianScene&, const std::vector<LineCamera>&, const std::vector<int>&, SceneGradT<float>*,
+            std::vector<CameraGradT<float>>*) -> double { throw std::runtime_error("not used"); };
+}
+
+// A random scene with K features through a random basis of `bands` rows.
+GaussianScene random_basis_scene(int n, int K, int bands, uint64_t seed) {
+  GaussianScene s = lsfix::random_scene(n, K, seed);
+  Rng rng(seed + 1);
+  s.basis.resize(size_t(bands) * K);
+  for (float& v : s.basis) v = float(rng.uniform(-0.5, 1.0));
+  return s;
+}
+
+void report_diff(const char* what, const GaussianScene& gpu, const GaussianScene& cpu) {
+  int differ = 0;
+  const double d = lsfix::scene_diff(gpu, cpu, &differ);
+  std::printf("       %-34s %6d Gaussians; largest difference %.1e, %d values not bit-equal\n", what, gpu.size(), d,
+              differ);
+}
+
+}  // namespace
+
+TEST(gpu_adam_matches_cpu) {
+  if (!have_gpu()) return;
+  // Three Adam steps from the same gradients on both sides, the basis
+  // included. The GPU takes the CPU's float operations in the CPU's order.
+  const Dataset d = small_scan(7).dataset;
+  const GaussianScene s = random_basis_scene(3000, 5, 7, 91);
+  HostSceneOptimizer cpu(s, no_backward());
+  CudaSceneOptimizer gpu(d, s);
+  cpu.set_learn_basis(true);
+  gpu.set_learn_basis(true);
+  SceneRates lr;
+  lr.means = 2e-5;
+  lr.log_scales = 5e-3;
+  lr.rotations = 1e-3;
+  lr.opacity = 2.5e-2;
+  lr.features = 5e-3;
+  lr.background = 1e-3;
+  lr.basis = 1e-3;
+  for (int t = 1; t <= 3; ++t) {
+    const SceneGradT<float> g = lsfix::random_gradient(s, 100 + t, true);
+    cpu.set_gradient(g);
+    gpu.set_gradient(g);
+    cpu.adam(lr, t);
+    gpu.adam(lr, t);
+  }
+  report_diff("after 3 Adam steps:", gpu.scene(), cpu.scene());
+  CHECK(lsfix::scene_diff(gpu.scene(), cpu.scene()) < 1e-6);
+  CHECK(lsfix::scene_diff(gpu.scene(), s) > 1e-4);  // it did move
+}
+
+TEST(gpu_densify_matches_cpu) {
+  if (!have_gpu()) return;
+  // The six cases of densify_follows_the_rules, then a random scene where
+  // the room runs out part way through, each followed by an Adam step that
+  // shows the moments were carried over (or zeroed) alike.
+  const Dataset d = small_scan(2).dataset;
+  SceneRates lr;
+  lr.means = 1e-4;
+  lr.log_scales = 1e-3;
+  lr.features = 1e-3;
+  {
+    GaussianScene s;
+    SceneGradT<float> g;
+    DensifyParams p;
+    lsfix::densify_scenario(&s, &g, &p);
+    HostSceneOptimizer cpu(s, no_backward());
+    CudaSceneOptimizer gpu(d, s);
+    cpu.set_gradient(g);
+    gpu.set_gradient(g);
+    cpu.accumulate(1.0);
+    gpu.accumulate(1.0);
+    const DensifyCounts cc = cpu.densify(p), gc = gpu.densify(p);
+    CHECK(gc.added == cc.added && gc.removed == cc.removed);
+    report_diff("the six cases:", gpu.scene(), cpu.scene());
+    CHECK(lsfix::scene_diff(gpu.scene(), cpu.scene()) < 1e-7);
+  }
+  {
+    const GaussianScene s = random_basis_scene(4000, 5, 2, 93);
+    HostSceneOptimizer cpu(s, no_backward());
+    CudaSceneOptimizer gpu(d, s);
+    for (int t = 1; t <= 2; ++t) {  // two steps of statistics and Adam
+      const SceneGradT<float> g = lsfix::random_gradient(s, 200 + t, false, 2.0);
+      cpu.set_gradient(g);
+      gpu.set_gradient(g);
+      cpu.adam(lr, t);
+      gpu.adam(lr, t);
+      cpu.accumulate(1.0);
+      gpu.accumulate(1.0);
+    }
+    DensifyParams p;
+    p.grad = 1.2;  // per pair, from screen gradients of 0 to 2 a step
+    p.split_scale = 1e-3;
+    p.prune_opacity = 0.1;
+    p.max_scale = 2.5e-3;
+    p.max_gaussians = s.size() + 700;
+    p.key = 77;
+    const DensifyCounts cc = cpu.densify(p), gc = gpu.densify(p);
+    std::printf("       random scene: %d -> %d Gaussians, +%d -%d on the CPU, +%d -%d on the GPU\n", s.size(),
+                cpu.size(), cc.added, cc.removed, gc.added, gc.removed);
+    CHECK(gc.added == cc.added && gc.removed == cc.removed);
+    CHECK(cc.added > 500 && cc.removed > 100);
+    report_diff("after densifying:", gpu.scene(), cpu.scene());
+    CHECK(lsfix::scene_diff(gpu.scene(), cpu.scene()) < 1e-7);
+    const SceneGradT<float> g = lsfix::random_gradient(cpu.scene(), 300, false);
+    cpu.set_gradient(g);
+    gpu.set_gradient(g);
+    cpu.adam(lr, 3);
+    gpu.adam(lr, 3);
+    report_diff("and one more Adam step:", gpu.scene(), cpu.scene());
+    CHECK(lsfix::scene_diff(gpu.scene(), cpu.scene()) < 1e-6);
+  }
+}
+
+namespace {
+
+// Trains on the small scan with everything on the GPU, and checks it fits
+// the lines and improves the poses as the CPU trainer test does.
+void train_on_gpu(int bands, int basis) {
+  const SyntheticData sd = small_scan(bands);
+  const Dataset& d = sd.dataset;
+  std::vector<LineCameraT<double>> truth;
+  for (int l = 0; l < d.num_lines(); ++l)
+    truth.push_back(make_line_camera_d(d.head, sd.true_head_pose[size_t(d.line_sweep[size_t(l)])],
+                                       sd.true_mirror_angle[size_t(l)], d.intrinsics));
+  TrainOptions o;
+  o.iterations = 200;
+  o.batch_lines = 32;
+  o.pose_from = 20;
+  o.densify_from = 50;
+  o.densify_every = 50;
+  o.densify_until = 150;
+  o.max_gaussians = 4000;
+  o.learn_basis = basis > 0;
+  GaussianScene init = init_on_plane(d, 3e-3);
+  if (basis > 0) init = reduce_features(init, basis);
+  auto* gpu = new CudaSceneOptimizer(d, init);
+  Trainer t(d, std::unique_ptr<SceneOptimizer>(gpu), o);
+  const PoseErrorPx e0 = line_pose_error_px(t.cameras(), truth);
+  double first = 0, last = 0;
+  int added = 0, removed = 0;
+  for (int i = 0; i < o.iterations; ++i) {
+    const TrainStep st = t.step();
+    if (i < 20) first += st.loss / 20;
+    if (i >= o.iterations - 20) last += st.loss / 20;
+    added += st.densified;
+    removed += st.pruned;
+  }
+  const PoseErrorPx e1 = line_pose_error_px(t.cameras(), truth);
+  const CudaMemoryUse u = gpu->memory_use();
+  std::printf("       %d bands%s: loss %.4f -> %.4f, pose %.2f -> %.2f px, Gaussians %d -> %d (+%d -%d), "
+              "%.2f MB on the GPU\n",
+              bands, basis ? (" through " + std::to_string(basis) + " features").c_str() : "", first, last, e0.rms,
+              e1.rms, init.size(), t.scene().size(), added, removed, u.total() / 1048576.0);
+  t.scene().validate();
+  CHECK(t.scene().num_features == (basis ? basis : bands));
+  CHECK(last < 0.25 * first);
+  CHECK(e1.rms < 0.8 * e0.rms);
+  CHECK(added > 0);
+  CHECK(t.scene().size() == init.size() + added - removed);
+  CHECK(u.adam > 0 && u.densify > 0);
+  CHECK(u.targets == d.lines.size() * sizeof(float));
+}
+
+}  // namespace
+
+TEST(gpu_resident_training_fits_the_lines_and_improves_the_poses) {
+  if (!have_gpu()) return;
+  train_on_gpu(3, 0);
+  train_on_gpu(12, 4);
+}
+
+TEST(gpu_profile_times_the_passes) {
+  if (!have_gpu()) return;
+  const Dataset d = small_scan(6).dataset;
+  CudaSceneOptimizer gpu(d, init_on_plane(d, 3e-3));
+  gpu.rasterizer().profile = true;
+  std::vector<int> lines;
+  std::vector<LineCamera> cams;
+  for (int l = 0; l < 32; ++l) {
+    lines.push_back(l);
+    cams.push_back(d.camera(l));
+  }
+  std::vector<CameraGradT<float>> cg;
+  gpu.backward(cams, lines, &cg);
+  SceneRates lr;
+  lr.means = 1e-5;
+  gpu.adam(lr, 1);
+  const CudaRenderStats& st = gpu.stats();
+  std::printf("      ");
+  for (int p = 0; p < kCudaPasses; ++p) std::printf(" %s %.3f", cuda_pass_name(p), st.pass_ms[p]);
+  std::printf(" (ms); %.3f ms on the GPU\n", st.gpu_ms);
+  for (int p : {kPassProject, kPassSort, kPassRaster, kPassLoss, kPassRasterBack, kPassProjectBack, kPassAdam})
+    CHECK(st.pass_ms[p] > 0.0);
+  CHECK(st.pass_ms[kPassDensify] == 0.0);
 }
 
 TEST(gpu_renders_an_empty_scene_as_background) {

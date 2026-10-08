@@ -9,6 +9,12 @@
 
 #ifdef _WIN32
 #include <direct.h>
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <psapi.h>
+#else
+#include <sys/resource.h>
 #endif
 
 namespace linesplat {
@@ -62,6 +68,22 @@ void write_text_file(const std::string& path, const std::string& text) {
   std::ofstream f(path, std::ios::binary);
   if (!f) throw std::runtime_error("cannot write " + path);
   f << text;
+}
+
+double peak_rss_mb() {
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS pmc;
+  if (K32GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof pmc)) return double(pmc.PeakWorkingSetSize) / 1048576.0;
+  return -1.0;
+#else
+  struct rusage ru;
+  if (getrusage(RUSAGE_SELF, &ru) != 0) return -1.0;
+#ifdef __APPLE__
+  return double(ru.ru_maxrss) / 1048576.0;  // bytes
+#else
+  return double(ru.ru_maxrss) / 1024.0;  // kilobytes
+#endif
+#endif
 }
 
 }  // namespace linesplat

@@ -5,22 +5,29 @@
 #include <stdexcept>
 #include <unordered_map>
 
+#include "linesplat/densify.hpp"
 #include "linesplat/util.hpp"
 
 namespace linesplat {
 
 namespace {
-
 constexpr double kBeta1 = 0.9, kBeta2 = 0.999, kEps = 1e-15;
+}  // namespace
 
-// One Adam step on every element of p, at step t (from 1).
-void adam_step(std::vector<float>& p, const std::vector<float>& g, std::vector<float>& m, std::vector<float>& v,
-               double lr, int t) {
+void adam_constants(double lr, int t, float* step, float* eps) {
   // Bias corrections folded into the step size and epsilon.
   const double c1 = 1.0 - std::pow(kBeta1, t), c2 = 1.0 - std::pow(kBeta2, t);
-  const float step = float(lr * std::sqrt(c2) / c1), eps = float(kEps * std::sqrt(c2));
+  *step = float(lr * std::sqrt(c2) / c1);
+  *eps = float(kEps * std::sqrt(c2));
+}
+
+void adam_step(std::vector<float>& p, const std::vector<float>& g, std::vector<float>& m, std::vector<float>& v,
+               double lr, int t) {
+  float step, eps;
+  adam_constants(lr, t, &step, &eps);
   const float b1 = float(kBeta1), b2 = float(kBeta2);
   const int n = int(p.size());
+  // The GPU's adam_kernel does the same float operations in the same order.
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < n; ++i) {
     const float gi = g[size_t(i)];
@@ -31,6 +38,8 @@ void adam_step(std::vector<float>& p, const std::vector<float>& g, std::vector<f
     p[size_t(i)] -= step * mi / (std::sqrt(vi) + eps);
   }
 }
+
+namespace {
 
 Mat3d hat(const Vec3d& w) { return Mat3d{{0.0, -w.z, w.y, w.z, 0.0, -w.x, -w.y, w.x, 0.0}}; }
 
@@ -80,38 +89,41 @@ bool pixel_on_plane(const LineCameraT<double>& c, double p, double plane_z, Vec3
   return true;
 }
 
-// Eigen-decomposition of a symmetric 4x4 matrix by cyclic Jacobi rotations.
-// On return A is diagonal (the eigenvalues) and V's columns the eigenvectors.
-void jacobi_eigen4(double A[4][4], double V[4][4]) {
-  for (int i = 0; i < 4; ++i)
-    for (int j = 0; j < 4; ++j) V[i][j] = i == j ? 1.0 : 0.0;
+// Eigen-decomposition of a symmetric n x n matrix (row-major) by cyclic
+// Jacobi rotations. On return A is diagonal (the eigenvalues) and V's columns
+// are the eigenvectors.
+void jacobi_eigen(int n, double* A, double* V) {
+  auto a = [&](int i, int j) -> double& { return A[size_t(i) * n + j]; };
+  auto v = [&](int i, int j) -> double& { return V[size_t(i) * n + j]; };
+  for (int i = 0; i < n; ++i)
+    for (int j = 0; j < n; ++j) v(i, j) = i == j ? 1.0 : 0.0;
   for (int sweep = 0; sweep < 60; ++sweep) {
     double off = 0.0, diag = 0.0;
-    for (int p = 0; p < 4; ++p) {
-      diag += A[p][p] * A[p][p];
-      for (int q = p + 1; q < 4; ++q) off += A[p][q] * A[p][q];
+    for (int p = 0; p < n; ++p) {
+      diag += a(p, p) * a(p, p);
+      for (int q = p + 1; q < n; ++q) off += a(p, q) * a(p, q);
     }
     if (off <= 1e-30 * diag || off == 0.0) break;
-    for (int p = 0; p < 4; ++p)
-      for (int q = p + 1; q < 4; ++q) {
-        if (A[p][q] == 0.0) continue;
-        const double theta = (A[q][q] - A[p][p]) / (2.0 * A[p][q]);
+    for (int p = 0; p < n; ++p)
+      for (int q = p + 1; q < n; ++q) {
+        if (a(p, q) == 0.0) continue;
+        const double theta = (a(q, q) - a(p, p)) / (2.0 * a(p, q));
         const double t = (theta >= 0.0 ? 1.0 : -1.0) / (std::fabs(theta) + std::sqrt(theta * theta + 1.0));
         const double c = 1.0 / std::sqrt(t * t + 1.0), s = t * c;
-        for (int k = 0; k < 4; ++k) {  // A J
-          const double akp = A[k][p], akq = A[k][q];
-          A[k][p] = c * akp - s * akq;
-          A[k][q] = s * akp + c * akq;
+        for (int k = 0; k < n; ++k) {  // A J
+          const double akp = a(k, p), akq = a(k, q);
+          a(k, p) = c * akp - s * akq;
+          a(k, q) = s * akp + c * akq;
         }
-        for (int k = 0; k < 4; ++k) {  // J^T (A J)
-          const double apk = A[p][k], aqk = A[q][k];
-          A[p][k] = c * apk - s * aqk;
-          A[q][k] = s * apk + c * aqk;
+        for (int k = 0; k < n; ++k) {  // J^T (A J)
+          const double apk = a(p, k), aqk = a(q, k);
+          a(p, k) = c * apk - s * aqk;
+          a(q, k) = s * apk + c * aqk;
         }
-        for (int k = 0; k < 4; ++k) {
-          const double vkp = V[k][p], vkq = V[k][q];
-          V[k][p] = c * vkp - s * vkq;
-          V[k][q] = s * vkp + c * vkq;
+        for (int k = 0; k < n; ++k) {
+          const double vkp = v(k, p), vkq = v(k, q);
+          v(k, p) = c * vkp - s * vkq;
+          v(k, q) = s * vkp + c * vkq;
         }
       }
   }
@@ -141,7 +153,7 @@ Pose fit_rigid(const std::vector<Vec3d>& a, const std::vector<Vec3d>& b, double*
                     {zx - xz, xy + yx, -xx + yy - zz, yz + zy},
                     {xy - yx, zx + xz, yz + zy, -xx - yy + zz}};
   double V[4][4];
-  jacobi_eigen4(N, V);
+  jacobi_eigen(4, &N[0][0], &V[0][0]);
   int best = 0;
   for (int i = 1; i < 4; ++i)
     if (N[i][i] > N[best][best]) best = i;
@@ -276,6 +288,65 @@ GaussianScene init_on_plane(const Dataset& d, double spacing, double plane_z) {
   return s;
 }
 
+GaussianScene reduce_features(const GaussianScene& s, int K) {
+  s.validate();
+  const int N = s.size(), K0 = s.num_features, B = s.num_bands();
+  if (K < 1 || K > B)
+    throw std::runtime_error("reduce_features: need 1 <= K <= bands (" + std::to_string(B) + "), got " +
+                             std::to_string(K));
+  // Each Gaussian's spectrum, and the sum of their outer products.
+  auto spectrum = [&](const float* f, std::vector<double>& x) {
+    for (int b = 0; b < B; ++b) {
+      double v = 0.0;
+      for (int c = 0; c < K0; ++c) v += double(s.basis[size_t(b) * K0 + c]) * f[c];
+      x[size_t(b)] = v;
+    }
+  };
+  std::vector<double> G(size_t(B) * B, 0.0), x(static_cast<size_t>(B));
+  for (int i = 0; i < N; ++i) {
+    spectrum(&s.features[size_t(i) * K0], x);
+    for (int a = 0; a < B; ++a)
+      for (int b = 0; b < B; ++b) G[size_t(a) * B + b] += x[size_t(a)] * x[size_t(b)];
+  }
+  std::vector<double> V(size_t(B) * B);
+  jacobi_eigen(B, G.data(), V.data());
+  // The K largest, each signed so that it adds up positive (the first is
+  // then about the mean spectrum, rather than its negative).
+  std::vector<int> order(static_cast<size_t>(B));
+  for (int b = 0; b < B; ++b) order[size_t(b)] = b;
+  std::stable_sort(order.begin(), order.end(),
+                   [&](int a, int b) { return G[size_t(a) * B + a] > G[size_t(b) * B + b]; });
+  const double scale = std::sqrt(double(B));
+  std::vector<double> U(size_t(B) * K);  // [B, K] orthonormal columns
+  for (int c = 0; c < K; ++c) {
+    const int e = order[size_t(c)];
+    double sum = 0.0;
+    for (int b = 0; b < B; ++b) sum += V[size_t(b) * B + e];
+    const double sign = sum < 0.0 ? -1.0 : 1.0;
+    for (int b = 0; b < B; ++b) U[size_t(b) * K + c] = sign * V[size_t(b) * B + e];
+  }
+
+  GaussianScene r = s;
+  r.num_features = K;
+  r.basis.resize(size_t(B) * K);
+  for (size_t j = 0; j < r.basis.size(); ++j) r.basis[j] = float(scale * U[j]);
+  // Features: the spectrum's coordinates in the scaled basis.
+  auto project = [&](const float* f, float* out) {
+    spectrum(f, x);
+    for (int c = 0; c < K; ++c) {
+      double v = 0.0;
+      for (int b = 0; b < B; ++b) v += U[size_t(b) * K + c] * x[size_t(b)];
+      out[c] = float(v / scale);
+    }
+  };
+  r.features.assign(size_t(N) * K, 0.0f);
+  for (int i = 0; i < N; ++i) project(&s.features[size_t(i) * K0], &r.features[size_t(i) * K]);
+  r.background.assign(size_t(K), 0.0f);
+  project(s.background.data(), r.background.data());
+  r.validate();
+  return r;
+}
+
 BatchBackwardFn cpu_batch_backward(const Dataset& data) {
   return [&data](const GaussianScene& scene, const std::vector<LineCamera>& cams, const std::vector<int>& lines,
                  SceneGradT<float>* grad, std::vector<CameraGradT<float>>* cam_grad) {
@@ -297,26 +368,12 @@ BatchBackwardFn cpu_batch_backward(const Dataset& data) {
   };
 }
 
-Trainer::Trainer(const Dataset& data, GaussianScene init, const TrainOptions& opt, BatchBackwardFn backward)
-    : data_(data),
-      opt_(opt),
-      backward_(backward ? std::move(backward) : cpu_batch_backward(data)),
-      scene_(std::move(init)),
-      rng_(opt.seed) {
-  data_.validate();
+// ---- HostSceneOptimizer ----
+
+HostSceneOptimizer::HostSceneOptimizer(GaussianScene init, BatchBackwardFn backward)
+    : backward_(std::move(backward)), scene_(std::move(init)) {
+  if (!backward_) throw std::runtime_error("HostSceneOptimizer: no backward function");
   scene_.validate();
-  if (scene_.num_bands() != data_.num_bands())
-    throw std::runtime_error("Trainer: the scene has " + std::to_string(scene_.num_bands()) +
-                             " bands and the dataset " + std::to_string(data_.num_bands()));
-  if (opt_.iterations < 1 || opt_.batch_lines < 1 || opt_.densify_every < 1)
-    throw std::runtime_error("Trainer: bad options");
-  pose_frame_ = virtual_camera_in_head(data_.head, 0.0);
-  const int L = data_.num_lines();
-  virt_.resize(size_t(L));
-  v_sign_.resize(size_t(L));
-  for (int l = 0; l < L; ++l)
-    virt_[size_t(l)] = virtual_camera_in_head(data_.head, data_.line_mirror_angle[size_t(l)], &v_sign_[size_t(l)]);
-  poses_.resize(size_t(data_.num_sweeps()));
   const size_t N = size_t(scene_.size()), K = size_t(scene_.num_features);
   a_means_.resize(3 * N);
   a_scales_.resize(3 * N);
@@ -324,8 +381,165 @@ Trainer::Trainer(const Dataset& data, GaussianScene init, const TrainOptions& op
   a_opacity_.resize(N);
   a_features_.resize(N * K);
   a_background_.resize(K);
+  a_basis_.resize(scene_.basis.size());
   screen_sum_.assign(N, 0.0);
   pair_count_.assign(N, 0);
+}
+
+double HostSceneOptimizer::backward(const std::vector<LineCamera>& cams, const std::vector<int>& lines,
+                                    std::vector<CameraGradT<float>>* cam_grad) {
+  grad_.learn_basis = learn_basis_;
+  return backward_(scene_, cams, lines, &grad_, cam_grad);
+}
+
+void HostSceneOptimizer::set_gradient(const SceneGradT<float>& g) { grad_ = g; }
+
+void HostSceneOptimizer::adam(const SceneRates& lr, int t) {
+  adam_step(scene_.means, grad_.means, a_means_.m, a_means_.v, lr.means, t);
+  adam_step(scene_.log_scales, grad_.log_scales, a_scales_.m, a_scales_.v, lr.log_scales, t);
+  adam_step(scene_.rotations, grad_.rotations, a_rots_.m, a_rots_.v, lr.rotations, t);
+  adam_step(scene_.opacity_logits, grad_.opacity_logits, a_opacity_.m, a_opacity_.v, lr.opacity, t);
+  adam_step(scene_.features, grad_.features, a_features_.m, a_features_.v, lr.features, t);
+  adam_step(scene_.background, grad_.background, a_background_.m, a_background_.v, lr.background, t);
+  if (learn_basis_) {
+    if (grad_.basis.size() != scene_.basis.size())
+      throw std::runtime_error("HostSceneOptimizer: learning the basis, but the gradient has none");
+    adam_step(scene_.basis, grad_.basis, a_basis_.m, a_basis_.v, lr.basis, t);
+  }
+}
+
+void HostSceneOptimizer::accumulate(double scale) {
+  for (int i = 0; i < scene_.size(); ++i) {
+    screen_sum_[size_t(i)] += double(grad_.screen_grad[size_t(i)]) * scale;
+    pair_count_[size_t(i)] += grad_.pairs[size_t(i)];
+  }
+}
+
+DensifyThresholds densify_thresholds(const DensifyParams& p) {
+  DensifyThresholds t;
+  t.grad = p.grad;
+  t.split_log = std::log(p.split_scale);
+  t.shrink = float(std::log(1.6));
+  t.min_logit = float(std::log(p.prune_opacity / (1.0 - p.prune_opacity)));
+  t.max_log = float(std::log(p.max_scale));
+  t.key = p.key;
+  return t;
+}
+
+DensifyCounts HostSceneOptimizer::densify(const DensifyParams& p) {
+  const int N = scene_.size(), K = scene_.num_features;
+  const DensifyThresholds th = densify_thresholds(p);
+  struct Born {
+    float mean[3], log_scale[3];
+    int src;  // the Gaussian it copies everything else from
+  };
+  std::vector<Born> born;
+  std::vector<char> keep(size_t(N), 1);
+  int room = p.max_gaussians - N;
+  for (int i = 0; i < N && room > 0; ++i) {
+    if (!densify_wanted(screen_sum_[size_t(i)], pair_count_[size_t(i)], th)) continue;
+    const float* ls = &scene_.log_scales[3 * size_t(i)];
+    const float* m = &scene_.means[3 * size_t(i)];
+    Born b;
+    b.src = i;
+    std::copy(m, m + 3, b.mean);
+    std::copy(ls, ls + 3, b.log_scale);
+    if (densify_splits(ls, th)) {
+      // Too big to sharpen by moving: replace it with two Gaussians drawn
+      // from it, each 1.6 times smaller (as 3DGS does).
+      for (int j = 0; j < 2; ++j) {
+        Born c = b;
+        split_half(m, ls, &scene_.rotations[4 * size_t(i)], uint64_t(i), j, th, c.mean, c.log_scale);
+        born.push_back(c);
+      }
+      keep[size_t(i)] = 0;
+    } else {
+      born.push_back(b);  // small: a copy, which the next steps pull apart
+    }
+    --room;
+  }
+  const int removed_by_split = int(std::count(keep.begin(), keep.end(), 0));
+
+  // What survives: kept Gaussians, then the new ones, minus the nearly
+  // transparent and the oversized.
+  struct Item {
+    int old, born;  // one of them is -1
+  };
+  std::vector<Item> items;
+  int pruned = 0;
+  auto alive = [&](int src, const float* ls) {
+    const bool ok = survives(scene_.opacity_logits[size_t(src)], ls, th);
+    pruned += !ok;
+    return ok;
+  };
+  for (int i = 0; i < N; ++i)
+    if (keep[size_t(i)] && alive(i, &scene_.log_scales[3 * size_t(i)])) items.push_back(Item{i, -1});
+  for (int j = 0; j < int(born.size()); ++j)
+    if (alive(born[size_t(j)].src, born[size_t(j)].log_scale)) items.push_back(Item{-1, j});
+
+  // Rebuild every per-Gaussian array and its Adam state; new Gaussians start
+  // with zero moments.
+  auto rebuild = [&](std::vector<float>& arr, Adam& a, int dim, const float* (*born_src)(const Born&)) {
+    std::vector<float> na(items.size() * dim), nm(items.size() * dim, 0.0f), nv(items.size() * dim, 0.0f);
+    for (size_t k = 0; k < items.size(); ++k) {
+      float* dst = &na[k * dim];
+      if (items[k].old >= 0) {
+        const size_t o = size_t(items[k].old) * dim;
+        std::copy(&arr[o], &arr[o] + dim, dst);
+        std::copy(&a.m[o], &a.m[o] + dim, &nm[k * dim]);
+        std::copy(&a.v[o], &a.v[o] + dim, &nv[k * dim]);
+      } else {
+        const Born& b = born[size_t(items[k].born)];
+        const float* src = born_src ? born_src(b) : &arr[size_t(b.src) * dim];
+        std::copy(src, src + dim, dst);
+      }
+    }
+    arr.swap(na);
+    a.m.swap(nm);
+    a.v.swap(nv);
+  };
+  rebuild(scene_.means, a_means_, 3, [](const Born& b) -> const float* { return b.mean; });
+  rebuild(scene_.log_scales, a_scales_, 3, [](const Born& b) -> const float* { return b.log_scale; });
+  rebuild(scene_.rotations, a_rots_, 4, nullptr);
+  rebuild(scene_.opacity_logits, a_opacity_, 1, nullptr);
+  rebuild(scene_.features, a_features_, K, nullptr);
+  screen_sum_.assign(items.size(), 0.0);
+  pair_count_.assign(items.size(), 0);
+  grad_ = SceneGradT<float>();  // it was for the old Gaussians
+
+  DensifyCounts c;
+  c.added = int(born.size());
+  c.removed = removed_by_split + pruned;
+  return c;
+}
+
+// ---- Trainer ----
+
+Trainer::Trainer(const Dataset& data, GaussianScene init, const TrainOptions& opt, BatchBackwardFn backward)
+    : Trainer(data,
+              std::unique_ptr<SceneOptimizer>(
+                  new HostSceneOptimizer(std::move(init), backward ? std::move(backward) : cpu_batch_backward(data))),
+              opt) {}
+
+Trainer::Trainer(const Dataset& data, std::unique_ptr<SceneOptimizer> scene, const TrainOptions& opt)
+    : data_(data), opt_(opt), scene_(std::move(scene)), rng_(opt.seed) {
+  data_.validate();
+  if (!scene_) throw std::runtime_error("Trainer: no scene");
+  const GaussianScene& s = scene_->scene();
+  s.validate();
+  if (s.num_bands() != data_.num_bands())
+    throw std::runtime_error("Trainer: the scene has " + std::to_string(s.num_bands()) + " bands and the dataset " +
+                             std::to_string(data_.num_bands()));
+  if (opt_.iterations < 1 || opt_.batch_lines < 1 || opt_.densify_every < 1)
+    throw std::runtime_error("Trainer: bad options");
+  scene_->set_learn_basis(opt_.learn_basis);
+  pose_frame_ = virtual_camera_in_head(data_.head, 0.0);
+  const int L = data_.num_lines();
+  virt_.resize(size_t(L));
+  v_sign_.resize(size_t(L));
+  for (int l = 0; l < L; ++l)
+    virt_[size_t(l)] = virtual_camera_in_head(data_.head, data_.line_mirror_angle[size_t(l)], &v_sign_[size_t(l)]);
+  poses_.resize(size_t(data_.num_sweeps()));
   order_.resize(size_t(L));
   for (int l = 0; l < L; ++l) order_[size_t(l)] = l;
   shuffle(order_, rng_);
@@ -386,36 +600,45 @@ TrainStep Trainer::step() {
 
   // Mean squared error over every pixel and band of the batch.
   const bool poses = opt_.refine_poses && iter_ >= opt_.pose_from;
-  SceneGradT<float> grad;
   std::vector<CameraGradT<float>> cam_grad;
-  st.loss = backward_(scene_, cams, batch, &grad, poses ? &cam_grad : nullptr);
+  Timer backward;
+  st.loss = scene_->backward(cams, batch, poses ? &cam_grad : nullptr);
+  st.backward_ms = backward.ms();
 
-  adam_scene(grad);
+  Timer update;
+  SceneRates lr;
+  lr.means = decayed(opt_.lr_means, 0.01);
+  lr.log_scales = opt_.lr_log_scales;
+  lr.rotations = opt_.lr_rotations;
+  lr.opacity = opt_.lr_opacity;
+  lr.features = opt_.lr_features;
+  lr.background = opt_.lr_background;
+  lr.basis = opt_.lr_basis;
+  scene_->adam(lr, iter_);
   if (poses) adam_poses(batch, cams_d, cam_grad);
 
   if (iter_ <= opt_.densify_until) {
     // Per pair, as if the loss were one line's (the batch averages n lines),
     // with the centre measured in line widths so that the threshold doesn't
     // depend on how many pixels the camera has.
-    const double per_line = double(n) * data_.width();
-    for (int i = 0; i < scene_.size(); ++i) {
-      screen_sum_[size_t(i)] += double(grad.screen_grad[size_t(i)]) * per_line;
-      pair_count_[size_t(i)] += grad.pairs[size_t(i)];
+    scene_->accumulate(double(n) * data_.width());
+    if (iter_ >= opt_.densify_from && iter_ % opt_.densify_every == 0) {
+      DensifyParams p;
+      p.grad = opt_.densify_grad;
+      p.split_scale = opt_.split_scale;
+      p.prune_opacity = opt_.prune_opacity;
+      p.max_scale = opt_.max_scale;
+      p.max_gaussians = opt_.max_gaussians;
+      p.key = mix64(opt_.seed ^ mix64(uint64_t(iter_)));
+      const DensifyCounts c = scene_->densify(p);
+      st.densified = c.added;
+      st.pruned = c.removed;
     }
-    if (iter_ >= opt_.densify_from && iter_ % opt_.densify_every == 0) densify(&st);
   }
-  st.gaussians = scene_.size();
+  st.update_ms = update.ms();
+  st.gaussians = scene_->size();
   st.ms = timer.ms();
   return st;
-}
-
-void Trainer::adam_scene(const SceneGradT<float>& g) {
-  adam_step(scene_.means, g.means, a_means_.m, a_means_.v, decayed(opt_.lr_means, 0.01), iter_);
-  adam_step(scene_.log_scales, g.log_scales, a_scales_.m, a_scales_.v, opt_.lr_log_scales, iter_);
-  adam_step(scene_.rotations, g.rotations, a_rots_.m, a_rots_.v, opt_.lr_rotations, iter_);
-  adam_step(scene_.opacity_logits, g.opacity_logits, a_opacity_.m, a_opacity_.v, opt_.lr_opacity, iter_);
-  adam_step(scene_.features, g.features, a_features_.m, a_features_.v, opt_.lr_features, iter_);
-  adam_step(scene_.background, g.background, a_background_.m, a_background_.v, opt_.lr_background, iter_);
 }
 
 void Trainer::adam_poses(const std::vector<int>& lines, const std::vector<LineCameraT<double>>& cams,
@@ -444,100 +667,6 @@ void Trainer::adam_poses(const std::vector<int>& lines, const std::vector<LineCa
       p.zeta[k] -= (k < 3 ? lr_t : lr_r) * (p.m[k] / c1) / (std::sqrt(p.v[k] / c2) + kEps);
     }
   }
-}
-
-void Trainer::densify(TrainStep* st) {
-  const int N = scene_.size(), K = scene_.num_features;
-  struct Born {
-    float mean[3], log_scale[3];
-    int src;  // the Gaussian it copies everything else from
-  };
-  std::vector<Born> born;
-  std::vector<char> keep(size_t(N), 1);
-  int room = opt_.max_gaussians - N;
-  const double split_log = std::log(opt_.split_scale), shrink = std::log(1.6);
-  for (int i = 0; i < N && room > 0; ++i) {
-    if (pair_count_[size_t(i)] == 0 || screen_sum_[size_t(i)] / pair_count_[size_t(i)] < opt_.densify_grad) continue;
-    const float* ls = &scene_.log_scales[3 * size_t(i)];
-    const float* m = &scene_.means[3 * size_t(i)];
-    Born b;
-    b.src = i;
-    std::copy(m, m + 3, b.mean);
-    std::copy(ls, ls + 3, b.log_scale);
-    if (std::max(ls[0], std::max(ls[1], ls[2])) > split_log) {
-      // Too big to sharpen by moving: replace it with two Gaussians drawn
-      // from it, each 1.6 times smaller (as 3DGS does).
-      const float* q = &scene_.rotations[4 * size_t(i)];
-      const Mat3d R = quat_to_mat<double>(q[0], q[1], q[2], q[3]);
-      for (int j = 0; j < 2; ++j) {
-        const Vec3d z{std::exp(double(ls[0])) * rng_.normal(), std::exp(double(ls[1])) * rng_.normal(),
-                      std::exp(double(ls[2])) * rng_.normal()};
-        const Vec3d off = R * z;
-        Born c = b;
-        c.mean[0] += float(off.x);
-        c.mean[1] += float(off.y);
-        c.mean[2] += float(off.z);
-        for (float& v : c.log_scale) v -= float(shrink);
-        born.push_back(c);
-      }
-      keep[size_t(i)] = 0;
-    } else {
-      born.push_back(b);  // small: a copy, which the next steps pull apart
-    }
-    --room;
-  }
-  const int removed_by_split = int(std::count(keep.begin(), keep.end(), 0));
-
-  // What survives: kept Gaussians, then the new ones, minus the nearly
-  // transparent and the oversized.
-  const float min_logit = float(std::log(opt_.prune_opacity / (1.0 - opt_.prune_opacity)));
-  const float max_log = float(std::log(opt_.max_scale));
-  struct Item {
-    int old, born;  // one of them is -1
-  };
-  std::vector<Item> items;
-  int pruned = 0;
-  auto alive = [&](int src, const float* ls) {
-    const bool ok = scene_.opacity_logits[size_t(src)] >= min_logit && std::max(ls[0], std::max(ls[1], ls[2])) <= max_log;
-    pruned += !ok;
-    return ok;
-  };
-  for (int i = 0; i < N; ++i)
-    if (keep[size_t(i)] && alive(i, &scene_.log_scales[3 * size_t(i)])) items.push_back(Item{i, -1});
-  for (int j = 0; j < int(born.size()); ++j)
-    if (alive(born[size_t(j)].src, born[size_t(j)].log_scale)) items.push_back(Item{-1, j});
-
-  // Rebuild every per-Gaussian array and its Adam state; new Gaussians start
-  // with zero moments.
-  auto rebuild = [&](std::vector<float>& arr, Adam& a, int dim, const float* (*born_src)(const Born&)) {
-    std::vector<float> na(items.size() * dim), nm(items.size() * dim, 0.0f), nv(items.size() * dim, 0.0f);
-    for (size_t k = 0; k < items.size(); ++k) {
-      float* dst = &na[k * dim];
-      if (items[k].old >= 0) {
-        const size_t o = size_t(items[k].old) * dim;
-        std::copy(&arr[o], &arr[o] + dim, dst);
-        std::copy(&a.m[o], &a.m[o] + dim, &nm[k * dim]);
-        std::copy(&a.v[o], &a.v[o] + dim, &nv[k * dim]);
-      } else {
-        const Born& b = born[size_t(items[k].born)];
-        const float* src = born_src ? born_src(b) : &arr[size_t(b.src) * dim];
-        std::copy(src, src + dim, dst);
-      }
-    }
-    arr.swap(na);
-    a.m.swap(nm);
-    a.v.swap(nv);
-  };
-  rebuild(scene_.means, a_means_, 3, [](const Born& b) -> const float* { return b.mean; });
-  rebuild(scene_.log_scales, a_scales_, 3, [](const Born& b) -> const float* { return b.log_scale; });
-  rebuild(scene_.rotations, a_rots_, 4, nullptr);
-  rebuild(scene_.opacity_logits, a_opacity_, 1, nullptr);
-  rebuild(scene_.features, a_features_, K, nullptr);
-  screen_sum_.assign(items.size(), 0.0);
-  pair_count_.assign(items.size(), 0);
-
-  st->densified = int(born.size());
-  st->pruned = removed_by_split + pruned;
 }
 
 PoseErrorPx line_pose_error_px(const std::vector<LineCameraT<double>>& estimate,

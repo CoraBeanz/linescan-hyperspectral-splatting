@@ -146,7 +146,12 @@ Each Gaussian stores K features instead of RGB, and a shared basis
 (bands × K) turns features into a spectrum. Compositing is linear in the color,
 so the renderers composite K channels and apply the basis once per pixel. The
 synthetic ground truth uses K = 46 and an identity basis (the features are the
-spectrum); training can use a small K with a learned basis.
+spectrum). Training can use fewer: `splat_train --basis 8` starts from the
+starting scene's 8 principal spectra (an eigendecomposition of its spectra,
+which K = 8 reproduces to 3·10⁻⁴ rms on the synthetic scene) and then learns
+the basis along with the features. Its gradient is a sum over pixels of
+dL/dband × feature, one more term in the backward pass. Fewer features means
+less memory and less raster work per Gaussian, which is what the Nano needs.
 
 ## The CUDA rasterizer
 
@@ -180,11 +185,28 @@ loss per pixel (bands, error and dL/dfeatures), the raster pass backwards (one
 warp per (line, tile) again, each lane walking its pixel's list back to front
 from where the forward pass stopped, the warp summing each splat's gradients
 so that it costs one atomic add per value), and the projection backwards (one
-thread per visible pair, into the Gaussian and the line's camera). The
-trainer copies the scene up and the gradients down every step and keeps Adam
-on the CPU, which is simple and costs a few MB of copies per step. On TheRig
-the GPU's gradients agree with the CPU reference's to about 10⁻⁶ (relative),
-and a training step takes 3 to 5 ms.
+thread per visible pair, into the Gaussian and the line's camera). By
+default the trainer copies the scene up and the gradients down every step and
+keeps Adam on the CPU, which is simple and costs a few MB of copies per step.
+On TheRig the GPU's gradients agree with the CPU reference's to about 10⁻⁶
+(relative).
+
+With `--gpu-adam` the scene, its Adam moments and densification stay on the
+GPU (`src/cuda/optimizer.cu`); only the 128 line cameras go up and their pose
+gradients come down. On TheRig that takes a `default` step from 7.1 to 1.9 ms
+(the copies were most of it), and 8 features through a learned basis
+(`--basis 8`) to 1.1 ms; [`docs/nano_budget.md`](docs/nano_budget.md) has
+every preset. Adam and densification run the same code as on the CPU and
+give the same scene bit for bit, which the tests check:
+
+- **Adam** uses `__fmul_rn`, `__fadd_rn` and friends, which stop the compiler
+  fusing a multiply and an add into one FMA (one rounding instead of two), so
+  each value rounds exactly as on the CPU.
+- **Densification** needs random offsets for the split Gaussians. Instead of
+  one random stream, which only a single thread could walk in order, each
+  offset is a hash of (step, Gaussian, axis), so any thread can make its own.
+- **New Gaussians go where the CPU puts them**: prefix sums over "kept" and
+  "born" flags give each Gaussian its slot in the new arrays.
 
 The tests run both renderers on the same lines and require all but 0.1% of
 values to agree to 10⁻⁴ (float rounding can tip a splat across a cutoff).
@@ -192,7 +214,9 @@ On a 4-core cloud CPU the reference renders the default dataset (1712 lines ×
 256 pixels × 46 bands) in 0.12 s. On TheRig (RTX 4070 SUPER, CUDA 13.4) the
 CUDA renderer does it in 2.8 ms of GPU work, or 9.3 ms counting the copy of the
 80 MB result back to the CPU, against 40 ms for the reference on the machine's
-28-thread i7-14700KF. The Nano's numbers will follow.
+28-thread i7-14700KF. [`docs/nano_budget.md`](docs/nano_budget.md) works out
+what training takes on the Nano, in memory and time per preset, and lists the
+commands that measure it there.
 
 ## Training
 
@@ -380,6 +404,12 @@ cd build/splat
 # Train a splat and refine the sweep poses (on the GPU if there is one, --cpu
 # to force the CPU); for synthetic data it reports the pose error before and after
 ./splat_train synth synth/train
+# ... everything on the GPU, 8 features through a learned basis, and the GPU
+# time and memory per pass
+./splat_train synth synth/train8 --gpu-adam --basis 8 --profile
+
+# Time and memory per preset and mode, as Markdown tables (docs/nano_budget.md)
+python3 ../../splat/tools/nano_budget.py --bin . --presets small,default
 
 # CPU vs GPU on every line, with timings
 ./splat_render compare synth
@@ -407,27 +437,35 @@ include/linesplat/
 ├── scene.hpp             GaussianScene: shapes, opacities, spectral features, basis
 ├── scan_model.hpp        poses, the scan mirror, the CAD head, intrinsics from the optics
 ├── render_cpu.hpp        reference renderer, float or double
-├── cuda_rasterizer.hpp   the CUDA renderer and backward pass (src/cuda/rasterizer.cu)
+├── cuda_rasterizer.hpp   the CUDA renderer and backward pass, and CudaSceneOptimizer
 ├── gradients.hpp         backward of the projection and the Gaussian parameters, host and device
 ├── backward_cpu.hpp      reference backward pass: lines -> loss -> scene and camera gradients
 ├── trainer.hpp           Adam, densification, per-sweep poses, the pose error metric
+├── densify.hpp           densification's rules and the split, shared by the CPU and GPU
 ├── dataset.hpp           the dataset format above
 ├── synthetic.hpp         the synthetic scene and scan
 ├── spectra.hpp           material spectra, true color (CIE 1931) and CIR
 └── preview.hpp, png.hpp, npy.hpp, rng.hpp, util.hpp
-src/                      a .cpp per header, and cuda/rasterizer.cu
-tools/                    splat_synth, splat_render, splat_train, splat_export
+src/                      a .cpp per header
+src/cuda/
+├── rasterizer.cu         the passes, forward and backward
+├── optimizer.cu          Adam and densification on the GPU (--gpu-adam)
+└── cuda_common.cuh, rasterizer_impl.cuh   buffers, timers and the GPU state
+tools/                    splat_synth, splat_render, splat_train, splat_export,
+                          scan_to_dataset.py, nano_budget.py
 tests/                    one file per topic; test_cuda skips without a GPU
+docs/                     nano_budget.md, figures
 ```
 
 ## Next steps
 
-1. **Time training on the Nano**, where TheRig's GPU takes 3 to 5 ms a step.
+1. **Measure training on the Nano** with the commands in
+   [`docs/nano_budget.md`](docs/nano_budget.md), and fill in its measured
+   column; the page lists what to try first if a pass is slower than
+   expected.
 2. **Real data**: `tools/scan_to_dataset.py` converts a scan folder from the
    rig (ros2/so101_scan_camera bins its lines with the calibration's maps);
    what is left is first light and a real scan.
-3. **Fewer features than bands**: a learned spectral basis (K of 8 to 12
-   instead of 46), which cuts memory and time on the Nano. The basis gradient
-   isn't written yet.
-4. **Keep training on the GPU** (Adam and densification there) if copying the
-   scene every step turns out to matter on the Nano.
+3. **Pick K for real spectra.** `--basis 8` matches the full spectrum on the
+   synthetic scene, whose spectra are smooth curves; real materials and the
+   spectrograph's noise may want 10 or 12.
