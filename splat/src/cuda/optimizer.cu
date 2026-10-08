@@ -41,7 +41,7 @@ __global__ void adam_kernel(int n, float* __restrict__ p, const float* __restric
   const float vi = __fadd_rn(__fmul_rn(b2, v[i]), __fmul_rn(__fmul_rn(1.0f - b2, gi), gi));
   m[i] = mi;
   v[i] = vi;
-  p[i] = __fsub_rn(p[i], __fdiv_rn(__fmul_rn(step, mi), __fadd_rn(__fsqrt_rn(vi), eps)));
+  p[i] = __fadd_rn(p[i], -__fdiv_rn(__fmul_rn(step, mi), __fadd_rn(__fsqrt_rn(vi), eps)));
 }
 
 __global__ void accumulate_kernel(int n, double scale, const float* __restrict__ g_screen,
