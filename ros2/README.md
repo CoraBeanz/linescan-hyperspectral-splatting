@@ -10,8 +10,8 @@ for each, which is what the line-camera splat needs: its lines and their camera 
 | [`so101_scan_hardware`](so101_scan_hardware) | ros2_control driver for the STS3215 servo bus (C++), plus `sts_scan`, `sts_calibrate` and a fake servo bus |
 | [`so101_scan_description`](so101_scan_description) | URDF: the SO-101 with the scanner head on its wrist, the scan mirror as a joint, the line camera as the mirror sees it |
 | [`so101_scan_bringup`](so101_scan_bringup) | `scan_arm.launch.py` and the controller and mirror settings |
-| [`so101_scan_sweep`](so101_scan_sweep) | Mirror bridge, simulated mirror ESP32, `scan_sweep`, `make_plan`, `move_arm`, example plans |
-| [`so101_scan_camera`](so101_scan_camera) | `line_camera` (the IMX219 through V4L2: frames to calibrated scan lines), `capture_reference`, `scan_to_dataset` (a scan to the splat trainer's dataset), a simulated camera and spectrograph |
+| [`so101_scan_sweep`](so101_scan_sweep) | Mirror bridge, simulated mirror ESP32, `scan_sweep` (and its `--dry-run`), `make_plan` (views around a spot, or covering an object), `move_arm`, example plans |
+| [`so101_scan_camera`](so101_scan_camera) | `line_camera` (the IMX219 through V4L2: frames to calibrated scan lines, and colour waterfalls of each sweep), `capture_reference`, `scan_to_dataset` (a scan to the splat trainer's dataset), a simulated camera and spectrograph |
 | [`docker/`](docker), [`udev/`](udev) | The container for the Jetson Nano and stable device names |
 
 ## How it fits together
@@ -120,6 +120,44 @@ directions, and leaves out the ones the arm can't reach or that come too close t
 ros2 run so101_scan_sweep make_plan --target 0.26 0 0.03 --tilts 0 20 --azimuths 90 180 270 --out /data/plans/box.yaml
 ```
 
+## Seeing a scan before and while it runs
+
+**Plan around an object.** Give `make_plan` the object as a box (the middle of its bottom, then
+its width, depth and height along `base_link` x, y and z, in metres) and it plans for coverage
+([`coverage.py`](so101_scan_sweep/so101_scan_sweep/coverage.py)):
+
+```bash
+ros2 run so101_scan_sweep make_plan --object 0.26 0 --size 0.06 0.06 0.012 --out /data/plans/relief.yaml
+```
+
+It tries views from several tilts and azimuths aimed where they meet the box, works out which
+points on its top and sides each view's sweep sees (inside the scan line's fan, within 30 mm of
+focus, and facing the camera within 60°), and keeps the fewest views that see every point from
+two directions, since a splat needs two to place a point in depth. It prints how much of each
+face the plan covers; a face no reachable view sees (the side facing the arm's base, usually)
+is named, so you can turn the object round for a second scan.
+
+**Dry run.** `scan_sweep --plan <plan> --dry-run` plays a plan on the running stack without
+moving anything ([`dry_run.py`](so101_scan_sweep/so101_scan_sweep/dry_run.py)): a see-through
+copy of the arm moves through the viewpoints at the plan's speed in RViz or Foxglove
+(`/scan/markers`), each sweep's scan lines appear where they would land, and a coverage plan's
+box shows its surface turning from red to yellow to green as views see it. It checks every move
+for the joint limits and for how close the arm and head come to the table (and the object) on
+the way, the sweep against the bridge's mirror limits, and whether the controller, the mirror
+(homed?) and the camera are up, then prints a report and exits 1 if anything would go wrong.
+`--speed 4` plays it four times faster, and `--no-play` only checks. Try every new plan this way
+before the real arm runs it.
+
+**Colour waterfalls.** While a sweep runs, `line_camera` publishes it as images, a row per scan
+line and the slit across: `/line_camera/scan_preview_true_color` (what your eye would see) and
+`/line_camera/scan_preview_cir` (colour infrared: 800 to 900 nm as red, so plants glow red and
+green paint doesn't), next to the grey `/line_camera/scan_preview`. They're worked out the way
+`scan_to_dataset` makes the dataset, as reflectance against the latest white reference in the
+46 bands from 500 to 950 nm, with the same colour maths as the splat renderer and the web viewer
+([`waterfall.py`](so101_scan_camera/so101_scan_camera/waterfall.py)). Until a white is taken
+the colours are relative to the calibration's lamp, close but not exact. Magenta marks a slit
+bin with a saturated pixel: lower `exposure_us`. In Foxglove, add an Image panel on either topic.
+
 ## On the Jetson Nano
 
 JetPack 4 is Ubuntu 18.04 and Humble needs 22.04, so ROS runs in the container
@@ -169,7 +207,8 @@ the motors holding the arm where it is; `torque:=false` or that switch lets it g
    `torque:=false`). Then
    `ros2 run so101_scan_sweep move_arm --plan <plans>/one_view.yaml` moves at 20°/s to the
    view that looks straight down at the table.
-5. **A scan with the simulated mirror:** `ros2 run so101_scan_sweep scan_sweep --plan <plans>/one_view.yaml`.
+5. **A scan with the simulated mirror:** first `ros2 run so101_scan_sweep scan_sweep --plan <plans>/one_view.yaml --dry-run`
+   to see the move in Foxglove and read the report, then the same without `--dry-run`.
    The arm moves and holds while the fake mirror sweeps; check `arm_motion_max_rad` in the
    scan's `scan.json` to see how still the arm held.
 6. **The real mirror:** flash and bench-test the ESP32 first
@@ -193,11 +232,13 @@ the motors holding the arm where it is; `torque:=false` or that switch lets it g
    camera:=v4l2 camera_calibration:=/data/hsical/cal` (the folder `hsical calibrate` wrote).
    [`config/line_camera.yaml`](so101_scan_camera/config/line_camera.yaml) has its settings;
    `ros2 param set /line_camera exposure_us 8000` changes the exposure while it runs, and
-   `~/preview` and `~/scan_preview` show the frames and the sweep so far.
+   `~/preview` and `~/scan_preview` show the frames and the sweep so far, the sweep in colour
+   too (see [the colour waterfalls](#seeing-a-scan-before-and-while-it-runs)).
 3. **Take a white and a dark**, with the mirror still and the head over the PTFE sheet under the
    scan's lamp: `ros2 run so101_scan_camera capture_reference white`, then cap the lens and
    `capture_reference dark`. It says how bright the white is; aim for a peak of 50 to 90% of
-   full scale and take the dark at the same exposure. The next scans use them.
+   full scale and take the dark at the same exposure. The next scans use them, and so do the
+   colour waterfalls.
 4. **Scan:** `scan_sweep` has `line_camera` record into the scan's folder, and the bridge locks
    the sweeps to its frames (the log says how many frames a line takes). A plan's
    `camera: {record: required}` refuses to scan without the camera; `off` scans without it.
@@ -252,10 +293,12 @@ colcon build && colcon test && colcon test-result --verbose
 ```
 
 The tests need no hardware: the C++ driver runs against the fake servo bus, the bridge against
-the simulated ESP32, one test brings up the whole stack and scans a two-viewpoint plan, and the
+the simulated ESP32, one test brings up the whole stack and scans a two-viewpoint plan, another
+plans views around a box and plays them with `--dry-run` (checking nothing moved), and the
 camera tests run `line_camera` on a simulated camera that sees what the simulated mirror really
-did, and replay a synthetic scan through `scan_to_dataset` to check that the trainer's camera
-model sees the scene in every pixel of every line.
+did, check its colour waterfalls against the scene's true colours, and replay a synthetic scan
+through `scan_to_dataset` to check that the trainer's camera model sees the scene in every
+pixel of every line.
 
 The URDF has two generated parts. `so101_arm.xacro` comes from the vendored SO-101 URDF
 (`scripts/so101_urdf_to_xacro.py`), and `scan_head_params.xacro` plus the head meshes come from
