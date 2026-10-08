@@ -1,0 +1,90 @@
+(footprint "A3144_UA_Leads"
+	(version 20260206)
+	(generator "build_boards.py")
+	(layer "F.Cu")
+	(descr "Allegro A3144 in the UA (SIP-3) package, mounted behind the board with its leads through it. Pad 1 VCC, 2 GND, 3 OUT, seen from the solder side.")
+	(tags "hall A3144 UA SIP-3")
+	(property "Reference" "REF**"
+		(at 0 2.2 0)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "A3144_UA_Leads"
+		(at 0 3.2 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(pad "1" thru_hole rect
+		(at 1.27 0)
+		(size 1.05 1.7)
+		(drill 0.75)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+	)
+	(pad "2" thru_hole oval
+		(at 0 0)
+		(size 1.05 1.7)
+		(drill 0.75)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+	)
+	(pad "3" thru_hole oval
+		(at -1.27 0)
+		(size 1.05 1.7)
+		(drill 0.75)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+	)
+	(fp_rect
+		(start -2.05 -2.65)
+		(end 2.05 0.65)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+	)
+	(fp_text user "body behind board"
+		(at 0 -3.3 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 0.5 0.5)
+				(thickness 0.08)
+			)
+		)
+	)
+	(fp_rect
+		(start -2 -1.1)
+		(end 2 1.1)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 -1.4 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 0.5 0.5)
+				(thickness 0.08)
+			)
+		)
+	)
+	(embedded_fonts no)
+)

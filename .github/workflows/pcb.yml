@@ -1,0 +1,46 @@
+# PCBs: KiCad's electrical and design rules checks on both boards (warnings
+# count as failures), with the check that each board matches its schematic,
+# in KiCad's own container; and lint on the generator scripts.
+name: pcb
+
+on:
+  push:
+    branches: [main]
+    paths: ["pcb/**", ".github/workflows/pcb.yml"]
+  pull_request:
+    paths: ["pcb/**", ".github/workflows/pcb.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: ERC and DRC (KiCad 10)
+    runs-on: ubuntu-24.04
+    container:
+      image: kicad/kicad:10.0
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+      - name: kicad-cli version
+        run: kicad-cli version
+      - name: ERC and DRC on both boards
+        run: python3 pcb/tools/fab.py --check-only
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install "ruff==0.16.8"
+      - name: Lint pcb/tools
+        run: ruff check --isolated --select E,F,W --line-length 120 --output-format github pcb/tools/
