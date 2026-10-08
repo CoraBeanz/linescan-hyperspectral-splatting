@@ -90,4 +90,25 @@ The `RAM a/b MB` field in tegrastats' log is the whole board's memory, the
 number the 4 GB has to cover; its peak while `full` trains is the one to
 record.
 
-LEVERS
+## If the Nano is slower than this
+
+What to try, in the order the estimate above suggests:
+
+- **Read each Gaussian once per block of lines, not once per line.** The
+  projection pass runs a thread per (line, Gaussian) pair, and each reads the
+  Gaussian's 48 bytes of geometry. TheRig's 48 MB L2 cache holds them all, so
+  that costs nothing there; the Nano's 256 KB doesn't, so at the default
+  preset it reads 80 MB a step from memory. A thread that projects one
+  Gaussian into 8 lines would read a sixteenth of that.
+- **Sort fewer bits.** The keys are 64 bits, but the line and tile in the
+  high half need only about 11 (128 lines, up to 16 tiles), so a radix sort
+  told to skip the unused bits (CUB's `begin_bit`/`end_bit`, which CUDA 10.2
+  ships inside Thrust) makes a third fewer passes.
+- **Fewer features.** `--basis 8` is the biggest lever already in the code: the
+  raster passes, the loss and Adam all scale with the features.
+- **Measured lines as 16-bit floats.** Halves the largest buffer (and its copy
+  in CPU memory), rounding each value by at most 0.05%, far below the
+  sensor's noise.
+- **Drop the CPU's copy of the lines** once they are on the GPU (`--gpu-adam`
+  needs them on the CPU only for the final comparison, which could read the
+  file again).

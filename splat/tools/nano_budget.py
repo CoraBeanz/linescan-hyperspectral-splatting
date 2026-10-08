@@ -84,6 +84,9 @@ def parse(out):
     if m:
         r["passes_ms"] = {k.strip(): float(v) for k, v in re.findall(r"([a-z ]+?) ([\d.]+),", m.group(1))}
         r["gpu_ms"] = float(m.group(2))
+    m = re.search(r"([\d.]+) visible pairs and ([\d.]+) sort keys a step", out)
+    if m:
+        r["visible_pairs"], r["sort_keys"] = float(m.group(1)), float(m.group(2))
     return r
 
 
@@ -139,12 +142,13 @@ def main():
                                       if p in r.get("passes_ms", {})))
     if passes:
         print("\nGPU ms per step, by pass (averaged over every step):\n")
-        print("| Preset | Mode | " + " | ".join(passes) + " | all |")
-        print("|---|---|" + "---|" * (len(passes) + 1))
+        print("| Preset | Mode | " + " | ".join(passes) + " | all | visible pairs | sort keys |")
+        print("|---|---|" + "---|" * (len(passes) + 3))
         for r in results:
             pm = r.get("passes_ms", {})
             print("| {} | {} | ".format(r["preset"], r["mode"]) + " | ".join(fmt(pm.get(p), 3) for p in passes)
-                  + " | {} |".format(fmt(r.get("gpu_ms"), 2)))
+                  + " | {} | {} | {} |".format(fmt(r.get("gpu_ms"), 2), fmt(r.get("visible_pairs"), 0),
+                                              fmt(r.get("sort_keys"), 0)))
     parts = sorted({p for r in results for p in r.get("gpu_parts_mb", {})},
                    key=lambda p: min(list(r.get("gpu_parts_mb", {})).index(p) for r in results
                                      if p in r.get("gpu_parts_mb", {})))

@@ -456,12 +456,13 @@ docs/                     nano_budget.md, figures
 
 ## Next steps
 
-1. **Time training on the Nano**, where TheRig's GPU takes 3 to 5 ms a step.
+1. **Measure training on the Nano** with the commands in
+   [`docs/nano_budget.md`](docs/nano_budget.md), and fill in its measured
+   column; the page lists what to try first if a pass is slower than
+   expected.
 2. **Real data**: `tools/scan_to_dataset.py` converts a scan folder from the
    rig (ros2/so101_scan_camera bins its lines with the calibration's maps);
    what is left is first light and a real scan.
-3. **Fewer features than bands**: a learned spectral basis (K of 8 to 12
-   instead of 46), which cuts memory and time on the Nano. The basis gradient
-   isn't written yet.
-4. **Keep training on the GPU** (Adam and densification there) if copying the
-   scene every step turns out to matter on the Nano.
+3. **Pick K for real spectra.** `--basis 8` matches the full spectrum on the
+   synthetic scene, whose spectra are smooth curves; real materials and the
+   spectrograph's noise may want 10 or 12.
