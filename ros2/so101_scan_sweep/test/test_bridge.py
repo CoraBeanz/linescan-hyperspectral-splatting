@@ -148,9 +148,10 @@ def test_sweep_lines_angles_and_stamps(ros, fake):
     assert res.rad_per_step == pytest.approx(RAD_PER_STEP)
     assert abs(res.start_angle - start) <= RAD_PER_STEP / 2
     lines = check_sweep(client, fake, res, 25, 0.02)
-    # the mirror joint followed the sweep
-    mirror = [j.position[0] for j in client.joints if j.name == ["scan_mirror_joint"]]
-    assert any(abs(a - lines[-1].angle) < 1e-9 for a in mirror)
+    # the mirror joint followed the sweep (the bridge publishes each line's joint state just
+    # after the line, so the last one can arrive a moment after the line that ends the sweep)
+    client.wait_for(lambda: any(abs(j.position[0] - lines[-1].angle) < 1e-9
+                                for j in list(client.joints) if j.name == ["scan_mirror_joint"]), 2.0)
     client.wait_for(lambda: client.state.sweep_id == res.sweep_id and not client.state.busy)
 
 
