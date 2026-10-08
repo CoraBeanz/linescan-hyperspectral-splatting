@@ -131,12 +131,15 @@ def shell(doc, parent, P):
         y = P.y_shaft + s * P.bolt_pitch / 2
         cuts.append(b.cyl("bolt%d" % i, "x", (-xi - 1, y, zl), P.m3_clear / 2, xo + xi + 2))
         cuts.append(b.cyl("bolt_head%d" % i, "x", (xo - 3, y, zl), P.m3_head / 2, 4))
-    # hall sensor pocket and lead slot in the +X wall
+    # hall sensor pocket in the +X wall. The leads leave the body's bottom face and bend 90 deg just
+    # under it, so the slot runs under the pocket, through the wall, as wide as the leads need; the
+    # pocket floor either side of it is the ledge the body sits on
     cuts.append(b.box("hall_pocket", xi - 0.01, P.hall_y - 2.25, P.hall_z - 1.65, 1.71, 4.5, 3.3))
-    cuts.append(b.box("hall_leads", xi + 1.0, P.hall_y - 2.2, P.hall_z - 1.5, P.wall, 4.4, 1.0))
+    cuts.append(b.box("hall_leads", xi - 0.01, P.hall_y - 1.8, P.hall_z - P.hall_lead_dz - 0.5, P.wall + 0.02, 3.6,
+                      P.hall_lead_dz - 1.1))
     # the hall breakout lies on the +X face over the slot; a 0.8 mm recess behind its lower half takes
     # the solder on the back of its cable pads and the strain-relief thread between its tie holes
-    yb, zb_top = P.hall_y - P.hb_lead_x, P.hall_z - 1.0 + P.hb_lead_y     # board's -Y edge and top edge
+    yb, zb_top = P.hall_y - P.hb_lead_x, P.hall_z - P.hall_lead_dz + P.hb_lead_y     # board's -Y and top edges
     cuts.append(b.box("hall_board_recess", xo - 0.8, yb + 1.4, zb_top - 11.8, 0.81, 11.2, 5.4))
     # end wall: opening the board's square M12 holder passes through at any angle; M2 inserts in the standoffs
     cuts.append(b.cyl("cam_opening", "z", (0, 0, zw_in - 1), P.brd_holder_w / 2 ** 0.5 + 0.5, P.carrier_t + 2, cf))

@@ -253,9 +253,12 @@ def hall_sensor(doc, parent, P):
     b = Part(doc, c, "hall").m("chip")
     b.box("body", 0.1, -2.05, -1.5, 1.5, 4.1, 3.0)
     b.m("steel")
+    dz = P.hall_lead_dz
     for i, y in enumerate((-1.27, 0, 1.27)):
-        # bent at the body, out through the wall's slot and the breakout, trimmed 1 mm proud of it
-        b.box("lead%d" % i, 1.6, y - 0.2, -1.2, P.wall + P.hb_t - 0.6, 0.4, 0.4)
+        # out of the body's bottom face, bent 90 deg just under it, out through the slot under the
+        # pocket and through the breakout, trimmed 1 mm proud of it
+        b.box("leg%d" % i, 0.65, y - 0.2, 0.2 - dz, 0.4, 0.4, dz - 1.7)
+        b.box("lead%d" % i, 0.65, y - 0.2, -0.2 - dz, P.wall + P.hb_t + 0.35, 0.4, 0.4)
     return c
 
 
@@ -270,7 +273,7 @@ def hall_board(doc, parent, P):
     behind. Local frame: origin at the board's top corner on the -Y side, on
     its back face; KiCad's board coordinates (bx, by), y down, sit at
     (bx, -by, 0). Hole and part positions from pcb/tools/boards.py."""
-    f = Frame((P.x_in + P.wall, P.hall_y - P.hb_lead_x, P.hall_z - 1.0 + P.hb_lead_y))
+    f = Frame((P.x_in + P.wall, P.hall_y - P.hb_lead_x, P.hall_z - P.hall_lead_dz + P.hb_lead_y))
     c = container(doc, parent, "HSI_hall_board", "Hall-sensor breakout (pcb/hall_breakout)", f,
                   fixed_rot=_ON_PLUS_X)
     b = Part(doc, c, "hallpcb").m("pcb_green")
@@ -319,7 +322,7 @@ def controller_board(doc, parent, P, frame):
     b.m("pcb_black").box("driver_pcb", 45.72, -34.29, seat, 15.24, 20.32, 1.6)
     b.m("aluminum").cbox("heatsink", 53.34, -24.13, seat + 1.6, 12.0, 12.0, 9.4)
     b.m("chip").box("jack", 80.2, -18.5, t, 14.8, 9.0, 11.0)                 # J1, 12 V
-    b.m("connector").box("terminal", 83.69, -31.04, t, 11.04, 11.17, 10.0)   # J2, 12 V
+    b.m("connector").box("terminal", 83.69, -31.04, t, 11.04, 11.17, 14.0)   # J2, 12 V, to its screw tops
     b.box("motor_conn", 62.14, -30.77, t, 6.75, 13.4, 7.0)                    # J3, JST XH 4-pin
     b.box("hall_conn", 42.77, -64.9, t, 10.9, 6.75, 7.0)                      # J4, JST XH 3-pin
     b.m("anodized_black").cyl("c1", "z", (61.75, -8.5, t), 3.15, 11.0)       # 100 uF

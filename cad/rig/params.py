@@ -127,6 +127,8 @@ def rows():
     p("z_mirror", "=z_shaft + mirror_e / sqrt(2)", "mm", "mirror centre on the optical axis", "design")
     p("hall_y", "=y_shaft - mag_r * cos(45 + mirror_home)", "mm", "hall sensor Y (magnet at home)", "design")
     p("hall_z", "=z_shaft - mag_r * sin(45 + mirror_home)", "mm", "hall sensor Z (magnet at home)", "design")
+    p("hall_lead_dz", 2.2, "mm", "A3144 leads, bent 90 deg under the body: their run out through the wall, below "
+      "hall_z (the breakout's lead holes follow it)", "design")
     p("z_obj", "=z_mirror + mirror_to_obj", "mm", "objective principal plane", "model")
     p("z_slit", "=z_obj + s_img", "mm", "slit plane", "model")
     p("z_coll", "=z_slit + f_coll", "mm", "collimator principal plane", "model")

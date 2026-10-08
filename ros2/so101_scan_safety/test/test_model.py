@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -124,7 +125,10 @@ def test_a_move_stops_where_the_driver_would(model):
     before = check.path(a, b)[check.path(a, b).index(q) - 1]
     assert 0 <= model.evaluate(before).workspace_margin < 0.005
     report = check.check_plan(model, [("down", a), ("low", b)])
-    assert report.problems[0].startswith("viewpoint low: the head goes 97.5 mm below the table top")
+    # about 97.5 mm: the head's collision box is centred on its centre of mass, which moves a little
+    # whenever the CAD's mass budget changes
+    low = re.match(r"viewpoint low: the head goes ([\d.]+) mm below the table top", report.problems[0])
+    assert low and float(low.group(1)) == pytest.approx(97.5, abs=1.0), report.problems
     assert report.problems[1].startswith("moving from down to low: the head comes within")
 
 
