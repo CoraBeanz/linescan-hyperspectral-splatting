@@ -103,8 +103,20 @@ class ThrustScratch {
       p = it->second;
       free_.erase(it);
     } else {
-      LS_CUDA_CHECK(cudaMalloc(&p, want));
-      bytes_ += want;
+      // Nothing free is big enough. The requests grow as training adds
+      // Gaussians, and the sort's goes up and down with the lines, so a free
+      // block too small now would most likely never be used again: free them
+      // all, and grow by at least half so that the next bump fits.
+      size_t largest = 0;
+      for (auto& f : free_) {
+        largest = std::max(largest, f.first);
+        LS_CUDA_CHECK(cudaFree(f.second));
+        bytes_ -= f.first;
+      }
+      free_.clear();
+      size = std::max(want, largest + largest / 2);
+      LS_CUDA_CHECK(cudaMalloc(&p, size));
+      bytes_ += size;
     }
     used_[p] = size;
     return p;

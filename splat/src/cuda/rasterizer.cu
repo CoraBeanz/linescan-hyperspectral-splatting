@@ -231,10 +231,21 @@ __device__ __forceinline__ int warp_max(int v) {
   return v;
 }
 
+// The basis transposed, [k, bands], for band_error_kernel.
+__global__ void transpose_kernel(int rows, int cols, const float* __restrict__ in, float* __restrict__ out) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= rows * cols) return;
+  const int r = i / cols, c = i - r * cols;
+  out[size_t(c) * rows + r] = in[i];
+}
+
 // Backward pass 6a: one thread per (pixel, band): the band value (basis x
 // features), its squared error, and dL/dband for L = scale * sum of squares.
+// Neighbouring threads take neighbouring bands of one pixel, so they read
+// the transposed basis (basis_t[c, b]) from one cache line instead of 32;
+// the basis itself would be a row (k floats) apart per thread.
 __global__ void band_error_kernel(int n, int width, int k, int bands, float scale, const float* __restrict__ feat,
-                                  const float* __restrict__ basis, const float* __restrict__ targets,
+                                  const float* __restrict__ basis_t, const float* __restrict__ targets,
                                   const int* __restrict__ line_ids, float* __restrict__ sq_err,
                                   float* __restrict__ g_bands) {
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -242,9 +253,8 @@ __global__ void band_error_kernel(int n, int width, int k, int bands, float scal
   const int pix = i / bands, b = i - pix * bands;
   const int line = pix / width, p = pix - line * width;
   const float* f = feat + size_t(pix) * k;
-  const float* row = basis + size_t(b) * k;
   float v = 0.0f;
-  for (int c = 0; c < k; ++c) v += row[c] * f[c];
+  for (int c = 0; c < k; ++c) v += basis_t[size_t(c) * bands + b] * f[c];
   const float d = v - targets[(size_t(line_ids[line]) * width + p) * bands + b];
   sq_err[i] = d * d;
   g_bands[i] = 2.0f * scale * d;
@@ -676,6 +686,11 @@ double CudaRasterizer::Impl::backward(const std::vector<LineCamera>& cams_in, co
   zero(g_bg, size_t(kp));
   zero(g_cam, 12 * size_t(L));
   if (learn_basis) zero(g_basis, size_t(B) * K);
+  basis_t.reserve(size_t(B) * K);
+  if (B * K > 0) {
+    transpose_kernel<<<blocks_for(size_t(B) * K, 256), 256>>>(B, K, basis.get(), basis_t.get());
+    LS_CUDA_CHECK(cudaGetLastError());
+  }
   clock.mark(kPassCopy);
   clock.collect(st.pass_ms);
   double sum_sq = 0.0;
@@ -701,7 +716,7 @@ double CudaRasterizer::Impl::backward(const std::vector<LineCamera>& cams_in, co
     g_bands.reserve(n_pb);
     g_pix.reserve(n_pk);
     if (n_pb > 0) {
-      band_error_kernel<<<blocks_for(n_pb, 256), 256>>>(int(n_pb), W, K, B, scale, out.get(), basis.get(),
+      band_error_kernel<<<blocks_for(n_pb, 256), 256>>>(int(n_pb), W, K, B, scale, out.get(), basis_t.get(),
                                                         targets.get(), line_ids.get(), sq_err.get(), g_bands.get());
       LS_CUDA_CHECK(cudaGetLastError());
       sum_sq += thrust::reduce(thrust::cuda::par(scratch), sq_err.get(), sq_err.get() + n_pb, 0.0, AddF64());
@@ -910,7 +925,7 @@ CudaMemoryUse CudaRasterizer::memory_use() const {
   const Impl& m = *impl_;
   CudaMemoryUse u;
   u.scene = m.geom.bytes() + m.means.bytes() + m.log_scales.bytes() + m.rotations.bytes() + m.logits.bytes() +
-            m.features.bytes() + m.background.bytes() + m.basis.bytes();
+            m.features.bytes() + m.background.bytes() + m.basis.bytes() + m.basis_t.bytes();
   u.gradients = m.g_mean.bytes() + m.g_cov.bytes() + m.g_opacity.bytes() + m.g_feat.bytes() + m.g_bg.bytes() +
                 m.g_basis.bytes() + m.g_screen.bytes() + m.g_pairs.bytes() + m.g_log_scales.bytes() +
                 m.g_rotations.bytes() + m.g_logits.bytes();

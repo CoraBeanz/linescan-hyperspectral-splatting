@@ -65,8 +65,10 @@ size_t NpyArray::count() const {
   return n;
 }
 
-NpyArray npy_read(const std::string& path) {
-  std::ifstream f(path, std::ios::binary);
+namespace {
+
+// Reads the header, leaving f at the start of the data and a.bytes empty.
+NpyArray read_header(std::ifstream& f, const std::string& path) {
   if (!f) throw std::runtime_error("cannot open " + path);
   char magic[8];
   f.read(magic, 8);
@@ -98,6 +100,14 @@ NpyArray npy_read(const std::string& path) {
       num.clear();
     }
   }
+  return a;
+}
+
+}  // namespace
+
+NpyArray npy_read(const std::string& path) {
+  std::ifstream f(path, std::ios::binary);
+  NpyArray a = read_header(f, path);
   a.bytes.resize(a.count() * dtype_size(a.dtype));
   f.read(a.bytes.data(), std::streamsize(a.bytes.size()));
   if (!f) throw std::runtime_error(path + ": file is shorter than its header says");
@@ -141,6 +151,19 @@ void npy_save(const std::string& path, const std::vector<int32_t>& v, const std:
 }
 
 std::vector<float> npy_load_f32(const std::string& path, std::vector<size_t>* shape) {
+  // float32 on a little-endian machine reads straight into the result, so a
+  // dataset's lines don't take twice their size in memory while they load.
+  std::ifstream f(path, std::ios::binary);
+  const NpyArray h = read_header(f, path);
+  const uint16_t one = 1;
+  if (h.dtype == "<f4" && *reinterpret_cast<const unsigned char*>(&one) == 1) {
+    if (shape) *shape = h.shape;
+    std::vector<float> out(h.count());
+    f.read(reinterpret_cast<char*>(out.data()), std::streamsize(out.size() * sizeof(float)));
+    if (!f) throw std::runtime_error(path + ": file is shorter than its header says");
+    return out;
+  }
+  f.close();
   NpyArray a = npy_read(path);
   if (shape) *shape = a.shape;
   return convert<float>(a, path);

@@ -22,6 +22,7 @@
 //   --no-preview  skip the previews at the end
 // At the end it prints the time per step (and what took it), the GPU memory
 // by buffer, and the process's peak memory, for docs/nano_budget.md.
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -67,10 +68,32 @@ LineImage render_any(const GaussianScene& s, const std::vector<LineCamera>& cams
   return render_lines_cpu<float>(s, cams);
 }
 
-double rmse(const std::vector<float>& a, const std::vector<float>& b) {
-  double s = 0;
-  for (size_t i = 0; i < a.size(); ++i) s += double(a[i] - b[i]) * double(a[i] - b[i]);
-  return std::sqrt(s / std::max<size_t>(1, a.size()));
+// The RMSE of a scene's bands against the measured lines and, if there are
+// any, the noise-free ones. Renders 256 lines at a time: all at once, the
+// rendered features and bands would be two more copies of the dataset in
+// memory, which on the Nano is shared with the GPU. Keeps the rendered bands
+// in *bands only if it isn't null (for the previews).
+void compare_lines(const GaussianScene& s, const std::vector<LineCamera>& cams, const Dataset& d,
+                   const std::vector<float>& clean, double* rmse, double* rmse_clean, std::vector<float>* bands) {
+  const size_t per_line = size_t(d.width()) * d.num_bands();
+  double se = 0, se_clean = 0;
+  for (size_t l0 = 0; l0 < cams.size(); l0 += 256) {
+    const std::vector<LineCamera> part(cams.begin() + l0, cams.begin() + std::min(cams.size(), l0 + 256));
+    const LineImage b = features_to_bands(s, render_any(s, part));
+    const size_t o = l0 * per_line;
+    for (size_t i = 0; i < b.values.size(); ++i) {
+      const double e = double(b.values[i]) - d.lines[o + i];
+      se += e * e;
+      if (!clean.empty()) {
+        const double c = double(b.values[i]) - clean[o + i];
+        se_clean += c * c;
+      }
+    }
+    if (bands) bands->insert(bands->end(), b.values.begin(), b.values.end());
+  }
+  const double n = double(std::max<size_t>(1, cams.size() * per_line));
+  *rmse = std::sqrt(se / n);
+  *rmse_clean = std::sqrt(se_clean / n);
 }
 
 std::string pose_text(const PoseErrorPx& e) {
@@ -269,12 +292,17 @@ int main(int argc, char** argv) {
 
     std::vector<LineCamera> cams;
     for (const auto& c : t.cameras()) cams.push_back(cast_camera<float>(c));
-    const LineImage bands = features_to_bands(scene, render_any(scene, cams));
-    std::printf("done      %d Gaussians in %.1f s; RMSE vs measured lines %.4f", scene.size(), total.ms() / 1000.0,
-                rmse(bands.values, d.lines));
-    const std::string clean = join_path(dir, "gt/lines_clean.npy");
-    if (file_exists(clean)) std::printf(", vs noise-free lines %.4f", rmse(bands.values, npy_load_f32(clean)));
-    std::printf("\n");
+    std::vector<float> trained;  // every line's bands, for the previews
+    {
+      const std::string clean_path = join_path(dir, "gt/lines_clean.npy");
+      const std::vector<float> clean = file_exists(clean_path) ? npy_load_f32(clean_path) : std::vector<float>();
+      double fit = 0, fit_clean = 0;
+      compare_lines(scene, cams, d, clean, &fit, &fit_clean, preview ? &trained : nullptr);
+      std::printf("done      %d Gaussians in %.1f s; RMSE vs measured lines %.4f", scene.size(), total.ms() / 1000.0,
+                  fit);
+      if (!clean.empty()) std::printf(", vs noise-free lines %.4f", fit_clean);
+      std::printf("\n");
+    }
     if (!truth.empty())
       std::printf("pose err  %s at the refined poses\n", pose_text(line_pose_error_px(t.cameras(), truth)).c_str());
 
@@ -286,7 +314,7 @@ int main(int argc, char** argv) {
     }
     const std::string pv = join_path(out, "preview");
     make_dirs(pv);
-    write_sweep_pngs(join_path(pv, "measured_vs_trained"), d, {d.lines.data(), bands.values.data()});
+    write_sweep_pngs(join_path(pv, "measured_vs_trained"), d, {d.lines.data(), trained.data()});
     const int w = 480, h = 360;
     const LineImage view = features_to_bands(scene, render_any(scene, pinhole_rows(overview_camera(), w, h, 640.0)));
     write_spectral_png(join_path(pv, "scene_rgb.png"), view.values.data(), h, w, d.wavelengths_nm,

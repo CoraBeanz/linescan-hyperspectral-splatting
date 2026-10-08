@@ -23,6 +23,7 @@ struct CudaRasterizer::Impl {
   cudadetail::DeviceBuffer<float4> geom;
   cudadetail::DeviceBuffer<float> means, log_scales, rotations, logits;
   cudadetail::DeviceBuffer<float> features, background, basis;
+  cudadetail::DeviceBuffer<float> basis_t;  // [k, bands], made from basis by each backward call
   // Per batch.
   cudadetail::DeviceBuffer<LineCamera> cams;
   cudadetail::DeviceBuffer<uint32_t> packed, vis_off, tile_off, values;
