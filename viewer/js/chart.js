@@ -1,6 +1,7 @@
 // The spectrum chart: the sampled points' spectra against wavelength, with
 // the bands the current view uses marked, a crosshair readout, and a click
-// to pick the wavelength shown.
+// to pick the wavelength shown. A reference spectrum (a library material's,
+// in the material views) can be drawn dashed over them.
 
 import { cssColor, spectralColor } from './spectral.js';
 
@@ -29,6 +30,7 @@ export class SpectrumChart {
     this.wl = [];
     this.probes = [];
     this.markers = [];
+    this.reference = null;
     this.svg = el('svg', { class: 'chart-svg', role: 'img' }, root);
     this.tip = document.createElement('div');
     this.tip.className = 'chart-tip';
@@ -47,13 +49,15 @@ export class SpectrumChart {
   setProbes(probes) { this.probes = probes; }
   // markers: [{kind: 'line', nm, label} | {kind: 'band', lo, hi, label}]
   setMarkers(markers) { this.markers = markers; }
+  // reference: {label, color, spectrum} or null
+  setReference(reference) { this.reference = reference; }
 
   layout() {
     const width = Math.max(240, this.root.clientWidth);
     const m = { top: 18, right: 16, bottom: 42, left: 38 };
     const lo = this.wl[0] ?? 500, hi = this.wl[this.wl.length - 1] ?? 950;
     let vmin = 0, vmax = 1;
-    for (const p of this.probes)
+    for (const p of this.reference ? [...this.probes, this.reference] : this.probes)
       for (const v of p.spectrum) {
         vmin = Math.min(vmin, v);
         vmax = Math.max(vmax, v);
@@ -142,6 +146,14 @@ export class SpectrumChart {
       el('polyline', { points: pts, class: 'chart-line', style: `stroke: ${p.color}` }, svg);
       ends.push({ y: y(p.spectrum[p.spectrum.length - 1]), n, color: p.color });
     });
+    // The reference goes over them, so its dashes show where a point matches it.
+    if (this.reference) {
+      const r = this.reference;
+      const pts = this.wl.map((nm, b) => `${x(nm).toFixed(1)},${y(r.spectrum[b]).toFixed(1)}`).join(' ');
+      el('polyline', { points: pts, class: 'chart-line chart-ref', style: `stroke: ${r.color}` }, svg);
+      el('text', { x: width - m.right, y: m.top + 4, class: 'chart-ref-label', 'text-anchor': 'end' }, svg)
+        .textContent = `- - ${r.label}`;
+    }
     ends.sort((a, b) => a.y - b.y);
     ends.forEach((e, j) => {
       const crowded = (j > 0 && e.y - ends[j - 1].y < 13) || (j + 1 < ends.length && ends[j + 1].y - e.y < 13);
@@ -194,6 +206,19 @@ export class SpectrumChart {
       value.textContent = p.spectrum[b].toFixed(3);
       const label = document.createElement('span');
       label.textContent = p.label;
+      row.append(key, value, label);
+      this.tip.appendChild(row);
+    }
+    if (this.reference) {
+      const row = document.createElement('div');
+      row.className = 'chart-tip-row';
+      const key = document.createElement('span');
+      key.className = 'line-key dashed';
+      key.style.color = this.reference.color;
+      const value = document.createElement('strong');
+      value.textContent = this.reference.spectrum[b].toFixed(3);
+      const label = document.createElement('span');
+      label.textContent = this.reference.label;
       row.append(key, value, label);
       this.tip.appendChild(row);
     }

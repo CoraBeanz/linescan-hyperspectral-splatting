@@ -6,7 +6,8 @@
 //
 // It serves viewer/ on a local port, runs test/index.html (the comparisons
 // with the C++ renderer), then drives the page itself: loading, the modes,
-// sampling, orbiting, switching scenes, and a phone-sized layout.
+// sampling, orbiting, switching scenes, the material views, and a
+// phone-sized layout.
 
 import { createServer } from 'node:http';
 import { mkdir, readFile, stat } from 'node:fs/promises';
@@ -106,6 +107,58 @@ async function screenshot(page, name) {
   await page.screenshot({ path: join(shots, `${name}.png`) });
 }
 
+// The middle of the image as shown, through a 2D canvas so the WebGL buffer is read as drawn.
+const centrePixel = (page) => page.evaluate(() => {
+  const v = document.getElementById('view');
+  const c = document.createElement('canvas');
+  c.width = v.width;
+  c.height = v.height;
+  const ctx = c.getContext('2d');
+  window.viewer.draw();
+  ctx.drawImage(v, 0, 0);
+  return Array.from(ctx.getImageData(v.width >> 1, v.height >> 1, 1, 1).data.slice(0, 3)).join(',');
+});
+
+// How many pixels of the image are strongly colored (not gray).
+const colorfulPixels = (page) => page.evaluate(() => {
+  const v = document.getElementById('view');
+  const c = document.createElement('canvas');
+  c.width = v.width;
+  c.height = v.height;
+  const ctx = c.getContext('2d');
+  window.viewer.draw();
+  ctx.drawImage(v, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 4) if (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) > 40) n++;
+  return n;
+});
+
+// Where a sampled point is on the screen, in page coordinates.
+const probeOnScreen = (page, label) => page.evaluate(async (label) => {
+  const { projectPoint } = await import(new URL('js/camera.js', location.href).href);
+  const p = window.viewer.state.probes.find((q) => q.label === label);
+  const cam = window.viewer.frame();
+  const [u, v] = projectPoint(cam, p.point);
+  const r = document.getElementById('view').getBoundingClientRect();
+  return { x: r.left + (u * r.width) / cam.width, y: r.top + (v * r.height) / cam.height };
+}, label);
+
+// The trained sample without its material maps, as splat_export alone writes it.
+async function sampleWithoutMaterials() {
+  const bytes = await readFile(join(root, 'data', 'trained-16-sweeps.lsplat'));
+  const length = bytes.readUInt32LE(8);
+  const header = JSON.parse(bytes.subarray(12, 12 + length).toString('utf8'));
+  delete header.materials;
+  for (const name of ['material_label', 'material_angle', 'cluster', 'abundances']) delete header.blocks[name];
+  const end = Math.max(...Object.values(header.blocks).map((b) => b.offset + b.bytes));
+  let h = Buffer.from(JSON.stringify(header), 'utf8');
+  h = Buffer.concat([h, Buffer.alloc((4 - (h.length % 4)) % 4, ' ')]);
+  const top = Buffer.from(bytes.subarray(0, 12));
+  top.writeUInt32LE(h.length, 8);
+  return Buffer.concat([top, h, bytes.subarray(12 + length, 12 + length + end)]);
+}
+
 const server = await serve();
 const base = `http://127.0.0.1:${server.address().port}/`;
 const browser = await chromium.launch();
@@ -149,17 +202,7 @@ try {
         const k = await page.textContent('#readout-kicker');
         const m = (await page.textContent('#readout-main')).replace(/\s+/g, '');
         expect(k === kicker && m === main.replace(/\s+/g, ''), `${id}: readout "${k}" / "${m}"`);
-        // The middle of the image, through the 2D canvas so the WebGL buffer is read as shown.
-        pixels.add(await page.evaluate(() => {
-          const v = document.getElementById('view');
-          const c = document.createElement('canvas');
-          c.width = v.width;
-          c.height = v.height;
-          const ctx = c.getContext('2d');
-          window.viewer.draw();
-          ctx.drawImage(v, 0, 0);
-          return Array.from(ctx.getImageData(v.width >> 1, v.height >> 1, 1, 1).data.slice(0, 3)).join(',');
-        }));
+        pixels.add(await centrePixel(page));
         seen.push(id);
         if (id !== 'true') await screenshot(page, `desktop-${id}`);
       }
@@ -248,6 +291,103 @@ try {
       return `${a.toFixed(0)} to ${b.toFixed(0)} nm`;
     });
 
+    await step('the Materials view colors each Gaussian by its library match', async () => {
+      await page.selectOption('#scene-select', 'trained');
+      await page.waitForFunction(() => document.getElementById('stats').textContent.includes('12,943'), null, { timeout: 30000 });
+      const before = await colorfulPixels(page);
+      await page.click('label[for="mode-materials"]');
+      await settle(page);
+      expect((await page.textContent('#readout-kicker')) === 'Materials', 'the readout does not say Materials');
+      expect(await page.isVisible('#ctl-materials'), 'the material list is hidden');
+      expect(await page.isHidden('#ctl-exposure'), 'the exposure control is still up');
+      const rows = await page.$$eval('#material-list button', (els) => els.map((e) => e.querySelector('.name').textContent));
+      expect(rows.length === 11, `the list has ${rows.length} materials`);
+      expect(rows[0] === 'white paper', `the largest material is ${rows[0]}`);
+      const unmatched = await page.textContent('#material-list .unmatched');
+      expect(/^No match: \d+% of Gaussians/.test(unmatched), `the list ends "${unmatched}"`);
+      const after = await colorfulPixels(page);
+      expect(after > 2 * before, `${after} colorful pixels, ${before} in true color`);
+      return `${rows.length} materials, ${(await page.textContent('#material-note')).match(/\d+% of the opening view's pixels/)?.[0]}`;
+    });
+    await screenshot(page, 'desktop-materials');
+
+    await step('picking a material in the list shows it alone', async () => {
+      const all = await colorfulPixels(page);
+      await page.click('#material-list button:has(.name:text-is("leaf"))');
+      await settle(page);
+      const st = await page.evaluate(() => ({ h: window.viewer.state.highlight, name: window.viewer.state.scene.materials.classes[window.viewer.state.highlight]?.name }));
+      expect(st.name === 'leaf', `picked ${st.name}`);
+      expect((await page.textContent('#readout-main')) === 'leaf', 'the readout does not name the leaf');
+      const pressed = await page.$$eval('#material-list button[aria-pressed="true"]', (els) => els.length);
+      expect(pressed === 1, `${pressed} buttons pressed`);
+      expect(await page.isVisible('#show-all'), 'Show all is hidden');
+      expect((await page.$$eval('#chart .chart-ref', (els) => els.length)) === 1, 'the chart lacks the library spectrum');
+      const alone = await colorfulPixels(page);
+      expect(alone < all / 2 && alone > 100, `${alone} colorful pixels with the leaf alone, ${all} with all`);
+      await screenshot(page, 'desktop-materials-leaf');
+      await page.click('#show-all');
+      expect((await page.evaluate(() => window.viewer.state.highlight)) === -1, 'Show all did not clear the pick');
+      return `${alone} of ${all} colorful pixels left`;
+    });
+
+    await step('clicking the scene picks the material there', async () => {
+      const at = await probeOnScreen(page, 'Orange box');
+      const next = await page.evaluate(() => window.viewer.state.nextProbe);
+      await page.mouse.click(at.x, at.y);
+      await settle(page);
+      const name = await page.textContent('#readout-main');
+      expect(name === 'orange plastic', `clicking the orange box picked "${name}"`);
+      const legend = await page.$$eval('#legend li', (els) => els.map((e) => e.textContent));
+      expect(legend.at(-1).includes(`Point ${next}`), `the legend ends "${legend.at(-1)}", not with Point ${next}`);
+      expect(/orange plastic \d+%/.test(legend.at(-1)), `the new point reads "${legend.at(-1)}"`);
+      await page.click('#show-all');
+      return `Point ${next} reads ${legend.at(-1).match(/orange plastic \d+%/)[0]}`;
+    });
+
+    await step('clusters color by k-means and name their nearest material', async () => {
+      await page.click('label[for="group-cluster"]');
+      await settle(page);
+      expect((await page.textContent('#readout-kicker')) === 'Clusters', 'the readout does not say Clusters');
+      const subs = await page.$$eval('#material-list button .sub', (els) => els.map((e) => e.textContent));
+      expect(subs.length === 12, `the list has ${subs.length} clusters`);
+      expect(subs[0].startsWith('Nearest: white paper'), `the largest cluster reads "${subs[0]}"`);
+      await screenshot(page, 'desktop-clusters');
+      await page.click('label[for="group-label"]');
+      return subs.slice(0, 3).join('; ');
+    });
+
+    await step('the Abundance view maps one endmember at a time', async () => {
+      await page.click('label[for="mode-abundance"]');
+      await settle(page);
+      expect((await page.textContent('#readout-kicker')) === 'Abundance', 'the readout does not say Abundance');
+      expect((await page.textContent('#readout-main')) === 'leaf', 'leaf is not the first endmember shown');
+      expect(await page.isVisible('#ctl-endmember'), 'the endmember picker is hidden');
+      const leaf = await centrePixel(page);
+      const values = await page.$$eval('#legend li .value', (els) => els.map((e) => e.textContent));
+      expect(values.every((v) => /^(\d\.\d\d|–)$/.test(v)), `the legend reads ${values.join(', ')}`);
+      await screenshot(page, 'desktop-abundance');
+      await page.selectOption('#endmember', { label: 'white paper' });
+      await settle(page);
+      expect((await page.textContent('#readout-main')) === 'white paper', 'the endmember did not change');
+      const paper = await centrePixel(page);
+      expect(paper !== leaf, `the image centre stayed ${leaf}`);
+      return `centre ${leaf} for leaf, ${paper} for white paper`;
+    });
+
+    await step('a file without material maps hides the material views', async () => {
+      await page.setInputFiles('#file-input', {
+        name: 'no-materials.lsplat', mimeType: 'application/octet-stream', buffer: await sampleWithoutMaterials(),
+      });
+      await page.waitForFunction(() => window.viewer.state.scene?.materials === null, null, { timeout: 30000 });
+      await settle(page);
+      expect(await page.isHidden('label[for="mode-materials"]'), 'the Materials mode is still offered');
+      expect(await page.isHidden('label[for="mode-abundance"]'), 'the Abundance mode is still offered');
+      const mode = await page.evaluate(() => window.viewer.state.mode);
+      expect(mode === 'true', `the view stayed in ${mode}`);
+      expect(await page.isHidden('#ctl-endmember'), 'the endmember picker is still up');
+      return await page.textContent('#stats');
+    });
+
     report(errors.length === 0, 'the page ran without errors', errors.join(' | '));
     await page.close();
   }
@@ -266,6 +406,17 @@ try {
     await screenshot(page, 'phone');
     await page.evaluate(() => window.scrollTo(0, document.querySelector('.panel').offsetTop));
     await screenshot(page, 'phone-panel');
+    await step('the material list fits a phone screen', async () => {
+      await page.click('label[for="mode-materials"]');
+      await settle(page);
+      const rows = await page.$$eval('#material-list button', (els) => els.length);
+      expect(rows === 11, `the list has ${rows} materials`);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      expect(overflow <= 0, `the page scrolls sideways by ${overflow}px`);
+      return `${rows} materials`;
+    });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await screenshot(page, 'phone-materials');
     report(errors.length === 0, 'the phone layout ran without errors', errors.join(' | '));
     await page.close();
   }
