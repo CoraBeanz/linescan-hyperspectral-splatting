@@ -458,6 +458,10 @@ def main(argv=None):
         code = 1
     finally:
         executor.shutdown()
+        # let spin() return before Python exits: a daemon thread still inside rclpy's C++
+        # wait when the interpreter shuts down aborts the process ("terminate called
+        # without an active exception"), even though the scan itself went fine
+        spinner.join(timeout=5.0)
         node.destroy_node()
         rclpy.try_shutdown()
     return code
