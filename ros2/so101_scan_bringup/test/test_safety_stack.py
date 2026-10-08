@@ -24,6 +24,7 @@ import yaml
 from control_msgs.action import FollowJointTrajectory
 from rclpy.action import ActionClient
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 from trajectory_msgs.msg import JointTrajectoryPoint
 
@@ -221,10 +222,15 @@ def test_estop_stops_a_scan_and_reset_moves_again(stack, env, ros):
 
 
 def test_estop_topic_and_torque_off(stack, env, ros):
-    pub = subprocess.run(["ros2", "topic", "pub", "--once", "/estop", "std_msgs/msg/Bool", "{data: true}"],
-                         env=env, capture_output=True, text=True, timeout=30)
-    assert pub.returncode == 0, pub.stdout + pub.stderr
-    wait_for(lambda: ros.state.state == ArmSafety.HOLDING, 5.0, "the /estop stop")
+    # true on /estop from a node, as another node would send it (until the driver has seen it:
+    # a publisher's first messages can go out before the driver's subscription is matched)
+    estop = ros.node.create_publisher(Bool, "/estop", 10)
+    deadline = time.monotonic() + 10.0
+    while ros.state.state != ArmSafety.HOLDING:
+        assert time.monotonic() < deadline, "the /estop stop"
+        estop.publish(Bool(data=True))
+        time.sleep(0.1)
+    ros.node.destroy_publisher(estop)
     assert ros.state.reason == "e-stop (/estop)"
     code, output = ros2_run(env, "so101_scan_safety", "arm_estop", "--torque-off")
     assert code == 0, output

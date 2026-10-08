@@ -256,10 +256,11 @@ allowed, and `/arm_safety/state` says which limit held it.
 ```bash
 ros2 run so101_scan_safety arm_estop          # keep it open: Enter or space stops, l goes limp, r resets
 ros2 run so101_scan_safety arm_estop --stop   # one action from a script; also --torque-off, --reset, --status
-ros2 topic pub --once /estop std_msgs/msg/Bool "{data: true}"   # what any other node can do
+ros2 service call /arm_safety/estop std_srvs/srv/Trigger   # the same without arm_estop
 ```
 
-The mirror stops too (the bridge watches `/arm_safety/state` and `/estop`), and `scan_sweep` or
+Any other node can stop the arm by publishing `true` on `/estop` (`std_msgs/Bool`). The mirror
+stops too (the bridge watches `/arm_safety/state` and `/estop`), and `scan_sweep` or
 `move_arm` cancels its move, writes what it logged, and exits saying why. Reset with
 `arm_estop --reset` rather than calling `/arm_safety/reset` yourself: it also restarts
 `arm_controller`, so the controller starts from where the arm is instead of from the goal it
