@@ -37,9 +37,9 @@ All the logic is plain C++ in [`lib/scanmirror`](lib/scanmirror/src), tested on 
 | 5 V (VIN) | A3144 VCC (pin 1) | the A3144 needs 4.5 V or more; its output only pulls low, so 3.3 V is all the ESP32 sees |
 | GPIO 18 | MOVING out | high while the mirror moves or settles |
 | GPIO 19 | TRIG out | 100 µs pulse when a scan line is ready |
-| GPIO 2 | the DevKit's LED | off: disabled; on: enabled; blinking: driver fault |
+| GPIO 2 | status LED | off: disabled; on: enabled; blinking: driver fault. A genuine DevKitC has no LED on this pin (many clones have a blue one); the [controller board](../pcb/README.md#scan-mirror-controller) has its own, D4 |
 
-TMC2209 MS1 and MS2 go to GND (UART address 0). The 12 V supply goes to VM and GND, with the capacitor right at the module. The motor's two coils go to A1/A2 and B1/B2 (the BTT board labels them 1A 1B and 2A 2B). Find the pairs with a multimeter instead of trusting wire colours: about 24 Ω within a coil, open between coils. A coil wired backwards only reverses the direction, which `CFG dir_inv=1` undoes.
+TMC2209 MS1 and MS2 go to GND (UART address 0). The 12 V supply goes to VM and GND, with the capacitor right at the module. The motor's two coils go to A1/A2 and B1/B2 (the BTT board labels them A2, A1, B1, B2, below VM and GND). Find the pairs with a multimeter instead of trusting wire colours: about 24 Ω within a coil, open between coils. A coil wired backwards only reverses the direction, which `CFG dir_inv=1` undoes.
 
 The motor and hall wires run up the arm to the head. Twist each coil's pair, and keep the hall wires away from them.
 

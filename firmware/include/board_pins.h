@@ -27,7 +27,9 @@ constexpr uint8_t kPinHall = 33;
 constexpr uint8_t kPinMoving = 18;  // high while the mirror moves or settles
 constexpr uint8_t kPinTrig = 19;    // short pulse when a scan line is ready
 
-constexpr uint8_t kPinLed = 2;  // the DevKit's blue LED
+// Status LED. A genuine ESP32-DevKitC has no LED on GPIO 2 (clones often have
+// a blue one); the scan controller board (pcb/) has its own here, D4.
+constexpr uint8_t kPinLed = 2;
 
 // USB serial link to the host.
 constexpr uint32_t kHostBaud = 921600;
