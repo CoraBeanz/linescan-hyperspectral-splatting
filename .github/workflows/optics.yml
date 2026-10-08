@@ -48,7 +48,7 @@ jobs:
           cache-dependency-path: .github/workflows/optics.yml
       - name: Install Optiland
         run: pip install "optiland==0.6.2"
-      - name: Spectrograph model, configs A to C
+      - name: Spectrograph model, configs A to E
         run: |
           python optics/spectrograph_model.py
           git diff --exit-code -- optics/model_output/results.txt || {
