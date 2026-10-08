@@ -169,9 +169,13 @@ comparisons there.
 
 ## Putting it online
 
-The page needs nothing but a static file server. With GitHub Pages serving
-this repository's `main` branch, it would be at
-`https://corabeanz.github.io/linescan-hyperspectral-splatting/viewer/`.
+The page needs nothing but a static file server. GitHub Pages serves it with
+both samples at
+[corabeanz.github.io/linescan-hyperspectral-splatting/viewer/](https://corabeanz.github.io/linescan-hyperspectral-splatting/viewer/),
+under the project's [front page](https://corabeanz.github.io/linescan-hyperspectral-splatting/).
+The [pages workflow](../.github/workflows/pages.yml) builds the site with
+[`docs/site/build.sh`](../docs/site/build.sh), opens it in headless Chromium and
+deploys it whenever `viewer/` changes on `main`.
 
 ## Code map
 
