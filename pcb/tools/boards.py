@@ -19,6 +19,7 @@ C1N = [("LCSC", "C46653"), ("MPN", "Samsung CL21B102KBCNNNC"), ("Assembly", "JLC
 SS34 = [("LCSC", "C8678"), ("MPN", "MDD SS34"), ("Assembly", "JLC")]
 SMAJ15A = [("LCSC", "C113958"), ("MPN", "MDD SMAJ15A"), ("Assembly", "JLC")]
 LED_G = [("LCSC", "C2297"), ("MPN", "Hubei KENTO KT-0805G"), ("Assembly", "JLC")]
+LED_R = [("LCSC", "C84256"), ("MPN", "NATIONSTAR NCD0805R1"), ("Assembly", "JLC")]
 PTC = [("LCSC", "C492015"), ("MPN", "PTTC SMD1812P050TF/30"), ("Assembly", "JLC")]
 XH4 = [("LCSC", "C144395"), ("MPN", "JST B4B-XH-A(LF)(SN)"), ("Assembly", "hand")]
 XH3 = [("LCSC", "C144394"), ("MPN", "JST B3B-XH-A(LF)(SN)"), ("Assembly", "hand")]
@@ -37,7 +38,7 @@ CONTROLLER_PARTS = [
     # ref, symbol, value, footprint, {pin: net}, fields, schematic (x, y), extra
     ("U1", "ESP32-DevKitC", "ESP32-DevKitC (38-pin)", "rig:ESP32-DevKitC_Socket",
      {"1": "+3V3", "8": "HALL", "9": "DIR", "10": "STEP", "11": "TMC_EN", "14": "GND", "19": "+5V",
-      "20": "GND", "26": "GND", "27": "TRIG", "28": "MOVING", "30": "UART_TX", "31": "TMC_UART"},
+      "20": "GND", "26": "GND", "27": "TRIG", "28": "MOVING", "30": "UART_TX", "31": "TMC_UART", "34": "STATUS"},
      hand("2x female header 1x19, 2.54 mm (ESP32-DevKitC plugs in)"), (114.3, 165.1), {}),
     ("U2", "BTT_TMC2209", "BTT TMC2209 V1.3", "rig:StepStick_Socket_BTT_TMC2209",
      {"1": "TMC_EN", "2": "GND", "3": "GND", "4": "PDN_UART", "5": "PDN_ALT", "6": "GND", "7": "STEP",
@@ -55,6 +56,7 @@ CONTROLLER_PARTS = [
     ("R5", "R", "220", "rig:R_0805_2012Metric", {"1": "MOVING_OUT", "2": "MOVING"}, R220, (55.88, 248.92), {}),
     ("R6", "R", "220", "rig:R_0805_2012Metric", {"1": "TRIG_OUT", "2": "TRIG"}, R220, (81.28, 248.92), {}),
     ("R7", "R", "4.7k", "rig:R_0805_2012Metric", {"1": "PWR_LED", "2": "VM"}, R4K7, (284.48, 50.8), {}),
+    ("R8", "R", "1k", "rig:R_0805_2012Metric", {"1": "STATUS_LED", "2": "STATUS"}, R1K, (106.68, 248.92), {}),
     ("C1", "C_Polarized", "100uF 25V", "rig:CP_Radial_D6.3mm_P2.50mm", {"1": "VM", "2": "GND"},
      hand("100 uF 25 V or 35 V electrolytic, 6.3 mm, 2.5 mm pitch"), (172.72, 50.8), {}),
     ("C2", "C", "100nF", "rig:C_0805_2012Metric", {"1": "VM", "2": "GND"}, C100N, (198.12, 50.8), {}),
@@ -62,6 +64,7 @@ CONTROLLER_PARTS = [
     ("D1", "D_Schottky", "SS34", "rig:D_SMA", {"1": "VM", "2": "VIN_F"}, SS34, (139.7, 50.8), {}),
     ("D2", "D_TVS_Unidirectional", "SMAJ15A", "rig:D_SMA", {"1": "VM", "2": "GND"}, SMAJ15A, (238.76, 55.88), {}),
     ("D3", "LED", "green", "rig:LED_0805_2012Metric", {"1": "GND", "2": "PWR_LED"}, LED_G, (322.58, 55.88), {}),
+    ("D4", "LED", "red", "rig:LED_0805_2012Metric", {"1": "GND", "2": "STATUS_LED"}, LED_R, (132.08, 254.0), {}),
     ("F1", "Polyfuse", "500mA", "rig:Fuse_1812_4532Metric", {"1": "VIN", "2": "VIN_F"}, PTC, (104.14, 50.8), {}),
     ("J1", "Barrel_Jack_Switch", "12V 5.5x2.1", "rig:BarrelJack_Horizontal", {"1": "VIN", "2": "GND", "3": "GND"},
      hand("DC-005 style 5.5 x 2.1 mm jack, 3 pins"), (50.8, 50.8), {}),
@@ -96,6 +99,8 @@ CONTROLLER_NOTES = [
                            "C3 is fitted only if motor noise shows up."),
     (25.4, 266.7, 1.27, "J5 to the Jetson's 40-pin header (3.3 V GPIO): MOVING, TRIG, GND. "
                         "R5 and R6 protect both ends from a wrong pin."),
+    (25.4, 270.51, 1.27, "D4 is the firmware's status LED on IO2 (off: disabled, on: enabled, blinking: driver fault); "
+                         "a genuine DevKitC has no LED there. The LED and R8 keep IO2 low at boot, as it must be."),
 ]
 
 # Board: 95 x 66 mm
@@ -113,12 +118,14 @@ CONTROLLER_PLACE = {
     "R5": (8.25, 33.02, 0),
     "R6": (8.25, 35.56, 0),
     "R7": (56.50, 3.60, 0),
+    "R8": (8.25, 17.78, 0),
     "C1": (60.50, 8.50, 0),
     "C2": (61.75, 3.60, 0),
     "C3": (45.72, 38.50, 270),
     "D1": (66.50, 14.00, 0),
     "D2": (69.00, 3.60, 0),
     "D3": (52.50, 3.60, 0),
+    "D4": (4.20, 17.78, 0),
     "F1": (74.00, 14.00, 180),
     "J1": (81.00, 14.00, 180),   # jack opening at the right edge
     "J2": (89.40, 28.00, 90),    # wire entry at the right edge
@@ -134,6 +141,7 @@ CONTROLLER_REFS = {
     "D3": (52.5, 1.8, 0), "C2": (61.75, 1.8, 0), "D2": (69.0, 1.4, 0), "C1": (57.3, 8.5, 90),
     "D1": (66.5, 16.3, 0), "F1": (74.0, 16.6, 0), "J1": (77.5, 19.5, 0), "J2": (82.5, 25.5, 0),
     "J3": (66.04, 32.0, 0), "J4": (41.5, 61.0, 90), "J5": (2.54, 30.8, 0), "JP1": (43.18, 20.6, 0),
+    "R8": (8.25, 16.2, 0), "D4": (4.2, 16.2, 0),
 }
 
 CONTROLLER_HOLES = [(3.5, 3.5), (91.5, 3.5), (3.5, 62.5), (91.5, 62.5)]
@@ -172,6 +180,10 @@ CONTROLLER_ROUTES = [
     ("MOVING_OUT", SIG, [("R5", "1"), ("J5", "1")]),
     ("TRIG", SIG, [("U1", "27"), ("R6", "2")]),
     ("TRIG_OUT", SIG, [("R6", "1"), ("J5", "2")]),
+    # status LED on IO2
+    ("STATUS", SIG, [("U1", "34"), ("R8", "2")]),
+    ("STATUS_LED", SIG, [("R8", "1"), ("D4", "2")]),
+    ("GND", SIG, [("D4", "1"), (1.9, 17.78)]),
     # 12 V input, fuse, reverse-polarity diode
     ("VIN", VM, [("J1", "1"), ("F1", "1")]),
     ("VIN", VM, [("J2", "1"), (81.0, 28.0), ("J1", "1")]),
@@ -194,15 +206,16 @@ CONTROLLER_ROUTES = [
 ]
 
 # ground vias: under SMD ground pads, and stitching the two ground pours
-CONTROLLER_VIAS = [(45.72, 40.9), (72.6, 3.6), (49.9, 3.6),
+CONTROLLER_VIAS = [(45.72, 40.9), (72.6, 3.6), (49.9, 3.6), (1.9, 17.78),
                    (25.0, 12.0), (25.0, 30.0), (25.0, 48.0), (8.0, 12.0), (8.0, 50.0),
                    (56.0, 45.0), (70.0, 45.0), (84.0, 45.0), (75.0, 25.0), (60.0, 58.0), (84.0, 58.0)]
 
 CONTROLLER_TEXT = [
     # text, x, y, size, angle, justify
     ("12 V IN", 80.0, 4.6, 1.0, 0, "center"),
-    ("+", 86.2, 28.0, 1.0, 0, "center"),
-    ("-", 86.2, 22.92, 1.0, 0, "center"),
+    ("+", 83.0, 29.6, 1.0, 0, "center"),
+    ("-", 83.0, 22.92, 1.0, 0, "center"),
+    ("STATUS", 6.2, 19.7, 0.8, 0, "center"),
     ("A2", 70.2, 20.32, 0.9, 0, "left"),
     ("A1", 70.2, 22.82, 0.9, 0, "left"),
     ("B1", 70.2, 25.32, 0.9, 0, "left"),
