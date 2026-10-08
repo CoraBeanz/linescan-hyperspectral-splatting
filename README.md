@@ -140,6 +140,7 @@ The rig isn't built yet, so every module is written and tested against simulated
 | [Line-camera splat](splat/) | CPU build and unit tests, and a small synthetic scan trained end to end; the CUDA build with CUDA 13.4 for a desktop GPU (CI has no GPU, so the GPU tests skip there) | [![splat](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/splat.yml/badge.svg)](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/splat.yml) |
 | [Jetson Nano build](jetson/README.md) | The renderer and trainer built with the Nano's CUDA 10.2 and gcc 7.5 for sm_53, every kernel checked against the Nano's registers and shared memory, and the tests on arm64 Ubuntu 18.04 | [![jetson](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/jetson.yml/badge.svg)](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/jetson.yml) |
 | [Splat viewer](viewer/) | The page's file reader, colour weights, spectra and WebGL2 image against the C++ renderer, then the page itself at a desktop and a phone size, in headless Chromium | [![viewer](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/viewer.yml/badge.svg)](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/viewer.yml) |
+| [GitHub Pages site](https://corabeanz.github.io/linescan-hyperspectral-splatting/) | Builds the front page and the viewer, opens them in headless Chromium, and deploys them from `main` | [![pages](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/pages.yml/badge.svg)](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/pages.yml) |
 | [Instrument simulator](sim/) | The self-test, which scans a relief target, calibrates the simulated instrument and checks the reflectance against the truth, and the unit tests, on Python 3.10 with the oldest packages it allows and on 3.13 | [![sim](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/sim.yml/badge.svg)](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/sim.yml) |
 | [CAD model](cad/) | Lint on the FreeCAD scripts | [![cad](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/cad.yml/badge.svg)](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/cad.yml) |
 | [Optiland model](optics/) | Reruns the model and checks that its results, the CAD's as-built optics and the calibration kit's design map are current | [![optics](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/optics.yml/badge.svg)](https://github.com/CoraBeanz/linescan-hyperspectral-splatting/actions/workflows/optics.yml) |
@@ -217,7 +218,7 @@ The true scene (left), and splats trained from 16 sweeps (middle) and from 8 (ri
 
 <img src="viewer/docs/viewer.jpg" width="100%" alt="The viewer in color infrared: the splat trained from 16 synthetic sweeps, where the green ball and the black panel's hidden word NIR show red, beside the controls and a chart of the spectra sampled at the ball, the box and the panel.">
 
-Every Gaussian carries a spectrum, so the [viewer](viewer/) can draw a trained splat at any single wavelength, in true color, in color infrared, or as a band index such as NDVI, and it plots the full spectrum of any point you click. Above, in color infrared, the ball's leaf spectrum and the black panel's dye both rise past 700 nm, so both turn red and the hidden word shows. It is plain HTML, JavaScript and WebGL2 with no build step, and its tests check it against the C++ renderer.
+Every Gaussian carries a spectrum, so the [viewer](viewer/) can draw a trained splat at any single wavelength, in true color, in color infrared, or as a band index such as NDVI, and it plots the full spectrum of any point you click. Above, in color infrared, the ball's leaf spectrum and the black panel's dye both rise past 700 nm, so both turn red and the hidden word shows. It is plain HTML, JavaScript and WebGL2 with no build step, and its tests check it against the C++ renderer. **[Open it in your browser](https://corabeanz.github.io/linescan-hyperspectral-splatting/viewer/)**, on GitHub Pages.
 
 ## Roadmap
 
@@ -251,7 +252,8 @@ Details for each step are in the [build order](docs/parts_list_and_design.md#4-b
 docs/
 ├── parts_list_and_design.md   parts with vendors and prices, first-order design, build order
 ├── optical_train_v2.svg       optical train drawing (v1 kept alongside)
-└── img/                       README figures; img/src/ holds the scripts that draw the SVGs
+├── img/                       README figures; img/src/ holds the scripts that draw the SVGs
+└── site/                      the GitHub Pages front page, and the script that builds the site
 optics/
 ├── spectrograph_model.py      Optiland model of the spectrograph, configs A–C
 ├── readme_figures.py          traces the model and renders the Optiland figures

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Line-Scan Hyperspectral Splatting</title>
+<meta name="description" content="A homebuilt pushbroom spectrograph rides an SO-101 robot arm, and the 3D Gaussian splat it trains stores a full 500 to 950 nm spectrum in every Gaussian.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='7' y='1' width='2' height='14' rx='1' fill='%23d9d4c7'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap">
+<style>
+/* The project's front page on GitHub Pages: the README's opening in the viewer's
+   colours, with the way into the viewer up top. build.sh puts it at the site's root. */
+:root {
+  --ground: #0b0d10;
+  --panel: #16191e;
+  --line: #2a3038;
+  --ink: #e8e6e1;
+  --ink-2: #aeb2b8;
+  --ink-3: #80868f;
+  --accent: #d9d4c7;
+  --focus: #8ab8ff;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 17px/1.55 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--ink); text-underline-offset: 3px; text-decoration-color: var(--ink-3); }
+a:hover { text-decoration-color: var(--ink); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 48px; }
+img { display: block; width: 100%; height: auto; }
+.hero { border-radius: 10px; overflow: hidden; }
+h1 {
+  margin: 32px 0 8px;
+  font: 600 clamp(30px, 5vw, 44px)/1.08 var(--font-display);
+  letter-spacing: 0.005em;
+}
+.lead { margin: 0; max-width: 46em; font-size: 19px; color: var(--ink-2); }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 40px; }
+.button {
+  display: inline-block; padding: 11px 20px; border-radius: 6px;
+  font: 600 16px/1.2 var(--font-display); letter-spacing: 0.04em; text-transform: uppercase;
+  text-decoration: none; border: 1px solid var(--line);
+}
+.button.primary { background: var(--accent); color: var(--ground); border-color: var(--accent); }
+.button:hover { border-color: var(--ink-2); }
+h2 {
+  margin: 0 0 12px;
+  font: 600 13px/1 var(--font-display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3);
+}
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0 0 40px; padding: 0; list-style: none; }
+.steps li { padding: 16px 18px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.steps b { display: block; margin-bottom: 4px; font: 600 19px/1.2 var(--font-display); }
+.steps p { margin: 0; font-size: 15px; color: var(--ink-2); }
+.shot { display: block; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.caption { margin: 10px 0 0; font-size: 15px; color: var(--ink-2); }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 14px; color: var(--ink-3); }
+@media (max-width: 720px) {
+  main { padding-top: 16px; }
+  .steps { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <img src="img/hero.svg" width="1280" height="600" alt="An SO-101 robot arm holds a spectrograph whose scan line sweeps across a potted plant; behind the line the plant turns into Gaussians, and one Gaussian's stored spectrum is shown in a callout.">
+  </div>
+
+  <h1>Line-Scan Hyperspectral 3D Gaussian Splatting</h1>
+  <p class="lead">A homebuilt pushbroom spectrograph rides a robot arm, and the 3D Gaussian splat it trains stores a full 500–950 nm spectrum in every Gaussian instead of an RGB color.</p>
+
+  <div class="actions">
+    <a class="button primary" href="viewer/">Open the viewer</a>
+    <a class="button" href="https://github.com/CoraBeanz/linescan-hyperspectral-splatting">Source on GitHub</a>
+  </div>
+
+  <h2>How it works</h2>
+  <ol class="steps">
+    <li><b>1 · Pick a viewpoint</b><p>The SO-101 arm carries the scanner head to a pose and holds still. An RGB camera on the head reads an AprilTag board to get that pose.</p></li>
+    <li><b>2 · Sweep the slit</b><p>A NEMA 8 stepper turns the scan mirror one microstep per frame. Each frame is one line of the object by its spectrum.</p></li>
+    <li><b>3 · Train the splat</b><p>Every scan line is a training sample. A C++/CUDA renderer draws the splat through a line-camera model at that line's pose and compares it with the measured line.</p></li>
+  </ol>
+
+  <h2>In the browser</h2>
+  <a class="shot" href="viewer/"><img src="img/viewer.jpg" width="1280" height="1080" alt="The viewer in color infrared: a splat trained from 16 synthetic sweeps, where the green ball and the black panel's hidden word NIR show red, beside the controls and a chart of sampled spectra."></a>
+  <p class="caption">The viewer opens a splat trained from 16 synthetic sweeps. Show it at any single wavelength, in true color, in color infrared or as a band index such as NDVI, and click anywhere to plot the full spectrum there. It is plain HTML, JavaScript and WebGL2.</p>
+
+  <footer>By <a href="https://github.com/CoraBeanz">CoraBeanz</a>, under the <a href="https://github.com/CoraBeanz/linescan-hyperspectral-splatting/blob/main/LICENSE">MIT License</a>.</footer>
+</main>
+</body>
+</html>
