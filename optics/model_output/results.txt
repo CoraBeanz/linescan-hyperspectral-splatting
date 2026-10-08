@@ -30,3 +30,55 @@
   smile at line end       : 33.3 px
   keystone                : 11.2 px
   light reaching sensor   :  center@500nm=100%  center@750nm=100%  center@1000nm=100%  edge@500nm= 98%  edge@750nm= 99%  edge@1000nm= 99%
+
+== D: bought parts, as cad/ draws them
+  scene line length       : 43.1 mm at 150 mm
+  spectrum 500-1000 nm    : 3.27 mm on sensor (sensor is 3.68 x 2.76 mm)
+  dispersion              : 5.84 px/nm
+  slit image width        : 35.1 um (31.4 px), traced
+  spectral resolution     : 5.4 nm (geometric, ideal lenses, traced)
+  pixels along the line   : 2907 (the sensor has 2464)
+  smile at line end       : 40.4 px, at the last point on the sensor
+  keystone                : 16.6 px, at the last point on the sensor
+  field lens              : the slit looks 1.35x as big, 0.42 mm further back; collimator 25.42 mm behind the slit
+  line on the sensor      : 3.26 mm, 85% of it on the sensor (36.5 mm of the scene)
+  line end                : the rest falls off the sensor, so 'end' here and below is 84% of the way to the slit's end
+  band on the sensor      : 460-1022 nm at the line centre
+  light reaching sensor   :  center@500nm= 66%  center@750nm= 99%  center@1000nm= 63%  mid@500nm= 56%  mid@750nm= 90%  mid@1000nm= 53%  end@500nm= 32%  end@750nm= 53%  end@1000nm= 29%
+  rms spot, along/across  :  center@500nm=0.6/0.5 um  center@750nm=0.5/0.6 um  center@1000nm=0.4/0.4 um  end@500nm=4.7/0.5 um  end@750nm=4.4/0.4 um  end@1000nm=4.2/0.1 um
+  GG-495 transmits        :  490nm=20%  500nm=67%  520nm=88%  750nm=89%  1000nm=86%
+
+== E: D with the field lens flipped and the stop on the lens
+  scene line length       : 43.1 mm at 150 mm
+  spectrum 500-1000 nm    : 3.27 mm on sensor (sensor is 3.68 x 2.76 mm)
+  dispersion              : 5.84 px/nm
+  slit image width        : 26.8 um (24.0 px), traced
+  spectral resolution     : 4.1 nm (geometric, ideal lenses, traced)
+  pixels along the line   : 2283 (the sensor has 2464)
+  smile at line end       : 35.7 px
+  keystone                : 11.8 px
+  field lens              : the slit looks 1.03x as big, 1.76 mm further back; collimator 26.76 mm behind the slit
+  line on the sensor      : 2.56 mm, 100% of it on the sensor (43.1 mm of the scene)
+  band on the sensor      : 460-1022 nm at the line centre
+  light reaching sensor   :  center@500nm= 56%  center@750nm= 99%  center@1000nm= 55%  mid@500nm= 52%  mid@750nm= 81%  mid@1000nm= 50%  end@500nm= 35%  end@750nm= 54%  end@1000nm= 33%
+  rms spot, along/across  :  center@500nm=1.1/0.9 um  center@750nm=0.7/0.7 um  center@1000nm=0.3/0.3 um  end@500nm=4.5/3.0 um  end@750nm=4.7/4.8 um  end@1000nm=4.9/3.7 um
+  GG-495 transmits        :  490nm=20%  500nm=67%  520nm=88%  750nm=89%  1000nm=86%
+
+== C, D and E traced the same way
+                                         C               D               E
+  slit image width                 26.6 um         35.1 um         26.8 um
+  spectral resolution               4.1 nm          5.4 nm          4.1 nm
+  line on the sensor               2.47 mm         3.26 mm         2.56 mm
+  line end on the sensor   100% of the way  84% of the way 100% of the way
+  smile / keystone there        33 / 11 px      40 / 17 px      36 / 12 px
+  light at line end 750                99%             53%             54%
+  light at line end 500                98%             32%             35%
+
+== E with one thing changed (750 nm, line centre / line end, relative to E's centre)
+  E as it is                    : 4.1 nm, line 2.56 mm, signal 1.00 / 0.54, lost 0.00 / 0.44
+  field lens flat side to slit  : 5.4 nm, line 3.25 mm, signal 1.00 / 0.65, lost 0.00 / 0.34
+  stop at the cap front, as D   : 4.1 nm, line 2.55 mm, signal 1.00 / 0.42, lost 0.00 / 0.52
+  stop inside the lens          : 4.1 nm, line 2.57 mm, signal 1.01 / 0.95, lost 0.00 / 0.06
+  5 mm stop on the lens         : 4.1 nm, line 2.56 mm, signal 1.14 / 0.76, lost 0.42 / 0.78
+  no printed stop, f/2          : 4.1 nm, line 2.57 mm, signal 1.27 / 1.66, lost 2.56 / 2.17
+  40 um slit                    : 3.3 nm, line 2.56 mm, signal 0.80 / 0.43, lost 0.00 / 0.35
