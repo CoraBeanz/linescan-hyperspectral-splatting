@@ -100,7 +100,7 @@ add_library(linesplat INTERFACE)
 target_link_libraries(linesplat INTERFACE linesplat_core)
 
 if(LINESPLAT_HAVE_CUDA)
-  add_library(linesplat_cuda STATIC src/cuda/rasterizer.cu)
+  add_library(linesplat_cuda STATIC src/cuda/rasterizer.cu src/cuda/optimizer.cu)
   target_link_libraries(linesplat_cuda PUBLIC linesplat_core CUDA::cudart_static)
   # With MSVC as the host compiler, CUDA 13's Thrust headers stop with an
   # #error unless cl.exe uses its standard-conforming preprocessor.

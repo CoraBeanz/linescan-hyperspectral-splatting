@@ -170,6 +170,7 @@ TEST(render_backward_matches_finite_differences) {
     return sum;
   };
   SceneGradT<double> g;
+  g.learn_basis = true;
   std::vector<CameraGradT<double>> cg;
   std::vector<double> bands;
   const double L = render_backward_cpu<double>(
@@ -212,7 +213,9 @@ TEST(render_backward_matches_finite_differences) {
                                {"rotations", &s.rotations, &g.rotations, 1e-5f},
                                {"opacity logits", &s.opacity_logits, &g.opacity_logits, 1e-5f},
                                {"features", &s.features, &g.features, 1e-4f},
-                               {"background", &s.background, &g.background, 1e-4f}};
+                               {"background", &s.background, &g.background, 1e-4f},
+                               {"basis", &s.basis, &g.basis, 1e-4f}};
+  CHECK(g.basis.size() == s.basis.size());
   for (const Group& gr : groups) {
     std::vector<double> n(gr.params->size());
     double scale = 0;

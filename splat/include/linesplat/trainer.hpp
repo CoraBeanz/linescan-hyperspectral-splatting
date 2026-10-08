@@ -18,14 +18,22 @@
 // per image: Gaussians whose projected centres keep getting large gradients
 // are cloned if they are small or split if they are large, and nearly
 // transparent ones are pruned.
+//
+// The Gaussians and their Adam state live in a SceneOptimizer: in host
+// memory (HostSceneOptimizer, with the backward pass on the CPU or the GPU),
+// or all on the GPU (CudaSceneOptimizer in cuda_rasterizer.hpp), where only
+// the batch's cameras and their gradients cross over each step. The poses
+// and the schedule stay here, on the host.
 #pragma once
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include "linesplat/backward_cpu.hpp"
 #include "linesplat/dataset.hpp"
+#include "linesplat/densify.hpp"
 #include "linesplat/rng.hpp"
 #include "linesplat/scene.hpp"
 
@@ -43,6 +51,12 @@ struct TrainOptions {
   double lr_opacity = 2.5e-2;
   double lr_features = 5e-3;
   double lr_background = 1e-3;
+
+  // Train the spectral basis too. Start from reduce_features(), with fewer
+  // features than bands (8 to 12 instead of 46): the scene, the rendering
+  // and the GPU's per-pixel buffers then scale with K rather than the bands.
+  bool learn_basis = false;
+  double lr_basis = 1e-3;
 
   // Pose refinement: one rigid correction per sweep, made in the camera's
   // frame at the mirror's rest angle, so its translation moves the camera
@@ -78,6 +92,8 @@ struct TrainStep {
   int densified = 0;  // Gaussians added this step (clones and splits)
   int pruned = 0;     // Gaussians removed this step
   double ms = 0.0;
+  double backward_ms = 0.0;  // of ms: rendering and backpropagating the batch
+  double update_ms = 0.0;    // of ms: Adam on the scene and the poses, densification
 };
 
 // Renders the dataset's lines `lines` through `cams` (camera i sees line
@@ -97,19 +113,84 @@ BatchBackwardFn cpu_batch_backward(const Dataset& data);
 // the pixels that land in the cell. Features are the bands (identity basis).
 GaussianScene init_on_plane(const Dataset& d, double spacing, double plane_z = 0.0);
 
-class Trainer {
- public:
-  // `data` must outlive the trainer. Without a backward function it uses
-  // cpu_batch_backward(data).
-  Trainer(const Dataset& data, GaussianScene init, const TrainOptions& opt, BatchBackwardFn backward = nullptr);
+// The same scene with K features through a basis fitted to its spectra: the
+// top K principal directions of the Gaussians' spectra (uncentred, so the
+// first one is about the mean spectrum), which is the best rank-K fit of
+// them. The basis is scaled by sqrt(bands) so that a feature moves each band
+// by about as much as it would with the identity basis, and the learning
+// rates carry over. Needs K <= bands.
+GaussianScene reduce_features(const GaussianScene& s, int K);
 
-  TrainStep step();
-  int iteration() const { return iter_; }
-  const GaussianScene& scene() const { return scene_; }
-  // Each sweep's head pose with its learned correction.
-  std::vector<Pose> head_poses() const;
-  // Line cameras for every line of the dataset at the current poses.
-  std::vector<LineCameraT<double>> cameras() const;
+// Adam step sizes for one step on the Gaussians, with any decay applied.
+struct SceneRates {
+  double means = 0, log_scales = 0, rotations = 0, opacity = 0, features = 0, background = 0;
+  double basis = 0;  // used only when the basis is learned
+};
+
+// One densification, from TrainOptions.
+struct DensifyParams {
+  double grad = 0, split_scale = 0, prune_opacity = 0, max_scale = 0;
+  int max_gaussians = 0;
+  uint64_t key = 0;  // the split offsets are hash_normal(key, Gaussian, axis)
+};
+
+struct DensifyCounts {
+  int added = 0;    // clones and split halves
+  int removed = 0;  // Gaussians that split, and pruned ones
+};
+
+// The thresholds both optimizers compare against (densify.hpp).
+DensifyThresholds densify_thresholds(const DensifyParams& p);
+
+// The Gaussians, the gradient of the last batch and the Adam state, wherever
+// the trainer keeps them.
+class SceneOptimizer {
+ public:
+  virtual ~SceneOptimizer() = default;
+  // Renders cams (camera i sees measured line lines[i]), backpropagates the
+  // mean squared error over their pixels and bands, and keeps the scene's
+  // gradient for adam(); the cameras' go to *cam_grad if it isn't null.
+  // Returns the error.
+  virtual double backward(const std::vector<LineCamera>& cams, const std::vector<int>& lines,
+                          std::vector<CameraGradT<float>>* cam_grad) = 0;
+  // Keeps g instead, as if backward() had computed it (for the tests).
+  virtual void set_gradient(const SceneGradT<float>& g) = 0;
+  // One Adam step with the kept gradient on every array (the basis too if
+  // it's learned); t counts the steps from 1.
+  virtual void adam(const SceneRates& lr, int t) = 0;
+  // Adds the kept gradient's densification statistics: per Gaussian, its
+  // screen gradient times `scale`, and its number of pairs.
+  virtual void accumulate(double scale) = 0;
+  // Clones, splits and prunes from the statistics so far (as 3DGS does,
+  // per pair), then starts the statistics again. New Gaussians start with
+  // zero Adam moments.
+  virtual DensifyCounts densify(const DensifyParams& p) = 0;
+  virtual int size() const = 0;
+  // The current Gaussians (copied from the GPU if they live there).
+  virtual const GaussianScene& scene() const = 0;
+
+  // Whether backward() also finds the basis gradient and adam() steps it.
+  void set_learn_basis(bool on) { learn_basis_ = on; }
+  bool learn_basis() const { return learn_basis_; }
+
+ protected:
+  bool learn_basis_ = false;
+};
+
+// Everything in host memory. The gradients come from a BatchBackwardFn, so
+// the backward pass itself can run on the GPU (the scene is copied up and
+// the gradients down every step).
+class HostSceneOptimizer : public SceneOptimizer {
+ public:
+  HostSceneOptimizer(GaussianScene init, BatchBackwardFn backward);
+  double backward(const std::vector<LineCamera>& cams, const std::vector<int>& lines,
+                  std::vector<CameraGradT<float>>* cam_grad) override;
+  void set_gradient(const SceneGradT<float>& g) override;
+  void adam(const SceneRates& lr, int t) override;
+  void accumulate(double scale) override;
+  DensifyCounts densify(const DensifyParams& p) override;
+  int size() const override { return scene_.size(); }
+  const GaussianScene& scene() const override { return scene_; }
 
  private:
   struct Adam {
@@ -119,6 +200,41 @@ class Trainer {
       v.assign(n, 0.0f);
     }
   };
+
+  BatchBackwardFn backward_;
+  GaussianScene scene_;
+  SceneGradT<float> grad_;
+  Adam a_means_, a_scales_, a_rots_, a_opacity_, a_features_, a_background_, a_basis_;
+  std::vector<double> screen_sum_;
+  std::vector<int> pair_count_;
+};
+
+// One Adam step on every element of p (t from 1), as both optimizers take
+// it: float moments, with the bias corrections folded into the step size and
+// epsilon. Exposed for the tests.
+void adam_step(std::vector<float>& p, const std::vector<float>& g, std::vector<float>& m, std::vector<float>& v,
+               double lr, int t);
+// The step size and epsilon of step t, which the GPU's Adam takes as they are.
+void adam_constants(double lr, int t, float* step, float* eps);
+
+class Trainer {
+ public:
+  // `data` must outlive the trainer. The scene lives in host memory; without
+  // a backward function it uses cpu_batch_backward(data).
+  Trainer(const Dataset& data, GaussianScene init, const TrainOptions& opt, BatchBackwardFn backward = nullptr);
+  // With the scene wherever `scene` keeps it (a CudaSceneOptimizer for
+  // training on the GPU), set up for this dataset.
+  Trainer(const Dataset& data, std::unique_ptr<SceneOptimizer> scene, const TrainOptions& opt);
+
+  TrainStep step();
+  int iteration() const { return iter_; }
+  const GaussianScene& scene() const { return scene_->scene(); }
+  // Each sweep's head pose with its learned correction.
+  std::vector<Pose> head_poses() const;
+  // Line cameras for every line of the dataset at the current poses.
+  std::vector<LineCameraT<double>> cameras() const;
+
+ private:
   struct PoseState {
     double zeta[6] = {0, 0, 0, 0, 0, 0};  // translation (m), rotation vector (rad)
     double m[6] = {0, 0, 0, 0, 0, 0}, v[6] = {0, 0, 0, 0, 0, 0};
@@ -127,23 +243,17 @@ class Trainer {
 
   Pose head_pose(int sweep) const;
   LineCameraT<double> camera(int line, const Pose& head) const;
-  void adam_scene(const SceneGradT<float>& g);
   void adam_poses(const std::vector<int>& lines, const std::vector<LineCameraT<double>>& cams,
                   const std::vector<CameraGradT<float>>& cam_grad);
-  void densify(TrainStep* st);
   double decayed(double lr, double final_fraction) const;
 
   const Dataset& data_;
   TrainOptions opt_;
-  BatchBackwardFn backward_;
-  GaussianScene scene_;
+  std::unique_ptr<SceneOptimizer> scene_;
   Pose pose_frame_;         // the frame G the pose corrections are made in
   std::vector<Pose> virt_;  // [L] each line's virtual camera in the head
   std::vector<double> v_sign_;
-  Adam a_means_, a_scales_, a_rots_, a_opacity_, a_features_, a_background_;
   std::vector<PoseState> poses_;
-  std::vector<double> screen_sum_;
-  std::vector<int> pair_count_;
   std::vector<int> order_;
   size_t next_ = 0;
   Rng rng_;

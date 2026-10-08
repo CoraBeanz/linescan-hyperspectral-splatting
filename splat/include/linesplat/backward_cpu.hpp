@@ -14,7 +14,9 @@
 //
 // The per-pixel alpha gradients collect into each (line, Gaussian) splat's
 // u, inv_var and alpha, then flow through project_to_line_backward to the
-// Gaussian and the camera. The spectral basis is held fixed.
+// Gaussian and the camera. The spectral basis gets a gradient too if asked
+// for (SceneGradT::learn_basis): bands = basis * features per pixel, so
+// dL/dbasis is the sum over pixels of dL/dbands times the pixel's features.
 #pragma once
 
 #include <functional>
@@ -35,13 +37,17 @@ struct SceneGradT {
   std::vector<T> opacity_logits;  // [N]
   std::vector<T> features;        // [N, K]
   std::vector<T> background;      // [K]
+  std::vector<T> basis;           // [bands, K], only with learn_basis
   // For densification: per Gaussian, the summed norm of dL/d(projected
   // centre) in px over the (line, Gaussian) pairs that drew a pixel, and the
   // number of those pairs.
   std::vector<T> screen_grad;     // [N]
   std::vector<int> pairs;         // [N]
+  // Set by the caller: also backpropagate into the spectral basis. It costs
+  // bands x K multiply-adds per pixel, as much as applying the basis.
+  bool learn_basis = false;
 
-  void reset(const GaussianScene& s);  // sized for s, all zero
+  void reset(const GaussianScene& s);  // sized for s, all zero (basis only with learn_basis)
 };
 
 // dL/d(world -> camera rotation and translation) of one line's camera.

@@ -19,6 +19,10 @@ void SceneGradT<T>::reset(const GaussianScene& s) {
   opacity_logits.assign(n, T(0));
   features.assign(n * k, T(0));
   background.assign(k, T(0));
+  if (learn_basis)
+    basis.assign(s.basis.size(), T(0));
+  else
+    basis.clear();
   screen_grad.assign(n, T(0));
   pairs.assign(n, 0);
 }
@@ -29,15 +33,16 @@ namespace {
 // through to the stored parameters.
 template <typename T>
 struct Partial {
-  std::vector<T> mean, cov, opacity, features, background, screen;
+  std::vector<T> mean, cov, opacity, features, background, basis, screen;
   std::vector<int> pairs;
   double loss = 0.0;
-  void init(size_t n, size_t k) {
+  void init(size_t n, size_t k, size_t basis_size) {
     mean.assign(3 * n, T(0));
     cov.assign(6 * n, T(0));
     opacity.assign(n, T(0));
     features.assign(n * k, T(0));
     background.assign(k, T(0));
+    basis.assign(basis_size, T(0));
     screen.assign(n, T(0));
     pairs.assign(n, 0);
   }
@@ -88,7 +93,7 @@ double render_backward_cpu(const GaussianScene& scene, const std::vector<LineCam
 #pragma omp parallel num_threads(threads)
   {
     Partial<T>& A = part[size_t(thread_id())];
-    A.init(size_t(N), size_t(K));
+    A.init(size_t(N), size_t(K), grad->basis.size());
 
 #pragma omp for schedule(static)
     for (int i = 0; i < N; ++i) geom[size_t(i)] = gaussian_geometry<T>(scene, i);
@@ -157,6 +162,8 @@ double render_backward_cpu(const GaussianScene& scene, const std::vector<LineCam
           const T g = g_bands[size_t(p) * B + b];
           if (g == T(0)) continue;
           for (int c = 0; c < K; ++c) g_feat[size_t(p) * K + c] += basis[size_t(b) * K + c] * g;
+          if (grad->learn_basis)
+            for (int c = 0; c < K; ++c) A.basis[size_t(b) * K + c] += g * feat[size_t(p) * K + c];
         }
 
       // Backward per pixel, back to front.
@@ -247,6 +254,7 @@ double render_backward_cpu(const GaussianScene& scene, const std::vector<LineCam
   for (const auto& A : part) {
     total += A.loss;
     for (size_t c = 0; c < A.background.size(); ++c) grad->background[c] += A.background[c];
+    for (size_t j = 0; j < A.basis.size(); ++j) grad->basis[j] += A.basis[j];
   }
   return total;
 }

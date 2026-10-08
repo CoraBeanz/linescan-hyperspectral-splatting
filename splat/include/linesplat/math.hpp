@@ -30,6 +30,7 @@ LS_HD float ls_floor(float x) { return floorf(x); }
 LS_HD double ls_floor(double x) { return floor(x); }
 LS_HD float ls_ceil(float x) { return ceilf(x); }
 LS_HD double ls_ceil(double x) { return ceil(x); }
+LS_HD double ls_cos(double x) { return cos(x); }
 LS_HD float ls_abs(float x) { return fabsf(x); }
 LS_HD double ls_abs(double x) { return fabs(x); }
 template <typename T> LS_HD T ls_min(T a, T b) { return a < b ? a : b; }
