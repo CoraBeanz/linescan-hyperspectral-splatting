@@ -7,15 +7,24 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
+find_package(eigen3_cmake_module REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(so101_scan_interfaces REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(urdf REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/sts_protocol.cpp
   src/serial_port.cpp
   src/sts_bus.cpp
+  src/servo_checks.cpp
+  src/arm_model.cpp
+  src/arm_safety_node.cpp
   src/feetech_sts_system.cpp
 )
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
@@ -23,7 +32,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
-ament_target_dependencies(${PROJECT_NAME} PUBLIC hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+ament_target_dependencies(${PROJECT_NAME} PUBLIC
+  hardware_interface pluginlib rclcpp rclcpp_lifecycle so101_scan_interfaces std_msgs std_srvs urdf)
+target_link_libraries(${PROJECT_NAME} PUBLIC Eigen3::Eigen)
 pluginlib_export_plugin_description_file(hardware_interface so101_scan_hardware.xml)
 
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
@@ -52,10 +63,14 @@ if(BUILD_TESTING)
   ament_add_gtest(test_sts_protocol test/test_sts_protocol.cpp)
   target_link_libraries(test_sts_protocol ${PROJECT_NAME})
 
+  # The servo limits and the arm model on their own, no bus
+  ament_add_gtest(test_safety test/test_safety.cpp)
+  target_link_libraries(test_safety ${PROJECT_NAME})
+
   # The C++ driver against the Python fake bus
   ament_add_gtest(test_driver_fake_bus test/test_driver_fake_bus.cpp
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
-    TIMEOUT 60)
+    TIMEOUT 180)
   target_link_libraries(test_driver_fake_bus ${PROJECT_NAME})
   ament_target_dependencies(test_driver_fake_bus lifecycle_msgs)
   target_compile_definitions(test_driver_fake_bus PRIVATE PYTHON_EXECUTABLE="${Python3_EXECUTABLE}")
@@ -68,5 +83,6 @@ endif()
 ament_export_include_directories(include/${PROJECT_NAME})
 ament_export_libraries(${PROJECT_NAME})
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+ament_export_dependencies(eigen3_cmake_module Eigen3 hardware_interface pluginlib rclcpp rclcpp_lifecycle
+  so101_scan_interfaces std_msgs std_srvs urdf)
 ament_package()
