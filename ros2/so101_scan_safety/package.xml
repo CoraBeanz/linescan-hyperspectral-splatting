@@ -1,33 +1,26 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>so101_scan_sweep</name>
+  <name>so101_scan_safety</name>
   <version>0.1.0</version>
   <description>
-    Runs hyperspectral scans with the SO-101: the bridge to the scan-mirror ESP32, a simulated
-    ESP32 for testing, the scan_sweep node that moves the arm through a plan and logs the pose
-    of every scan line, and tools to plan viewpoints and move the arm.
+    Safety tools for the SO-101 scan arm, beside what the servo driver enforces itself: the
+    arm's soft limits (workspace and gravity torque) in Python for checking scan plans before
+    they run, check_plan, the arm_estop keyboard e-stop, and a watcher that lets other nodes
+    stop when the arm does.
   </description>
   <maintainer email="vincentryanbaker@gmail.com">CoraBeanz</maintainer>
   <license>MIT</license>
 
   <exec_depend>ament_index_python</exec_depend>
-  <exec_depend>builtin_interfaces</exec_depend>
-  <exec_depend>control_msgs</exec_depend>
-  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>controller_manager_msgs</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
-  <exec_depend>python3-serial</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
-  <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>so101_scan_description</exec_depend>
   <exec_depend>so101_scan_interfaces</exec_depend>
-  <exec_depend>so101_scan_safety</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
-  <exec_depend>trajectory_msgs</exec_depend>
-  <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>xacro</exec_depend>
 
   <test_depend>python3-pytest</test_depend>

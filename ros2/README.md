@@ -6,8 +6,9 @@ for each, which is what the line-camera splat needs: its lines and their camera 
 
 | Package | What's in it |
 |---|---|
-| [`so101_scan_interfaces`](so101_scan_interfaces) | Messages and services: `ScanLine`, `MirrorState`, `ScanLinePose`, `FrameStamp`, `StartSweep`, `MoveMirror`, `StartRecording`, `CaptureReference` |
-| [`so101_scan_hardware`](so101_scan_hardware) | ros2_control driver for the STS3215 servo bus (C++), plus `sts_scan`, `sts_calibrate` and a fake servo bus |
+| [`so101_scan_interfaces`](so101_scan_interfaces) | Messages and services: `ScanLine`, `MirrorState`, `ScanLinePose`, `FrameStamp`, `ArmSafety`, `StartSweep`, `MoveMirror`, `StartRecording`, `CaptureReference` |
+| [`so101_scan_hardware`](so101_scan_hardware) | ros2_control driver for the STS3215 servo bus (C++) with the arm's safety checks, plus `sts_scan`, `sts_calibrate` and a fake servo bus |
+| [`so101_scan_safety`](so101_scan_safety) | `arm_estop` (a keyboard e-stop, and the reset), `check_plan` (a plan against the arm's soft limits), and the soft-limit model the sweep tools check with |
 | [`so101_scan_description`](so101_scan_description) | URDF: the SO-101 with the scanner head on its wrist, the scan mirror as a joint, the line camera as the mirror sees it |
 | [`so101_scan_bringup`](so101_scan_bringup) | `scan_arm.launch.py` and the controller and mirror settings |
 | [`so101_scan_sweep`](so101_scan_sweep) | Mirror bridge, simulated mirror ESP32, `scan_sweep` (and its `--dry-run`), `make_plan` (views around a spot, or covering an object), `move_arm`, example plans |
@@ -36,6 +37,8 @@ flowchart LR
     cam -- "/line_camera/frame" --> bridge
     bridge -- "/scan_mirror/line" --> cam
     sweep -- "start / stop_recording" --> cam
+    drv -- "/arm_safety/state" --> sweep
+    drv -- "/arm_safety/state" --> bridge
     drv -- "/joint_states" --> sweep
     drv -- "/joint_states" --> rsp
     bridge -- "/joint_states (mirror)" --> rsp
@@ -183,8 +186,10 @@ JetPack 4 is Ubuntu 18.04 and Humble needs 22.04, so ROS runs in the container
 ## First steps with the real arm
 
 Each step checks one thing before the next one trusts it. Power the servos from their own
-supply; keep a hand near the power switch for anything that moves. Stopping a launch leaves
-the motors holding the arm where it is; `torque:=false` or that switch lets it go.
+supply; keep a hand near the power switch for anything that moves, and once the motors are on,
+`ros2 run so101_scan_safety arm_estop` open in another terminal (Enter stops the arm; see
+[Arm safety](#arm-safety)). Stopping a launch leaves the motors holding the arm where it is;
+`torque:=false` or that switch lets it go.
 
 1. **Find the servos** (read-only, nothing moves):
    `ros2 run so101_scan_hardware sts_scan --port /dev/so101`
@@ -222,6 +227,55 @@ the motors holding the arm where it is; `torque:=false` or that switch lets it g
    README shows how).
 
 `<plans>` is `src/linescan-hyperspectral-splatting/ros2/so101_scan_sweep/plans`.
+
+## Arm safety
+
+The servo driver checks the arm every control cycle and stops it when something is wrong.
+Stopping means holding: each servo's goal becomes where it is, and the driver ignores the
+controller until a reset. If the cause is still there 5 s later, it switches the motors off.
+
+| Check | Warns at | Stops at |
+|---|---|---|
+| Load, as a share of the servo's maximum torque | 60% | 90% for 1 s |
+| Temperature | 55 °C | 65 °C for 1 s (an STS3215 cuts out at 70 °C on its own) |
+| Supply voltage | 90% of what it read at start | 80% for 0.5 s |
+| Stall: a joint 0.2 rad (11.5°) short of its goal and not moving | | after 0.5 s |
+| The servo's own alarms (overload, overheat, voltage) | | two reads in a row |
+| An e-stop | | at once |
+
+**Soft limits** hold the arm back rather than stop it. Before a goal goes to the servos, the
+driver puts it through the URDF: the head's collision box and the arm's links stay 10 mm above
+the table, the head stays out of a cylinder around the `shoulder_pan` axis (80 mm radius, up to
+140 mm) that holds the base and the electronics, and no joint holds more than 60% of its stall
+torque against gravity (the CAD report has the stretched-out arm at 74%; the ring plan peaks at
+49%). A step that would cross one isn't taken: the arm waits at the edge, any move back is
+allowed, and `/arm_safety/state` says which limit held it.
+
+**E-stop and reset:**
+
+```bash
+ros2 run so101_scan_safety arm_estop          # keep it open: Enter or space stops, l goes limp, r resets
+ros2 run so101_scan_safety arm_estop --stop   # one action from a script; also --torque-off, --reset, --status
+ros2 topic pub --once /estop std_msgs/msg/Bool "{data: true}"   # what any other node can do
+```
+
+The mirror stops too (the bridge watches `/arm_safety/state` and `/estop`), and `scan_sweep` or
+`move_arm` cancels its move, writes what it logged, and exits saying why. Reset with
+`arm_estop --reset` rather than calling `/arm_safety/reset` yourself: it also restarts
+`arm_controller`, so the controller starts from where the arm is instead of from the goal it
+had when the arm stopped. A reset is refused while the cause is still there, a servo still too
+hot for instance. With `torque:=false` the checks only report, as warnings.
+
+**Check a plan before running it:** `ros2 run so101_scan_safety check_plan --plan <plans>/ring.yaml`
+prints how far each viewpoint keeps the arm inside the workspace and how much each joint holds
+against gravity, and checks the moves between viewpoints every 1°. It uses the same model and
+the same numbers as the driver (all in the URDF's `<ros2_control>` block,
+[`so101_scan.ros2_control.xacro`](so101_scan_description/urdf/so101_scan.ros2_control.xacro)), and
+`scan_sweep` and `move_arm` run it from where the arm is before they move it.
+
+All of this is software, so it needs the driver and the bus to be working; the servos' power
+switch is the e-stop that always works. Mock hardware has no driver and so no `/arm_safety`,
+but the plan check still runs.
 
 ## Scanning with the spectrograph camera
 
@@ -296,7 +350,8 @@ colcon build && colcon test && colcon test-result --verbose
 
 The tests need no hardware: the C++ driver runs against the fake servo bus, the bridge against
 the simulated ESP32, one test brings up the whole stack and scans a two-viewpoint plan, another
-plans views around a box and plays them with `--dry-run` (checking nothing moved), and the
+plans views around a box and plays them with `--dry-run` (checking nothing moved), another
+plays faults on the fake bus (an e-stop mid-scan, a blocked joint, a goal in the table), and the
 camera tests run `line_camera` on a simulated camera that sees what the simulated mirror really
 did, check its colour waterfalls against the scene's true colours, and replay a synthetic scan
 through `scan_to_dataset` to check that the trainer's camera model sees the scene in every

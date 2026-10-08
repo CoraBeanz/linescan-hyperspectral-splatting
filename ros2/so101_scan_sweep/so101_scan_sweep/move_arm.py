@@ -6,7 +6,8 @@
 Joint order: shoulder_pan shoulder_lift elbow_flex wrist_flex wrist_roll. Needs
 scan_arm.launch.py running with the motors on. --speed-deg sets how fast the joint that moves
 furthest goes (default 20 deg/s, slow on purpose for first tries). Ctrl-C stops the arm where
-it is.
+it is. It checks the move against the arm's soft limits first, and refuses while the servo
+driver has the arm stopped (so101_scan_safety).
 """
 
 import argparse
@@ -64,10 +65,13 @@ def main(argv=None):
         if problems:
             raise ScanError("; ".join(problems))
         node.wait_for(lambda: node.joints.latest_ns is not None, 5.0, "/joint_states")
+        node.check_safety([("goal", goal)])
         ok, message, duration = node.move_arm(goal, _Speed(args.speed_deg, 1.0))
+        node.check_stopped()
         now, _ = node.joints.at(node.joints.latest_ns)
-        print("%s in %.1f s; now at %s deg" % ("arrived" if ok else "move failed: " + message, duration,
-                                                " ".join("%.1f" % math.degrees(now[j]) for j in ARM_JOINTS)))
+        print("%s in %.1f s; now at %s deg%s" % ("arrived" if ok else "move failed: " + message, duration,
+                                                  " ".join("%.1f" % math.degrees(now[j]) for j in ARM_JOINTS),
+                                                  "" if ok else "." + node.driver_says()))
         code = 0 if ok else 1
     except ScanError as e:
         node.get_logger().error(str(e))

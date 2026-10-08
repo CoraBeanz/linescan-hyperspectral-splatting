@@ -22,6 +22,7 @@
   <exec_depend>so101_scan_camera</exec_depend>
   <exec_depend>so101_scan_description</exec_depend>
   <exec_depend>so101_scan_hardware</exec_depend>
+  <exec_depend>so101_scan_safety</exec_depend>
   <exec_depend>so101_scan_sweep</exec_depend>
   <exec_depend>xacro</exec_depend>
   <!-- optional, only with foxglove:=true -->
@@ -33,6 +34,9 @@
   <test_depend>launch_testing_ros</test_depend>
   <test_depend>rclpy</test_depend>
   <test_depend>sensor_msgs</test_depend>
+  <test_depend>so101_scan_interfaces</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>std_srvs</test_depend>
   <test_depend>tf2_ros_py</test_depend>
   <test_depend>trajectory_msgs</test_depend>
   <test_depend>visualization_msgs</test_depend>

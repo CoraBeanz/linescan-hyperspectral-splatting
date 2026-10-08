@@ -14,10 +14,12 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.parameter import Parameter
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
-from so101_scan_interfaces.msg import FrameStamp, MirrorState, ScanLine
+from so101_scan_interfaces.msg import ArmSafety, FrameStamp, MirrorState, ScanLine
 from so101_scan_interfaces.srv import MoveMirror, StartSweep
+from so101_scan_safety import watch
 from so101_scan_sweep import frame_lock as fl
 from so101_scan_sweep.bridge import MirrorLink, ScanMirrorBridge, Sweep
 from so101_scan_sweep.clock_sync import ClockSync
@@ -186,6 +188,39 @@ def test_stop_ends_a_sweep(ros):
     n = len(client.lines)
     time.sleep(0.2)
     assert len(client.lines) == n < 500
+
+
+def test_the_arm_stopping_stops_the_mirror(ros):
+    client, bridge = ros
+    home(client)
+    arm = client.node.create_publisher(ArmSafety, watch.TOPIC, watch.QOS)
+    estop = client.node.create_publisher(Bool, "/estop", 10)
+
+    def sweep_then(stop):
+        res = client.call("start_sweep", sweep_request(0.0, 1, 500, 0.02))
+        assert res.accepted, res.message
+        client.wait_for(lambda: sum(m.sweep_id == res.sweep_id for m in client.lines) >= 5)
+        stop()
+        client.wait_for(lambda: client.state.sweep_id == res.sweep_id and not client.state.busy)
+        n = len(client.lines)
+        time.sleep(0.2)
+        assert len(client.lines) == n
+        assert sum(m.sweep_id == res.sweep_id for m in client.lines) < 500
+
+    arm.publish(ArmSafety(state=ArmSafety.OK))
+    client.wait_for(lambda: bridge.safety.state is not None)
+    # the driver stops the arm: the sweep ends, and nothing else moves the mirror until a reset
+    sweep_then(lambda: arm.publish(ArmSafety(state=ArmSafety.HOLDING, reason="e-stop (/arm_safety/estop)")))
+    refused = client.call("start_sweep", sweep_request(0.0, 1, 5, 0.02))
+    assert not refused.accepted
+    assert "the arm is stopped (holding: e-stop (/arm_safety/estop))" in refused.message
+    assert "arm_estop --reset" in refused.message
+    assert "arm is stopped" in client.call("move", MoveMirror.Request(angle=0.1)).message
+    assert "arm is stopped" in client.call("home", Trigger.Request()).message
+    arm.publish(ArmSafety(state=ArmSafety.RESUMING))
+    client.wait_for(lambda: not bridge.safety.stopped)
+    # /estop stops it too, without the driver
+    sweep_then(lambda: estop.publish(Bool(data=True)))
 
 
 @pytest.mark.parametrize("boot_lost", [False, True])

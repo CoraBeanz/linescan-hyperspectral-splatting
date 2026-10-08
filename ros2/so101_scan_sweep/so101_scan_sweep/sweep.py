@@ -23,6 +23,11 @@ locks the lines to the camera's frames; the plan's camera.record says whether th
 It also publishes every line's pose on /scan/line_pose and the scan lines as RViz markers on
 /scan/markers. Ctrl-C stops the mirror and still writes what was logged.
 
+Before it moves, it checks the plan against the arm's soft limits from where the arm is
+(so101_scan_safety's check_plan), and won't start while the servo driver has the arm stopped.
+If the arm stops during the run (an e-stop, or a servo past a limit), it cancels the move,
+stops the mirror, writes what was logged and says why.
+
 --dry-run plays the plan on the running stack without moving the arm or the mirror, checks
 it, and writes nothing (dry_run.py).
 """
@@ -56,6 +61,9 @@ from visualization_msgs.msg import Marker, MarkerArray
 from so101_scan_description.kinematics import Robot
 from so101_scan_interfaces.msg import MirrorState, ScanLine, ScanLinePose
 from so101_scan_interfaces.srv import StartRecording, StartSweep
+from so101_scan_safety.check import check_plan
+from so101_scan_safety.model import ArmModel
+from so101_scan_safety.watch import RESET_HINT, SafetyWatch, describe
 from so101_scan_sweep import plan as plan_mod
 from so101_scan_sweep.line_log import JointBuffer, LinePoser, LinesCsv, quaternion
 from so101_scan_sweep.plan import ARM_JOINTS
@@ -100,6 +108,8 @@ class ScanSweep(Node):
         self.arm_goal = None  # the move in progress, to cancel on Ctrl-C
         self.lock = threading.Lock()
         group = ReentrantCallbackGroup()
+        self.safety_stop = None  # the ArmSafety state that stopped the arm during the run
+        self.safety = SafetyWatch(self, on_stop=self.on_safety_stop, callback_group=group)
 
         self.create_subscription(String, "/robot_description", self.on_description, LATCHED)
         self.create_subscription(JointState, "/joint_states", self.on_joint_states, 100)
@@ -135,6 +145,17 @@ class ScanSweep(Node):
     def on_line(self, msg):
         with self.lock:
             self.pending.append((msg, time.monotonic()))
+
+    def on_safety_stop(self, msg):
+        """The servo driver stopped the arm: drop the move and stop the mirror, without waiting."""
+        self.safety_stop = msg
+        self.get_logger().warning("the servo driver stopped the arm (%s): cancelling the move and stopping "
+                                  "the mirror" % describe(msg))
+        handle = self.arm_goal
+        if handle is not None:
+            handle.cancel_goal_async()
+        if self.stop_client.service_is_ready():
+            self.stop_client.call_async(Trigger.Request())
 
     # --- line poses -----------------------------------------------------------------------
 
@@ -271,6 +292,37 @@ class ScanSweep(Node):
             time.sleep(0.05)
         return False
 
+    def check_stopped(self):
+        if self.safety_stop is not None:
+            raise ScanError("the arm stopped: %s. %s" % (describe(self.safety_stop), RESET_HINT))
+
+    def driver_says(self):
+        """The servo driver's warnings, such as a soft limit holding the arm back, for a failed move."""
+        msg = self.safety.state
+        return " The servo driver says: %s." % "; ".join(msg.warnings) if msg is not None and msg.warnings else ""
+
+    def check_safety(self, viewpoints, hint=""):
+        """Refuse to start while the arm is stopped, or with viewpoints [(name, joints)] the
+        driver's soft limits would stop the arm short of."""
+        why = self.safety.not_ready()
+        if why:
+            raise ScanError(why)
+        try:
+            model = ArmModel(self.robot)
+        except (ValueError, KeyError) as e:
+            self.get_logger().warning("can't check the soft limits with this URDF: %s" % e)
+            return
+        start = None
+        if self.joints.latest_ns is not None:
+            now, _ = self.joints.at(self.joints.latest_ns)
+            if now is not None and all(j in now for j in ARM_JOINTS):
+                start = {j: now[j] for j in ARM_JOINTS}
+        report = check_plan(model, viewpoints, start)
+        for w in report.warnings:
+            self.get_logger().warning(w)
+        if report.problems:
+            raise ScanError("the arm's soft limits would stop it short:\n  " + "\n  ".join(report.problems) + hint)
+
     def stop_arm(self):
         """Cancel the move in progress: the controller holds the arm where it is."""
         handle, self.arm_goal = self.arm_goal, None
@@ -356,6 +408,10 @@ class ScanSweep(Node):
         problems = plan_mod.check_limits(plan, self.robot.limits())
         if problems:
             raise ScanError("the plan is outside the joint limits:\n  " + "\n  ".join(problems))
+        self.wait_for(lambda: self.joints.latest_ns is not None, 5.0,
+                      "the arm joints on /joint_states (is scan_arm.launch.py running?)")
+        self.check_safety([(vp.name, vp.joints) for vp in plan.viewpoints],
+                          "\n(`ros2 run so101_scan_safety check_plan --plan <file>` prints every viewpoint's margins)")
         os.makedirs(out_dir)
         with open(os.path.join(out_dir, "robot.urdf"), "w") as f:
             f.write(self.urdf)
@@ -380,15 +436,17 @@ class ScanSweep(Node):
                     self.get_logger().info("viewpoint %d/%d %s: moving" % (i + 1, len(plan.viewpoints), vp.name))
                     ok, message, duration = self.move_arm(vp.joints, plan)
                     entry["move"] = {"ok": ok, "message": message, "duration_s": duration}
+                    self.check_stopped()
                     if not ok:
                         # the arm is stuck or the bus is gone: stop rather than push on to the next pose
                         raise ScanError("the move to %s failed (%s); stopping the scan. The arm holds "
-                                        "where it is." % (vp.name, message))
+                                        "where it is.%s" % (vp.name, message, self.driver_says()))
                     entry["settled"] = self.settle(plan.settle_time)
                 self.get_logger().info("viewpoint %d/%d %s: sweeping %d lines"
                                        % (i + 1, len(plan.viewpoints), vp.name, vp.sweep.n_lines))
                 res, log = self.sweep(i, vp)
                 entry.update(summarize(res, log))
+                self.check_stopped()
                 self.get_logger().info("viewpoint %s: %d of %d lines logged"
                                        % (vp.name, len(log.stamps), vp.sweep.n_lines))
         except KeyboardInterrupt:
@@ -400,6 +458,8 @@ class ScanSweep(Node):
             except Exception as e:  # still write what was logged
                 self.get_logger().error("could not stop the mirror: %s" % e)
         finally:
+            if self.safety_stop is not None:
+                info["arm_stopped"] = describe(self.safety_stop)
             # log what is still queued, then close the file
             deadline = time.monotonic() + 1.0
             while self.pending and time.monotonic() < deadline:

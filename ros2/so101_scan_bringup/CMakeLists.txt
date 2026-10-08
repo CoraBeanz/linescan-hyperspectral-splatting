@@ -15,6 +15,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_capture_stack test/test_capture_stack.py TIMEOUT 300)
   # A coverage plan around a box, played with scan_sweep --dry-run: drawn, checked, nothing moved.
   ament_add_pytest_test(test_dry_run test/test_dry_run.py TIMEOUT 300)
+  # The arm's safety layer: e-stops, a stall and the soft limits, with faults played on the
+  # fake bus.
+  ament_add_pytest_test(test_safety_stack test/test_safety_stack.py TIMEOUT 300)
 endif()
 
 ament_package()

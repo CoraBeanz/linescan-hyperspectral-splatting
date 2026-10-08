@@ -17,6 +17,11 @@ that into ROS:
 and it listens to /line_camera/frame (FrameStamp), when line_camera runs, to lock sweeps to the
 camera's frames (below).
 
+It honours the arm's e-stop: when the servo driver stops the arm (/arm_safety/state, from a
+fault or an e-stop) or anything publishes true on /estop, it sends the ESP32 a STOP, which ends
+a sweep, a move or homing. While the arm stays stopped it refuses ~/home, ~/move and
+~/start_sweep, until /arm_safety/reset. arm_safety: false leaves the mirror out of it.
+
 A sweep is the firmware's stare scan: on each line's tick the mirror steps, settles and holds
 still until the next tick, and the ESP32 reports when it settled. Once a second the bridge sends
 a PING and maps the ESP32's clock onto ROS time from the round trips (clock_sync.py), so a line's
@@ -46,10 +51,12 @@ from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.time import Time
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
 from so101_scan_interfaces.msg import FrameStamp, MirrorState, ScanLine
 from so101_scan_interfaces.srv import MoveMirror, StartSweep
+from so101_scan_safety.watch import RESET_HINT, SafetyWatch, describe
 from so101_scan_sweep import frame_lock as fl
 from so101_scan_sweep import mirror_protocol as mp
 from so101_scan_sweep.clock_sync import ClockSync
@@ -268,6 +275,7 @@ class ScanMirrorBridge(Node):
         self.lock_margin_ns = p("lock_margin", 0.001).value * 1e9     # either side of a window
         self.nudge_threshold_ns = p("nudge_threshold", 0.0003).value * 1e9
         self.lock_lead_ns = p("lock_lead", 0.15).value * 1e9         # first tick at least this far ahead
+        arm_safety = p("arm_safety", True).value
 
         self.clock_sync = ClockSync()
         self.rad_per_step = 2.0 * math.pi / 6400  # until the ESP32's INFO says otherwise
@@ -307,6 +315,13 @@ class ScanMirrorBridge(Node):
 
         make = link_factory or MirrorLink
         self.link = make(self.port, self.baud, self.on_message, self.on_link_state, self.get_logger())
+        self.safety = None
+        if arm_safety:
+            estop = MutuallyExclusiveCallbackGroup()
+            self.safety = SafetyWatch(
+                self, on_stop=lambda msg: self.emergency_stop("the arm stopped (%s)" % describe(msg)),
+                callback_group=estop)
+            self.create_subscription(Bool, "/estop", self.on_estop, 10, callback_group=estop)
         self.link.start()
 
     # --- conversions ----------------------------------------------------------------------
@@ -591,6 +606,9 @@ class ScanMirrorBridge(Node):
     def handle_home(self, _request, response):
         if not self.link.connected:
             return self.fail(response, "mirror ESP32 not connected on %s" % self.port)
+        stopped = self.arm_stopped()
+        if stopped:
+            return self.fail(response, stopped)
         # the motor is off after every start of the ESP32; ENABLE powers it and clears a fault
         reply = self.link.request("ENABLE", 3.0)
         if reply is None or reply.kind == "ERR":
@@ -614,6 +632,21 @@ class ScanMirrorBridge(Node):
         response.success = True
         response.message = "homed; the hall window is %s microsteps wide" % ev.get("width", "?")
         return response
+
+    def on_estop(self, msg):
+        if msg.data:
+            self.emergency_stop("e-stop on /estop")
+
+    def emergency_stop(self, cause):
+        """STOP without waiting for the reply, so it goes out at once whatever else is running."""
+        sent = self.link.send_command("STOP")
+        self.get_logger().warning("%s; %s" % (cause, "stopping the mirror" if sent else
+                                              "the mirror ESP32 isn't connected"))
+
+    def arm_stopped(self):
+        if self.safety is not None and self.safety.stopped:
+            return "the arm is stopped (%s); %s" % (describe(self.safety.state), RESET_HINT)
+        return None
 
     def handle_stop(self, _request, response):
         if not self.link.connected:
@@ -643,7 +676,7 @@ class ScanMirrorBridge(Node):
         for a in angles:
             if not self.min_angle <= a <= self.max_angle:
                 return "%.4f rad is outside [%.3f, %.3f]" % (a, self.min_angle, self.max_angle)
-        return None
+        return self.arm_stopped()
 
     def handle_move(self, request, response):
         step = self.angle_to_step(request.angle)
