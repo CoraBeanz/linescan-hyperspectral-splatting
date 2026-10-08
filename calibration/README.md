@@ -21,6 +21,7 @@ The parts haven't arrived yet, so the kit is built and tested on synthetic frame
 - [First light, step by step](#first-light-step-by-step)
 - [Reading the report](#reading-the-report)
 - [Using a calibration](#using-a-calibration)
+- [Checking for drift](#checking-for-drift)
 - [How it works](#how-it-works)
 - [Testing without the hardware](#testing-without-the-hardware)
 - [Limits](#limits)
@@ -194,6 +195,34 @@ cal.wavelength_at(x, y)                                 # nm at any pixel
 
 All of these are in the turned frame: spectrum along x, blue on the left. If `sensor.orientation` in `calibration.json` isn't all `false`, turn each raw frame the same way first: transpose, then mirror x, then mirror y. One output cell spans several pixels (a 2 nm step is about 12 columns), so average over a cell before sampling: a box as wide as the step along x, and a [1 2 1] filter along the slit, as `Calibration.rectify` does. For radiance, warp the dark-subtracted counts per second and the response map that way separately, then divide one by the other. Dividing first lets the colour mosaic's dim pixels through as noise.
 
+## Checking for drift
+
+A printed housing shifts a little with temperature and handling, and a knock can move the slit or the camera. Before a scanning session, take one CFL set (or neon) and a dark in the sensor mode the calibration was made in, and check it against the calibration:
+
+```bash
+# on the Jetson
+python3 -m hsical capture checks cfl --kind lamp --source cfl --exposure-ms 60 --frames 4
+python3 -m hsical capture checks dark_60ms --kind dark --exposure-ms 60 --frames 4
+# on the PC
+python -m hsical check cal checks/cfl
+```
+
+`check` fits every lamp line the calibration used, in five bands along the slit and the way `calibrate` fitted it, and compares where each one is with where the calibration puts it. It also finds the slit's two ends along the brightest lines. On a synthetic session, a fresh CFL set of the calibrated instrument reads:
+
+```
+  wavelength offset    +0.036 nm (+0.04 px; + means the lines moved toward red)
+  along the slit       -0.047 nm end to end (camera or slit turned)
+  across the spectrum  +0.021 nm blue to red (grating or camera lens moved)
+  worst anywhere       +0.070 nm, limit 0.2   ok
+  lines about the fit  0.042 nm rms (weighted), 0 outlier(s) left out
+  slit ends            -0.21 / +0.15 rows (top / bottom), -0.005% of the slit, limit 0.2%   ok
+Still calibrated: the lines are where the calibration puts them.
+```
+
+The offset, the tilt along the slit and the stretch across the spectrum make a plane through every line's shift; "worst anywhere" is that plane's largest value over the sensor, against a limit of 0.2 nm. The slit ends catch a move along the slit, which the lines alone can't see. With the same instrument knocked by 1.5 px along the spectrum and 2 rows along the slit, it reads an offset of 1.54 px and slit ends of +1.8 and +2.2 rows, and says to recalibrate.
+
+It exits with 0 when the instrument is still calibrated and 2 when it has moved, so a scan script can stop first. `--dark` names the dark (it finds a matching one beside the frames otherwise, or subtracts the black level of 64), `--source` names the lamp for a frame file without a `meta.json`, `--max-nm` and `--max-slit-percent` change the limits, and `--json` saves every line's shift.
+
 ## How it works
 
 **Sensor.** Each set is averaged over its frames, and the dark at the same exposure and gain is subtracted. Without an exact match, the kit interpolates between darks at nearby exposures, and with no darks at all it subtracts the black level of 64 counts. Hot pixels are found in the longest dark, odd ones in the flat, and both get filled in from same-coloured neighbours. The NoIR IMX219 has no infrared-cut filter but still has its red, green and blue dyes. Below about 800 nm, neighbouring pixels see up to ten times different amounts of the same light; past 800 nm the dyes go clear and the mosaic fades out. The kit measures that pattern from the flat and evens it out before looking for lines.
@@ -230,7 +259,7 @@ The synthetic instrument is deliberately not the design. Its spectrum is shifted
 
 The largest wavelength errors sit beyond the outermost lamp lines, where the curve is extrapolated.
 
-A real M12 lens will likely be softer than this synthetic one, so the tests also run a session with twice the blur, where lines come out about 6 nm wide; it stays within the same limits. `pytest` runs 21 tests in about a minute: the whole chain on quarter-size sessions (as designed, with the soft lens, and with the camera turned sideways and mirrored), plus the building blocks. They need numpy 2 and scipy 1.15 or newer, which is what pip installs on Python 3.10 and up: with older versions the wavelength fit finds fewer near-infrared lines or fits them less closely, and a few tests miss their limits.
+A real M12 lens will likely be softer than this synthetic one, so the tests also run a session with twice the blur, where lines come out about 6 nm wide; it stays within the same limits. `pytest` runs 24 tests in about a minute and a half: the whole chain on quarter-size sessions (as designed, with the soft lens, and with the camera turned sideways and mirrored), the drift check on fresh lamp frames of the calibrated instrument as it was and knocked, plus the building blocks. They need numpy 2 and scipy 1.15 or newer, which is what pip installs on Python 3.10 and up: with older versions the wavelength fit finds fewer near-infrared lines or fits them less closely, and a few tests miss their limits.
 
 ## Limits
 
@@ -239,7 +268,7 @@ A real M12 lens will likely be softer than this synthetic one, so the tests also
 - **The CFL changes as it warms up.** The mercury lines grow and the argon lines fade over the first minutes, so give it 2 to 3 minutes before the `cfl` sets.
 - **Neon is weak past 850 nm.** The long set needs gain, and those lines are noisier. The argon lines from the long CFL set cover the same region.
 - **Second-order light.** The grating also sends some light into a second order, where each wavelength lands where twice that wavelength would in the first: 495 nm light lands on top of 990 nm. The GG-495 blocks everything below 495 nm, so this can only reach the last few nanometres before 1000 nm.
-- **Recalibrate when anything moves**: the slit, the focus, the camera, the grating or the filter. A printed housing also shifts a little with temperature, so a quick CFL frame at the start of a scanning session shows whether the lines are still where the calibration put them.
+- **Recalibrate when anything moves**: the slit, the focus, the camera, the grating or the filter. A printed housing also shifts a little with temperature, so take a quick CFL set at the start of a scanning session and [check it](#checking-for-drift): `hsical check` says whether the lines are still where the calibration put them.
 
 ## Code map
 
@@ -258,6 +287,7 @@ calibration/
 │   ├── response.py         blackbody, spectral response, slit evenness
 │   ├── model.py            Calibration: load, save, rectify, radiance, reflectance
 │   ├── apply.py            apply: raw frames to spectra
+│   ├── drift.py            check: a fresh lamp set against a saved calibration
 │   ├── report.py           report.md and its plots
 │   ├── design.py           the Optiland map as a function of slit position and wavelength
 │   ├── synth.py            synthetic sessions with a known answer
