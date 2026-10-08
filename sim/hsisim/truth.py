@@ -15,16 +15,26 @@ from pathlib import Path
 import numpy as np
 
 
+INT_COLUMNS = {"viewpoint", "sweep_id", "index", "settled", "seq", "saturated_px", "n_frames"}
+
+
 def read_lines_csv(path):
-    """lines.csv (or lines_true.csv) as {column: numpy array}."""
+    """lines.csv (or lines_true.csv, frames/frames.csv, truth/frames_true.csv) as {column: numpy
+    array}: counts and times in ns as int64 (a float can't hold today's time to the ns), other
+    numbers as floats with NaN where empty, and text as text."""
     with open(path, newline="") as f:
         rows = list(csv.reader(f))
     head, body = rows[0], rows[1:]
     out = {}
     for k, name in enumerate(head):
         col = [r[k] for r in body]
-        out[name] = np.array(col, dtype=np.int64 if name in ("viewpoint", "sweep_id", "index", "stamp_ns",
-                                                              "hold_until_ns", "settled") else float)
+        if (name.endswith("_ns") or name in INT_COLUMNS) and all(col):
+            out[name] = np.array(col, dtype=np.int64)
+            continue
+        try:
+            out[name] = np.array([float(c) if c else np.nan for c in col])
+        except ValueError:
+            out[name] = np.array(col)
     return out
 
 

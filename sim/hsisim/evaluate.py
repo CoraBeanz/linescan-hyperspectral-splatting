@@ -52,12 +52,15 @@ def _cell_truth(cal, truth):
             map_coordinates(nm_t, [my, mx], order=1, cval=np.nan))
 
 
-def slit_row_errors(cal, h_at, band):
+def slit_row_errors(cal, h_at, band, slit_reversed=False):
     """[slit rows] how far (rows) each rectified row really looks from where its row number
-    says along the slit, over the wavelengths in `band`."""
+    says along the slit, over the wavelengths in `band`. With the slit reversed (camera.json),
+    row 0 is the h = +1 end."""
     k = cal.keystone
     half = 0.5 * (k.s_bottom - k.s_top)
     h_nominal = (cal.s_grid - 0.5 * (k.s_bottom + k.s_top)) / half
+    if slit_reversed:
+        h_nominal = -h_nominal
     with np.errstate(invalid="ignore"):
         return (np.nanmedian(np.where(band[None, :], h_at, np.nan), axis=1) - h_nominal) * half
 
@@ -168,7 +171,8 @@ def evaluate(session, cal_dir, spectra_dir=None, sweeps=None, log=print):
     meas, want, mat = (np.concatenate(a) for a in (meas_all, true_all, mat_all))
     bright = want > 0.15
     ratio = meas[bright] / want[bright]
-    row_err = slit_row_errors(cal, h_at, band)
+    reversed_ = bool(json.loads((session / "frames" / "camera.json").read_text()).get("slit_reversed"))
+    row_err = slit_row_errors(cal, h_at, band, reversed_)
     row_err = row_err[np.isfinite(row_err) & (np.abs(np.nanmedian(h_at, axis=1)) < 0.95)]
     errs = dict(
         lines=int(sum(c.shape[0] for c, _ in cubes.values())),

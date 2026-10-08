@@ -1,11 +1,14 @@
 """The rest of the repo, imported rather than copied.
 
-The simulator reuses three parts of the repo, so it can't drift from them:
+The simulator reuses four parts of the repo, so it can't drift from them:
 
   calibration/hsical            the synthetic spectrograph and IMX219 (hsical.synth), the
                                 design map traced in Optiland, and the calibration itself
   ros2/so101_scan_description   kinematics.py: forward kinematics straight from the URDF
-  ros2/so101_scan_sweep         line_log.py and plan.py: the lines.csv writer and scan plans
+  ros2/so101_scan_sweep         line_log.py, plan.py and frame_lock.py: the lines.csv writer, scan
+                                plans, and how the mirror's line clock locks to the camera
+  ros2/so101_scan_camera        sources.py, matcher.py and session.py: the camera's rolling-shutter
+                                timing, which frames belong to which line, and the frames.csv columns
 
 None of them needs ROS to import. robot.urdf is built from the ROS 2 package's xacro
 files with the `xacro` package from PyPI. xacro resolves $(find pkg) through ROS 2's
@@ -28,7 +31,7 @@ ROS2 = REPO / "ros2"
 XACRO = ROS2 / "so101_scan_description" / "urdf" / "so101_scan.urdf.xacro"
 PLANS = ROS2 / "so101_scan_sweep" / "plans"
 
-_PATHS = (CALIBRATION, ROS2 / "so101_scan_description", ROS2 / "so101_scan_sweep")
+_PATHS = (CALIBRATION, ROS2 / "so101_scan_description", ROS2 / "so101_scan_sweep", ROS2 / "so101_scan_camera")
 
 
 def _ament_stand_in():
