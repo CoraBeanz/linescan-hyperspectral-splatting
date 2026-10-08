@@ -25,9 +25,11 @@ dataset.json, lines.npy, line_sweep.npy, line_mirror_angle.npy and sweep_head_po
               mirror sweeps), in base_link moved down to the table top (z = 0 there, where the
               trainer starts its Gaussians; --ground-z moves it), and each line keeps its mirror
               angle. The head model (the objective and the mirror) comes from the scan's
-              robot.urdf, checked against the line-camera poses lines.csv recorded.
-  intrinsics  f from the scan line's length at the scene distance, blur from the slit and
-              optics numbers splat uses.
+              robot.urdf, checked against the line-camera poses lines.csv recorded. --urdf gives
+              another one, such as the robot.urdf of a later head calibration (calibration/headcal):
+              the head poses are then worked out again from the joint readings in lines.csv.
+  intrinsics  f from the scan line's length at the scene distance (scan.json's, or --urdf's),
+              blur from the slit and optics numbers splat uses.
 
 Lines without a frame, or with more than --max-missing of their values missing, are left out;
 the rest of the missing values (a saturated pixel, a band outside the white's light) are
@@ -297,7 +299,7 @@ def csv_pose(row, prefix):
 
 def convert(scan_dir, out_dir, values="auto", nm_min=500.0, nm_max=950.0, nm_step=10.0, references=(),
             white_name="", dark_name="", white_reflectance=None, calibration=None, slit_bins=256,
-            ground_z=TABLE_Z, max_missing=0.25, sweeps=None, force=False):
+            ground_z=TABLE_Z, max_missing=0.25, sweeps=None, force=False, urdf=None):
     from so101_scan_description.kinematics import Robot
 
     scan = Scan(scan_dir, calibration, slit_bins)
@@ -388,24 +390,45 @@ def convert(scan_dir, out_dir, values="auto", nm_min=500.0, nm_max=950.0, nm_ste
                                                                            if n))
 
     # poses: one head pose per sweep, in a world frame with the table top at z = 0
-    robot = Robot(scan.urdf)
-    head = ls.head_from_urdf(robot)
-    worst_pos = worst_ang = 0.0
-    for row in rows:
-        v = np.linalg.inv(csv_pose(row, "head_")) @ csv_pose(row, "cam_")
-        want = ls.virtual_camera_in_head(head, float(row["mirror_angle"]))
-        worst_pos = max(worst_pos, float(np.abs(v[:3, 3] - want[:3, 3]).max()))
-        worst_ang = max(worst_ang, float(np.abs(v[:3, :3] - want[:3, :3]).max()))
-    if worst_pos > 1e-5 or worst_ang > 1e-4:
-        raise ConvertError("lines.csv's line-camera poses are up to %.3f mm and %.4f rad off the head model in "
-                           "robot.urdf: the trainer would put the lines in the wrong place" % (worst_pos * 1e3,
-                                                                                             worst_ang))
+    frames_info = scan.info.get("frames") or {}
+    scene_distance = float(frames_info.get("scene_distance_m", 0.15))
+    half_line = float(frames_info.get("scan_line_half_length_m", 0.020937))
+    if urdf:
+        # a head calibration made after the scan: the head's poses again, from the joint readings
+        with open(os.path.expanduser(urdf)) as f:
+            robot = Robot(f.read())
+        head = ls.head_from_urdf(robot)
+        arm = [j for j in robot.movable() if j != "scan_mirror_joint"]
+        if any(j not in rows[0] for j in arm):
+            raise ConvertError("lines.csv has no joint readings (%s) to work out the poses with --urdf from"
+                               % ", ".join(arm))
+        head_poses = [robot.fk("scan_head_link", {j: float(r[j]) for j in arm}) for r in rows]
+        scene_distance = float(robot.fk("scan_line_frame", {}, base="line_camera_optical_frame")[2, 3])
+        box = robot.root.find("link[@name='scan_line_frame']/visual/geometry/box")
+        if box is not None:
+            half_line = float(box.get("size").split()[0]) / 2
+        log("head: %s (poses from the joint readings, scan line %.2f mm long at %.1f mm)"
+            % (urdf, 2e3 * half_line, 1e3 * scene_distance))
+    else:
+        robot = Robot(scan.urdf)
+        head = ls.head_from_urdf(robot)
+        head_poses = [csv_pose(r, "head_") for r in rows]
+        worst_pos = worst_ang = 0.0
+        for row in rows:
+            v = np.linalg.inv(csv_pose(row, "head_")) @ csv_pose(row, "cam_")
+            want = ls.virtual_camera_in_head(head, float(row["mirror_angle"]))
+            worst_pos = max(worst_pos, float(np.abs(v[:3, 3] - want[:3, 3]).max()))
+            worst_ang = max(worst_ang, float(np.abs(v[:3, :3] - want[:3, :3]).max()))
+        if worst_pos > 1e-5 or worst_ang > 1e-4:
+            raise ConvertError("lines.csv's line-camera poses are up to %.3f mm and %.4f rad off the head model in "
+                               "robot.urdf: the trainer would put the lines in the wrong place" % (worst_pos * 1e3,
+                                                                                                 worst_ang))
     world = np.eye(4)
     world[2, 3] = -ground_z
     sweep_ids = list(dict.fromkeys(int(r["sweep_id"]) for r in rows))
     sweep_poses, spreads = [], {}
     for sid in sweep_ids:
-        poses = [world @ csv_pose(r, "head_") for r in rows if int(r["sweep_id"]) == sid]
+        poses = [world @ p for r, p in zip(rows, head_poses) if int(r["sweep_id"]) == sid]
         pose, dist, ang = mean_pose(poses)
         sweep_poses.append(ls.pose_array(pose))
         spreads[str(sid)] = dict(lines=len(poses), max_offset_mm=round(dist * 1e3, 4),
@@ -414,10 +437,8 @@ def convert(scan_dir, out_dir, values="auto", nm_min=500.0, nm_max=950.0, nm_ste
             log("  ! sweep %d: the head moved %.2f mm / %.2f deg during the sweep; the trainer takes one pose a "
                 "sweep" % (sid, dist * 1e3, math.degrees(ang)))
 
-    frames_info = scan.info.get("frames") or {}
     width = data[0].shape[0]
-    intr = ls.intrinsics(width, float(frames_info.get("scene_distance_m", 0.15)),
-                         float(frames_info.get("scan_line_half_length_m", 0.020937)))
+    intr = ls.intrinsics(width, scene_distance, half_line)
     lines = np.ascontiguousarray(np.stack(data), dtype="<f4")
     line_sweep = np.array([sweep_ids.index(int(r["sweep_id"])) for r in rows], dtype="<i4")
     line_angle = np.array([float(r["mirror_angle"]) for r in rows], dtype="<f8")
@@ -430,6 +451,7 @@ def convert(scan_dir, out_dir, values="auto", nm_min=500.0, nm_max=950.0, nm_ste
                                               gain=white.gain, reflectance=white_reflectance),
         darks={"%g us, gain %g" % k: v[1] or "black level %g" % BLACK_LEVEL for k, v in dark_cache.items()},
         calibration=scan.camera.get("calibration"), slit_reversed=bool(scan.camera.get("slit_reversed")),
+        head_urdf=os.path.abspath(os.path.expanduser(urdf)) if urdf else "the scan's robot.urdf",
         world="base_link with z moved by %+.4f m, so the table top (base_link z = %.4f) is z = 0"
               % (-ground_z, ground_z),
         sweep_ids=sweep_ids, head_pose_spread=spreads,
@@ -479,12 +501,14 @@ def main(argv=None):
                     help="base_link z that becomes the dataset's z = 0 (default: the table top)")
     ap.add_argument("--max-missing", type=float, default=0.25, help="leave out lines missing more of their values")
     ap.add_argument("--sweeps", help="comma-separated sweep ids to keep (default: all)")
+    ap.add_argument("--urdf", help="the head from this URDF instead of the scan's (e.g. a later head "
+                                   "calibration's robot.urdf): poses worked out again from the joint readings")
     ap.add_argument("--force", action="store_true", help="write into a folder that isn't empty")
     args, _ = ap.parse_known_args(argv)
     try:
         convert(args.scan, args.out, args.values, args.nm_min, args.nm_max, args.nm_step, args.references,
                 args.white, args.dark, args.white_reflectance, args.calibration, args.slit_bins, args.ground_z,
-                args.max_missing, args.sweeps.split(",") if args.sweeps else None, args.force)
+                args.max_missing, args.sweeps.split(",") if args.sweeps else None, args.force, args.urdf)
     except ConvertError as e:
         print("scan_to_dataset: %s" % e, file=sys.stderr)
         return 1
