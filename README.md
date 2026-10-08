@@ -194,7 +194,7 @@ The [simulator](sim/) is a digital twin of the whole scanner: the arm, the scan 
 
 ### On the Jetson Nano
 
-The Nano is stuck on JetPack 4.6: Ubuntu 18.04, CUDA 10.2 and gcc 7. [`jetson/`](jetson/README.md) builds splat for its GPU in a container that uses JetPack's own CUDA, and builds the ROS 2 image in a way JetPack's old Docker can manage. A day-one script builds and tests both and times training on the GPU. From a PC, the same scripts build splat with the Nano's compilers, check that every kernel fits the Nano's registers and shared memory, and run the tests on arm64 Ubuntu 18.04.
+The Nano is stuck on JetPack 4.6: Ubuntu 18.04, CUDA 10.2 and gcc 7. [`jetson/`](jetson/README.md) builds splat for its GPU in a container that uses JetPack's own CUDA, and builds the ROS 2 image in a way JetPack's old Docker can manage. A day-one script builds and tests both and times training on the GPU. From a PC, the same scripts build splat with the Nano's compilers, check that every kernel fits the Nano's registers and shared memory, and run the tests on arm64 Ubuntu 18.04. What training needs on the Nano, in memory and time per dataset, and the commands that measure it: [`splat/docs/nano_budget.md`](splat/docs/nano_budget.md).
 
 ## Reconstruction
 
