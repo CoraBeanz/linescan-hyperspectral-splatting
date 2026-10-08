@@ -65,6 +65,7 @@ class FakeMirror:
         self._abort = threading.Event()
         self._kick = threading.Event()   # NUDGE or PERIOD moved the line clock, or the job ended
         self._next_tick = None      # the running scan's next line tick, on the fake's clock
+        self._unmoved_tick = None   # a line tick the scan has reached but not yet moved for
         self._period = None
         self._motions = []          # (start time, start, target, speed) of recent moves, for pos_at_wall
         self._out = queue.Queue()
@@ -81,6 +82,7 @@ class FakeMirror:
             self.pos = self.rng.randint(-800, 800) if start_pos is None else start_pos
             self.target, self._motion = self.pos, None
             self._motions = []
+            self._next_tick = self._unmoved_tick = None
             self.state, self.homed = "disabled", False
             self.line = self.lines = 0
             # the boot ROM's message at 115200 baud reads as a few bytes and no newline at 921600
@@ -104,13 +106,27 @@ class FakeMirror:
         """What the fake's clock read at a wall-clock time: wall_ns backwards."""
         return self.now_us() + (wall_ns - time.time_ns()) * 1e-3 * (1.0 + self.drift)
 
-    def pos_at_wall(self, wall_ns):
+    def _recorded_until_us(self):
+        """Until when _motions holds every move (call with self.lock held): a scan's next line
+        tick, or the tick it has reached but not yet moved for."""
+        if self._unmoved_tick is not None:
+            return self._unmoved_tick
+        return math.inf if self._next_tick is None else self._next_tick
+
+    def pos_at_wall(self, wall_ns, timeout=1.0):
         """Where the mirror was at a wall-clock time in the last few seconds (for a simulated
-        camera that needs to know whether it moved during an exposure)."""
+        camera that needs to know whether it moved during an exposure). A busy machine can wake
+        the scan late for a line tick that has already passed; this waits for it to record that
+        line's move rather than answering with where the line before left the mirror."""
         t = self.esp_us(wall_ns)
-        with self.lock:
-            motions = list(self._motions)
-            pos = self.pos
+        deadline = time.monotonic() + timeout
+        while True:
+            with self.lock:
+                if t < self._recorded_until_us() or time.monotonic() > deadline:
+                    motions = list(self._motions)
+                    pos = self.pos
+                    break
+            time.sleep(0.0005)
         i = bisect.bisect_right([m[0] for m in motions], t)
         if i == 0:
             return motions[0][1] if motions else pos
@@ -178,7 +194,7 @@ class FakeMirror:
         with self.lock:
             self.pos = self.target = self._pos_now()
             self._motion = None
-            self._next_tick = None
+            self._next_tick = self._unmoved_tick = None
 
     def _halt(self, why):
         """End the running job as the firmware does, with the events it sends for that."""
@@ -225,6 +241,7 @@ class FakeMirror:
                 if seconds <= 0:
                     # a PERIOD sent since the last tick takes effect from the tick after this one
                     self._next_tick = tick + self._period
+                    self._unmoved_tick = tick
                     return tick
             self._kick.wait(seconds)
             self._kick.clear()
@@ -249,6 +266,8 @@ class FakeMirror:
             ready = tick   # line 0: already there
             if n:
                 ready = self._move(start + n * step, self.vstart, tick) + settle_us
+            with self.lock:
+                self._unmoved_tick = None
             # it reports the line once settled, or at the next tick if it is still moving then
             settled = ready < after
             sent = ready if settled else after
@@ -268,7 +287,7 @@ class FakeMirror:
                 raise Abort
             self.pos = self._pos_at(done)
             self.state = "idle"
-            self._next_tick = None
+            self._next_tick = self._unmoved_tick = None
             self._ev("SCAN_DONE", lines=lines, t=round(done), pos=self.pos, aborted=0)
 
     # --- commands -------------------------------------------------------------------------
