@@ -1,7 +1,8 @@
 # Instrument simulator: the self-test (scan the relief target, calibrate the
 # simulated instrument with hsical, turn the sweeps into reflectance, compare with
-# the truth) and the unit tests. It imports calibration/hsical and the ROS 2
-# packages' kinematics, line log and plans, so changes there run it too.
+# the truth) and the unit tests, on the oldest Python and packages it supports and
+# on the newest. It imports calibration/hsical and the ROS 2 packages' kinematics,
+# line log and plans, so changes there run it too.
 name: sim
 
 on:
@@ -31,8 +32,18 @@ concurrency:
 
 jobs:
   test:
-    name: Self-test and unit tests
+    name: Self-test and unit tests, Python ${{ matrix.python }} (${{ matrix.versions }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the floor: every package at the oldest version requirements.txt allows
+          # (numpy 2.0, scipy 1.15 and so on, the calibration kit's floors)
+          - python: "3.10"
+            versions: oldest
+          - python: "3.13"
+            versions: newest
     defaults:
       run:
         working-directory: sim
@@ -40,11 +51,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: sim/requirements.txt
       - name: Install
-        run: pip install -r requirements.txt
+        run: |
+          if [ "${{ matrix.versions }}" = oldest ]; then
+            sed -E 's/>=/==/' requirements.txt > "$RUNNER_TEMP/oldest.txt"
+            pip install -r "$RUNNER_TEMP/oldest.txt"
+          else
+            pip install -r requirements.txt
+          fi
+          pip list
       - name: Self-test (scan, calibrate, apply, compare with the truth)
         run: python -m hsisim selftest
       - name: Unit tests

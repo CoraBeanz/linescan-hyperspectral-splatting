@@ -21,7 +21,7 @@ That makes every later stage testable before the parts arrive: the capture pipel
 
 ## Quick start
 
-On any PC with Python 3.8 or newer (no ROS needed), from this folder:
+On any PC with Python 3.10 or newer (no ROS needed), from this folder:
 
 ```bash
 pip install -r requirements.txt
