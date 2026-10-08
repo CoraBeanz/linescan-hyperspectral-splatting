@@ -1,13 +1,14 @@
 """Command line: python -m hsical <command> --help
 
 On the Jetson (Python 3.6 is fine):   capture, plan, focus, probe
-On the PC (Python 3.10+, scipy):      inspect, calibrate, apply, synth, selftest
+On the PC (Python 3.10+, scipy):      inspect, calibrate, apply, check, synth, selftest
 
 Each command imports only what it needs, so the capture commands work on a
 Jetson that has nothing but numpy.
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -71,6 +72,18 @@ def cmd_apply(a):
     from .apply import apply_frames
     apply_frames(a.calibration, a.frames, a.dark, a.out, white=a.white, white_dark=a.white_dark,
                  white_reflectance=a.white_reflectance)
+
+
+def cmd_check(a):
+    from .drift import check, report
+    r = check(a.calibration, a.frames, dark=a.dark, source=a.source, n_bands=a.bands, max_nm=a.max_nm,
+              max_slit=a.max_slit_percent / 100.0)
+    report(r)
+    if a.json:
+        with open(a.json, "w") as f:
+            json.dump(r.to_dict(), f, indent=1)
+            f.write("\n")
+    sys.exit(0 if r.ok else 2)
 
 
 def cmd_synth(a):
@@ -157,6 +170,19 @@ def main(argv=None):
     q.add_argument("--white-reflectance", type=float, default=0.98)
     q.add_argument("-o", "--out", default="spectra")
     q.set_defaults(func=cmd_apply)
+
+    q = sub.add_parser("check", help="has the instrument moved? a lamp frame against a calibration")
+    q.add_argument("calibration", help="folder with calibration.json and maps.npz")
+    q.add_argument("frames", help="a CFL or neon frame set folder (or one frame file)")
+    q.add_argument("--dark", help="dark set folder, frame file, or a number (default: a dark set at the same "
+                                  "exposure beside the frames, else the black level, 64)")
+    q.add_argument("--source", choices=["cfl", "neon"], help="the lamp (default: from the set's meta.json)")
+    q.add_argument("--bands", type=int, default=5, help="bands along the slit to measure the lines in")
+    q.add_argument("--max-nm", type=float, default=0.2, help="largest wavelength shift that still passes")
+    q.add_argument("--max-slit-percent", type=float, default=0.2,
+                   help="largest shift along the slit that still passes, in %% of the slit's length")
+    q.add_argument("--json", help="also write the result to this file")
+    q.set_defaults(func=cmd_check)
 
     q = sub.add_parser("synth", help="render a synthetic session from the optical design")
     q.add_argument("out")
