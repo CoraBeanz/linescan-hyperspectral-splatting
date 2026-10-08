@@ -83,7 +83,7 @@ class Estop(Node):
 
 def interactive(node):
     print("arm_estop: Enter or space stops the arm, l goes limp, r resets, q quits")
-    print("now: " + describe(node.watch.state if node.watch.wait() else None), flush=True)
+    print("now: " + describe(node.watch.state if node.watch.wait(alone=None) else None), flush=True)
     last = node.watch.state
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd) if os.isatty(fd) else None
@@ -134,13 +134,13 @@ def main(argv=None):
             ok, message = (node.reset() if args.reset else node.trigger("estop" if args.stop else "torque_off"))
             print(message)
             code = 0 if ok else 1
-            if ok and args.reset and node.watch.wait():  # say when the controller has caught up
+            if ok and args.reset and node.watch.wait(alone=None):  # say when the controller has caught up
                 deadline = time.monotonic() + 3.0
                 while time.monotonic() < deadline and node.watch.state.state != ArmSafety.OK:
                     time.sleep(0.05)
                 print("now: " + describe(node.watch.state))
         elif args.status:
-            print(describe(node.watch.state if node.watch.wait() else None))
+            print(describe(node.watch.state if node.watch.wait(alone=None) else None))
             state = node.watch.state
             if state is not None:
                 for w in state.warnings:

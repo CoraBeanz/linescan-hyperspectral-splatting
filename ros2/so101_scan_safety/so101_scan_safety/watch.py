@@ -54,12 +54,15 @@ class SafetyWatch:
     def stopped(self):
         return is_stopped(self.state)
 
-    def wait(self, timeout=5.0):
-        """Wait for the driver's latched state; False if none came. Waits the whole timeout only
-        while a driver is there to publish it: with nobody on the topic after a second, as with
-        mock hardware, it gives up then."""
+    def wait(self, timeout=5.0, alone=1.0):
+        """Wait for the driver's latched state; False if none came. After `alone` s with nobody
+        publishing it (mock hardware) it gives up early; that only says something once the
+        driver's process has been discovered, e.g. after its /joint_states arrived. alone=None
+        waits the whole timeout."""
+        if alone is None:
+            return self.received.wait(timeout)
         deadline = time.monotonic() + timeout
-        if self.received.wait(min(timeout, 1.0)):
+        if self.received.wait(min(timeout, alone)):
             return True
         while time.monotonic() < deadline and self._node.count_publishers(TOPIC) > 0:
             if self.received.wait(0.05):
@@ -68,7 +71,7 @@ class SafetyWatch:
 
     def not_ready(self, wait=5.0):
         """Why the arm can't take a move now, or None. No state at all means no driver to ask,
-        as with mock hardware, which is fine."""
+        as with mock hardware, which is fine. Call it once /joint_states is coming in."""
         self.wait(wait)
         msg = self.state
         if msg is None or msg.state == ArmSafety.OK:
