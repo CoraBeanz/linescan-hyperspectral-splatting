@@ -69,13 +69,13 @@ ring plan, four viewpoints of 107 lines each, seed 7, 256 pixels by 46 bands, 30
 | Slit profile correlation with the truth, and with the truth mirrored | pixel 0 is at the wrong end of the slit | ≥ 0.99, ≤ 0.5 | 0.999, 0.02 |
 | Slit profile shift | the slit bins are off by part of a pixel | ≤ 0.25 px | 0.06 px |
 | RMSE against the measured lines, and against the truth's noise-free lines | the splat doesn't fit the lines | ≤ 0.025, ≤ 0.03 | 0.014, 0.019 |
-| Pose error after training, and after over before | pose refinement stopped working | ≤ 2.5 px, ≤ 0.7 | 1.69 px, 0.47 |
+| Pose error after training, and after over before | pose refinement stopped working | ≤ 2.5 px, ≤ 0.7 | 1.70 px, 0.47 |
 | The exported file, decoded as the viewer decodes it, against the scene | the export's quantisation went wrong | ≤ 0.005 rms | 0.0002 |
 | The viewer's probe against the C++ renderer | the viewer and the trainer disagree on the format or the model | ≤ 5 × 10⁻⁴ | 6 × 10⁻⁵ |
 | How much of the default view's middle the splat covers | the viewer opens looking at nothing | ≥ 50% | 81% |
 
 The logged head poses start 2.0 mm and 1.0° from the truth (the simulator's default arm and
-mirror errors), which is 3.60 px rms on the line cameras. Training brings that down to 1.69 px,
+mirror errors), which is 3.60 px rms on the line cameras. Training brings that down to 1.70 px,
 about 0.28 mm on the table. The quick config ([`configs/sim-quick.yaml`](configs/sim-quick.yaml),
 two viewpoints, 128 pixels by 23 bands, 600 steps) runs every stage in about 100 seconds. It keeps
 the same limits on the conversion and only asks that training doesn't make the poses worse.
@@ -121,9 +121,38 @@ each twice more:
 - **Scene at the true poses:** the scene alone, on a copy of the dataset with the truth's poses
   and mirror angles (`--no-poses`). This is the best scene the lines can give.
 - **Poses only:** from the logged poses, against that scene held fixed (`splat_train --init-scene
-  --freeze-scene`). This is the floor the geometry leaves, with no error in the scene to blame.
+  --freeze-scene`). This was meant to show the floor the geometry leaves, with no error in the
+  scene to blame.
 
-POSE_FLOOR_RESULTS
+From the CI run on the pull request that added this, at 256 px, 46 bands and 3000 iterations. A pixel
+is 0.16 mm on the table at the 150 mm working distance.
+
+| Plan | Scene | Logged poses | Joint training | Scene at the true poses (RMSE vs truth) | Poses only, scene frozen |
+|---|---|---|---|---|---|
+| ring, 4 sweeps | relief | 3.60 px (0.59 mm) | 1.70 px (0.28 mm) | 0.0193 | 8.43 px (1.38 mm) |
+| ring, 4 sweeps | board | 3.60 px (0.59 mm) | 0.49 px (0.08 mm) | 0.0092 | 0.38 px (0.06 mm) |
+| ring16, 16 sweeps | relief | 6.29 px (1.03 mm) | 1.76 px (0.29 mm) | 0.0366 | 7.57 px (1.24 mm) |
+| ring16, 16 sweeps | board | 6.29 px (1.03 mm) | 0.45 px (0.07 mm) | 0.0101 | 0.39 px (0.06 mm) |
+
+What this says:
+
+- **The relief doesn't pin the poses down better, yet.** Trained the way the chain trains, the
+  board's poses come back to under half a pixel and the relief's to about 1.7, from either plan;
+  both are well under a millimetre. The relief's scene is harder to learn: even at the true poses
+  its lines are fitted twice as badly as the board's (worse from sixteen views, whose 25° views
+  see the pillars' sides, in the same 3000 iterations), and the poses bend to absorb what the
+  scene gets wrong.
+- **Against a fixed relief scene, the poses run away.** On the board the frozen run lands at 0.4 px.
+  On the relief it ends 7.6 to 8.4 px off, fitting the lines ten times worse than the true poses do.
+  Started at the true poses it stays there (0.001 px after 600 steps), and in a one-off test on the
+  ring plan with the pose steps cut to a tenth and to a fiftieth it still drifted away, more slowly
+  (to 6.5 and 4.1 px). So it's the shape of the loss, not the step size: the pillars' edges and fine
+  patterns make a sharp minimum at the truth, and the logged poses, 3.6 px off, are already outside
+  it, where the nearest way downhill leads elsewhere. Joint training gets in because its scene
+  starts as a blurry plane and sharpens as the poses settle.
+- **For the rig:** keep joint training. A sharp scene would only help once the poses are within a
+  pixel or so of the truth, which better hand-eye calibration, or a coarse-to-fine pose stage
+  (poses against a blurred scene first), might give. Neither is tried here.
 
 ```bash
 python3 pipeline/pose_floor.py                                      # the ring plan

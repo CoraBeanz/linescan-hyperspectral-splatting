@@ -298,7 +298,10 @@ What this says for the rig:
   about the board while shifting it to keep the board in place barely changes
   what a narrow fan sees of a flat board, so the loss is nearly flat in that
   direction. A target with textured relief instead of a flat board should
-  pin it down better (not yet tried).
+  pin it down better. On the simulator's relief target it doesn't yet: the
+  poses come back to about 1.7 px at 256 px, against the board's 0.5, and
+  refining them against a fixed relief scene from the logged poses runs away (see
+  [Relief or flat board](../pipeline/README.md#relief-or-flat-board-how-well-the-poses-come-back)).
 
 ## Material maps
 
@@ -565,6 +568,9 @@ cd build/splat
 
 # Time and memory per preset and mode, as Markdown tables (docs/nano_budget.md)
 python3 ../../splat/tools/nano_budget.py --bin . --presets small,default
+
+# Refine only the poses, against a scene trained earlier and held fixed
+./splat_train synth synth/train_poses --init-scene synth/train/scene --freeze-scene
 
 # CPU vs GPU on every line, with timings
 ./splat_render compare synth
