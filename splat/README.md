@@ -189,12 +189,15 @@ thread per visible pair, into the Gaussian and the line's camera). By
 default the trainer copies the scene up and the gradients down every step and
 keeps Adam on the CPU, which is simple and costs a few MB of copies per step.
 On TheRig the GPU's gradients agree with the CPU reference's to about 10⁻⁶
-(relative), and a training step takes 3 to 5 ms.
+(relative).
 
 With `--gpu-adam` the scene, its Adam moments and densification stay on the
 GPU (`src/cuda/optimizer.cu`); only the 128 line cameras go up and their pose
-gradients come down. Both run the same code as the CPU and give the same
-scene bit for bit, which the tests check:
+gradients come down. On TheRig that takes a `default` step from 7.1 to 1.9 ms
+(the copies were most of it), and 8 features through a learned basis
+(`--basis 8`) to 1.1 ms; [`docs/nano_budget.md`](docs/nano_budget.md) has
+every preset. Adam and densification run the same code as on the CPU and
+give the same scene bit for bit, which the tests check:
 
 - **Adam** uses `__fmul_rn`, `__fadd_rn` and friends, which stop the compiler
   fusing a multiply and an add into one FMA (one rounding instead of two), so
