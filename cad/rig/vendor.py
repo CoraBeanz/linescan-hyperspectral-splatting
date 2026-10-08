@@ -49,7 +49,7 @@ MASS_G = {
     "HSI_field_lens": (1.2, "est"),
     "HSI_slit_blades": (1.0, "est"),
     "HSI_grating": (0.1, "est"),
-    "HSI_magnet": (0.3, "est"),
+    "HSI_magnet": (0.24, "est"),
     "HSI_hall": (0.3, "est"),
 }
 
@@ -158,7 +158,7 @@ def scan_mirror(doc, parent, P, rotor_frame):
 
 
 def magnet(doc, parent, P, rotor_frame):
-    c = container(doc, parent, "HSI_magnet", "Home magnet 5 x 2 mm", rotor_frame)
+    c = container(doc, parent, "HSI_magnet", "Home magnet 5 x 1.6 mm", rotor_frame)
     b = Part(doc, c, "magnet").m("magnet")
     b.cyl("disc", "x", (P.pad_x1 - P.mag_t, -P.mag_r, 0), P.mag_d / 2, P.mag_t)
     return c

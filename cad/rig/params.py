@@ -9,7 +9,7 @@ Source tags used in the last column:
   model     optics/spectrograph_model.py, layout C (read live via optics_link)
   ds        vendor datasheet or drawing
   listing   vendor product page
-  measured  measured from TheRobotStudio's SO-101 meshes
+  measured  measured on the part in hand, or from TheRobotStudio's SO-101 meshes
   est       estimate: no published number; check the part when it arrives
   design    a choice made for this head
 """
@@ -210,8 +210,8 @@ def rows():
     p("horn_sq", 9.9, "mm", "horn screw square (4x M3, 14 mm bolt circle)", "measured")
     p("horn_boss_d", 5.4, "mm", "horn centre screw head diameter", "measured")
     p("horn_boss_h", 1.5, "mm", "horn centre screw head proud of the horn face", "measured")
-    p("mag_d", 5.0, "mm", "home magnet diameter", "listing")
-    p("mag_t", 2.0, "mm", "home magnet thickness", "listing")
+    p("mag_d", 5.0, "mm", "home magnet diameter (NdFeB disc, magnetized through its thickness)", "measured")
+    p("mag_t", 1.6, "mm", "home magnet thickness; the clamp pocket is cut to match", "measured")
 
     sec("Printed parts")
     p("wall", 2.5, "mm", "housing wall thickness", "design")

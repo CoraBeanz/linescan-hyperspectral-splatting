@@ -51,7 +51,7 @@ The head has its own frame: the origin is on the face of the wrist-roll horn, +Z
 
 **Optics carriers.** The objective carrier, slit block and grating carrier are plates that slide into rib slots from the open side. That lets you build and align the optics before the lid goes on. The bench puck has the same rail on a 50 × 40 mm plate with a 1/4"-20 nut, so the head can sit on a tripod or the optics table for the bench steps in the [build order](../docs/parts_list_and_design.md#4-build-order).
 
-**Scan mirror.** A printed clamp grips the stepper's 4 mm shaft with an M3 pinch screw and holds the mirror on a flat pad parallel to the shaft. The pad is drawn for a 20 × 20 mm piece cut from a 3 mm front-surface mirror sheet, and notches in its edges mark where the mirror's ends go so it sits centred on the optical axis. Along the shaft the piece can be anything from 20 to 25 mm. Across the shaft keep it at 20 mm or a little under, because its corners pass 0.9 mm from the housing as it turns. For thinner glass, set `mirror_t` and rebuild, or glue the mirror onto a printed shim that makes up the difference to 3 mm. A 5 × 2 mm magnet in the clamp's tab passes an A3144 hall sensor in the +X wall when the mirror is turned 40° back from its 45° working angle, which gives each scan a home position.
+**Scan mirror.** A printed clamp grips the stepper's 4 mm shaft with an M3 pinch screw and holds the mirror on a flat pad parallel to the shaft. The pad is drawn for a 20 × 20 mm piece cut from a 3 mm front-surface mirror sheet, and notches in its edges mark where the mirror's ends go so it sits centred on the optical axis. Along the shaft the piece can be anything from 20 to 25 mm. Across the shaft keep it at 20 mm or a little under, because its corners pass 0.9 mm from the housing as it turns. For thinner glass, set `mirror_t` and rebuild, or glue the mirror onto a printed shim that makes up the difference to 3 mm. A 5 × 1.6 mm magnet in the clamp's tab passes an A3144 hall sensor in the +X wall when the mirror is turned 40° back from its 45° working angle, which gives each scan a home position.
 
 **Camera.** The B0152 board sits outside the end wall on four standoffs. The CIL122 goes in the board's own M12 holder, which reaches through a 21 mm hole in the wall. The hole is sized from `brd_holder_w` so a square holder passes at any angle. Turn the board so the sensor's long side runs across the slit, since that is the axis the spectrum spreads along. Black tape around the board edge keeps light out of the end.
 
@@ -90,7 +90,7 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | Long-pass filter: Edmund #54-652, SCHOTT GG-495, Ø12.5 × 3 mm | listing. The cap's seat takes the ±0.38 mm diameter tolerance |
 | Scan mirror: 20 × 20 mm piece cut from a RUEHALF 100 × 100 × 3 mm front-surface mirror | thickness from the listing |
 | Stepper: StepperOnline 8HS11-0204S, NEMA 8, 1.8°, 0.2 A | size, shaft and holes from the listing; boss and thread depth estimated |
-| A3144 hall sensor and a 5 × 2 mm magnet | |
+| A3144 hall sensor and a 5 × 1.6 mm magnet, magnetized through its thickness | measured |
 | Pose camera: Pi NoIR v2 (owned) | Raspberry Pi drawing |
 
 ### Hardware
@@ -133,7 +133,7 @@ These numbers came from estimates or listings, not datasheets. Check them when t
 2. Press in the heat-set inserts: two M3 in the lid bosses on the housing, four M2 in the camera standoffs and four M2 in the pose-camera standoffs.
 3. Build the optics on their carriers. The objective's holder screws to the objective carrier, the long-pass disc drops into the filter cap, and the cap pushes onto the front of the lens. In the slit block, the field lens drops into its pocket from the front with its flat side toward the blades (a dot of glue on its rim stops it rattling), the two blade pieces go in the recess over it with the 0.05 mm feeler blade setting the gap, and the collimator's holder screws to the back. Tape the grating film into its carrier with the grooves along X. Slide the three carriers into their slots.
 4. Fit the camera board on the end wall, the pose camera on the +Y face, and the hall sensor in its pocket in the +X wall.
-5. Screw the stepper to the lid with the four M2 × 4 from inside. Glue the magnet into the clamp's tab and the mirror onto the pad between the notches, then put the clamp on the shaft.
+5. Screw the stepper to the lid with the four M2 × 4 from inside. The A3144 switches on one pole only, so pass each face of the magnet over the powered sensor first and glue it into the clamp's tab with the face that switches it facing out. Glue the mirror onto the pad between the notches, then put the clamp on the shaft.
 6. Take the gripper off the wrist-roll horn and screw the puck on. Slide the housing onto the rail, then fit the lid so the mirror goes in through the open side. The two M3 × 35 bolts go in from the +X face and take a washer and nut each on the lid's motor pad, and the two M3 × 8 go through the lid ears.
 
 ## Checks
