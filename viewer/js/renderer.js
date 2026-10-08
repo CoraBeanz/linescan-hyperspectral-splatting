@@ -10,18 +10,24 @@
 // A Gaussian's color is three channels, each a weighted sum of its features
 // (spectral.js makes the weights), computed in the vertex shader from the
 // features in a texture. Changing what's shown only changes the weights.
+// A file with material maps also gets a texture of each Gaussian's material,
+// cluster and abundances, and the color can come from those instead: a
+// palette color per material or cluster, or one endmember's abundance.
 
 import { JACOBIAN_CLAMP, NEAR, PIXEL_VARIANCE } from './probe.js';
 
 const TEX_WIDTH = 2048;  // texels per row of the data textures; WebGL2 guarantees at least 2048
 const MAX_FEATURE_TEXELS = 32;  // up to 128 features per Gaussian
+export const PALETTE_SIZE = 64;  // categories past this reuse the palette's colors
+export const UNKNOWN = 255;      // the "no material" label
 
-const splatVertexShader = (texels) => `#version 300 es
+const splatVertexShader = (texels, materialTexels) => `#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
 
 #define TEXELS ${texels}
+#define MAT_TEXELS ${materialTexels}
 
 uniform sampler2D uGeom;   // per Gaussian, 3 RGBA32F texels: (mean, opacity), (xx, xy, xz, yy), (yz, zz, offset, scale)
 uniform sampler2D uFeat;   // per Gaussian, TEXELS RGBA8 texels: features as 0..1 between offset and offset + scale
@@ -34,6 +40,14 @@ uniform float uNear;
 uniform float uPixelVar;   // variance of a pixel's footprint, px^2
 uniform vec4 uWeights[3 * TEXELS];  // per channel, weights on the 0..1 features
 uniform vec3 uOffsetWeight;         // per channel, the sum of the feature weights
+#if MAT_TEXELS > 0
+uniform sampler2D uMat;    // per Gaussian, MAT_TEXELS RGBA8 texels: (label, cluster, angle, 0), then the abundances
+uniform int uColorBy;      // 0: the channels above; 1: a category's palette color; 2: one endmember's abundance
+uniform int uCategory;     // 0: the library material, 1: the cluster
+uniform int uHighlight;    // -1, or the only category shown in color
+uniform int uEndmember;
+uniform vec3 uPalette[${PALETTE_SIZE}];  // linear RGB per category
+#endif
 
 layout(location = 0) in uint aIndex;
 
@@ -86,6 +100,20 @@ void main() {
     c += vec3(dot(uWeights[j], f), dot(uWeights[TEXELS + j], f), dot(uWeights[2 * TEXELS + j], f));
   }
   vColor = g2.z * uOffsetWeight + g2.w * c;
+#if MAT_TEXELS > 0
+  if (uColorBy == 1) {
+    vec4 m = texelFetch(uMat, texel(MAT_TEXELS * i), 0);
+    int k = int((uCategory == 0 ? m.r : m.g) * 255.0 + 0.5);
+    // Unlabelled Gaussians, and all but the picked category, stay as a dim
+    // gray of their true brightness, so the scene's shape still reads.
+    float gray = 0.25 * dot(max(vColor, vec3(0.0)), vec3(0.2126, 0.7152, 0.0722));
+    bool shown = k != ${UNKNOWN} && (uHighlight < 0 || k == uHighlight);
+    vColor = shown ? uPalette[k & ${PALETTE_SIZE - 1}] : vec3(gray);
+  } else if (uColorBy == 2) {
+    vec4 ab = texelFetch(uMat, texel(MAT_TEXELS * i + 1 + (uEndmember >> 2)), 0);
+    vColor = vec3(ab[uEndmember & 3]);
+  }
+#endif
 }`;
 
 const SPLAT_FRAGMENT_SHADER = `#version 300 es
@@ -118,7 +146,8 @@ void main() {
 }`;
 
 // Modes: 0 shows the three channels as linear RGB, 1 shows the first as
-// gray, 2 shows (first - second) / (first + second) on a diverging scale.
+// gray, 2 shows (first - second) / (first + second) on a diverging scale,
+// 3 shows the first over the coverage (an abundance) on a sequential scale.
 const DISPLAY_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
@@ -145,6 +174,17 @@ vec3 diverging(float x) {
   return mix(c3, c4, t - 3.0);
 }
 
+// Dark violet at 0 through teal to yellow at 1 (viridis), in linear RGB.
+vec3 sequential(float x) {
+  vec3 c0 = vec3(0.0578, 0.0003, 0.0887), c1 = vec3(0.0437, 0.0844, 0.2582), c2 = vec3(0.0152, 0.2831, 0.2623);
+  vec3 c3 = vec3(0.1119, 0.5841, 0.1221), c4 = vec3(0.9823, 0.7991, 0.0185);
+  float t = clamp(x, 0.0, 1.0) * 4.0;
+  if (t < 1.0) return mix(c0, c1, t);
+  if (t < 2.0) return mix(c1, c2, t - 1.0);
+  if (t < 3.0) return mix(c2, c3, t - 2.0);
+  return mix(c3, c4, t - 3.0);
+}
+
 void main() {
   vec4 acc = texelFetch(uAcc, ivec2(gl_FragCoord.xy), 0);
   vec3 c = acc.rgb + (1.0 - acc.a) * uBackground;
@@ -153,6 +193,9 @@ void main() {
     rgb = srgb(uGain * c);
   } else if (uMode == 1) {
     rgb = srgb(vec3(uGain * c.r));
+  } else if (uMode == 3) {
+    float share = acc.a > 1e-6 ? acc.r / acc.a : 0.0;
+    rgb = mix(vec3(0.05), srgb(sequential(share)), clamp(acc.a, 0.0, 1.0));
   } else {
     float sum = c.r + c.g;
     float nd = abs(sum) > 1e-6 ? (c.r - c.g) / sum : 0.0;
@@ -236,6 +279,7 @@ export class SplatRenderer {
     this.acc = null;
     this.scene = null;
     this.channels = { weights: [], offset: [0, 0, 0], background: [0, 0, 0] };
+    this.colorBy = { by: 'spectra', category: 'label', highlight: -1, endmember: 0 };
     this.sortedFor = null;
     this.visible = 0;
     this.vao = gl.createVertexArray();
@@ -299,8 +343,26 @@ export class SplatRenderer {
 
     this.geomTex = dataTexture(gl, gl.RGBA32F, gl.RGBA, gl.FLOAT, geom, geomRows);
     this.featTex = dataTexture(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, feat, featRows);
-    this.splat = link(gl, splatVertexShader(texels), SPLAT_FRAGMENT_SHADER);
     this.texels = texels;
+
+    // Material maps: (label, cluster, angle, 0), then the abundances four to a texel.
+    const mat = scene.materials;
+    this.materialTexels = 0;
+    if (mat) {
+      const E = mat.endmembers.length, mt = 1 + Math.ceil(E / 4);
+      const rows = Math.max(1, Math.ceil((mt * N) / TEX_WIDTH));
+      const data = new Uint8Array(TEX_WIDTH * rows * 4);
+      for (let i = 0; i < N; i++) {
+        const o = 4 * mt * i;
+        data[o] = mat.label[i];
+        data[o + 1] = mat.cluster[i];
+        data[o + 2] = mat.angle ? mat.angle[i] : 0;
+        data.set(mat.abundances.subarray(i * E, (i + 1) * E), o + 4);
+      }
+      this.matTex = dataTexture(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, data, rows);
+      this.materialTexels = mt;
+    }
+    this.splat = link(gl, splatVertexShader(texels, this.materialTexels), SPLAT_FRAGMENT_SHADER);
 
     this.order = new Uint32Array(N);
     this.keys = new Uint32Array(N);
@@ -328,9 +390,10 @@ export class SplatRenderer {
     const gl = this.gl;
     if (this.geomTex) gl.deleteTexture(this.geomTex);
     if (this.featTex) gl.deleteTexture(this.featTex);
+    if (this.matTex) gl.deleteTexture(this.matTex);
     if (this.indexBuffer) gl.deleteBuffer(this.indexBuffer);
     if (this.splat) gl.deleteProgram(this.splat.program);
-    this.geomTex = this.featTex = this.indexBuffer = this.splat = null;
+    this.geomTex = this.featTex = this.matTex = this.indexBuffer = this.splat = null;
   }
 
   // Up to three channels, each a Float64Array of weights over the bands.
@@ -353,6 +416,21 @@ export class SplatRenderer {
       }
     });
     this.channels = { weights, offset, background };
+  }
+
+  // Where each Gaussian's color comes from: {by: 'spectra'} for the channels,
+  // {by: 'category', category: 'label' | 'cluster', highlight: index or -1},
+  // or {by: 'abundance', endmember: index}. Categories take their colors from
+  // `palette`, [r, g, b] in 0..1 sRGB each.
+  setColorBy(colorBy, palette = []) {
+    this.colorBy = { by: 'spectra', category: 'label', highlight: -1, endmember: 0, ...colorBy };
+    this.palette = new Float32Array(3 * PALETTE_SIZE);
+    palette.slice(0, PALETTE_SIZE).forEach((rgb, k) => {
+      for (let c = 0; c < 3; c++) {
+        const v = rgb[c];
+        this.palette[3 * k + c] = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      }
+    });
   }
 
   resize(width, height) {
@@ -389,7 +467,8 @@ export class SplatRenderer {
     this.visible = n;
   }
 
-  // cam: {R, t, f, width, height} (camera.js). display: {mode, gain}.
+  // cam: {R, t, f, width, height} (camera.js). display: {mode, gain}, and
+  // background: [r, g, b] to show behind the scene instead of its own.
   render(cam, display) {
     const gl = this.gl;
     const { width, height } = cam;
@@ -426,6 +505,17 @@ export class SplatRenderer {
       gl.uniform1f(u.uPixelVar, PIXEL_VARIANCE);
       gl.uniform4fv(u.uWeights, this.channels.weights);
       gl.uniform3fv(u.uOffsetWeight, this.channels.offset);
+      if (this.materialTexels) {
+        const c = this.colorBy;
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, this.matTex);
+        gl.uniform1i(u.uMat, 2);
+        gl.uniform1i(u.uColorBy, c.by === 'category' ? 1 : c.by === 'abundance' ? 2 : 0);
+        gl.uniform1i(u.uCategory, c.category === 'cluster' ? 1 : 0);
+        gl.uniform1i(u.uHighlight, c.highlight);
+        gl.uniform1i(u.uEndmember, c.endmember);
+        gl.uniform3fv(u.uPalette, this.palette || new Float32Array(3 * PALETTE_SIZE));
+      }
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.bindVertexArray(this.vao);
@@ -443,7 +533,7 @@ export class SplatRenderer {
     gl.uniform1i(u.uAcc, 0);
     gl.uniform1i(u.uMode, display.mode);
     gl.uniform1f(u.uGain, display.gain);
-    gl.uniform3fv(u.uBackground, this.channels.background);
+    gl.uniform3fv(u.uBackground, display.background || this.channels.background);
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);

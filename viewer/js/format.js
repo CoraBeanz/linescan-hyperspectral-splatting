@@ -13,6 +13,11 @@
 //                  opacity        uint8   [N]     opacity * 255
 //                  feature_range  float32 [N, 2]  offset and scale of the features
 //                  features       uint8   [N, K]  feature = offset + scale * q / 255
+//                and, if splat_materials added material maps (header "materials"):
+//                  material_label uint8   [N]     library material, 255 for unknown
+//                  material_angle uint8   [N]     its spectral angle, in angle_step_deg
+//                  cluster        uint8   [N]     k-means cluster
+//                  abundances     uint8   [N, E]  each endmember's share * 255
 //
 // A spectrum is basis [B, K] times the features. A file may also be gzipped,
 // and either form may be base64 text, for hosts that only serve text.
@@ -96,6 +101,8 @@ export function parseSplat(buffer) {
     return new Type(buffer, start + b.offset, length);
   };
 
+  const optionalBlock = (name, perItem) => (header.blocks[name] ? block(name, perItem) : null);
+
   const means = block('means', 3);
   const logScales = block('log_scales', 3);
   const rotations = block('rotations', 4);
@@ -155,7 +162,51 @@ export function parseSplat(buffer) {
     background: Float64Array.from(header.background),
     view: header.view,
     sweeps: header.sweeps || [],
+    materials: readMaterials(header, optionalBlock),
     bytes: buffer.byteLength,
+  };
+}
+
+// "#rrggbb" -> [r, g, b] in 0..1 (sRGB).
+export function hexColor(hex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex || '');
+  const v = m ? parseInt(m[1], 16) : 0x808080;
+  return [(v >> 16) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+}
+
+// The material maps splat_materials adds, or null for a file without them.
+function readMaterials(header, optionalBlock) {
+  const info = header.materials;
+  if (!info) return null;
+  const classes = info.library.classes.map((c) => ({
+    name: c.name, css: c.color, color: hexColor(c.color), spectrum: Float64Array.from(c.spectrum), count: c.count,
+  }));
+  const clusters = info.clusters.list.map((c, k) => ({
+    name: `Cluster ${k + 1}`, css: c.color, color: hexColor(c.color), spectrum: Float64Array.from(c.spectrum),
+    count: c.count, nearest: c.nearest, angleDeg: c.angle_deg, brightnessMatches: c.brightness_matches !== false,
+  }));
+  const endmembers = info.unmixing.endmembers.map((e) => ({
+    name: e.name, css: e.color, color: hexColor(e.color),
+    spectrum: e.class !== undefined ? classes[e.class].spectrum : Float64Array.from(e.spectrum),
+  }));
+  const E = endmembers.length;
+  const label = optionalBlock('material_label', 1);
+  const cluster = optionalBlock('cluster', 1);
+  const abundances = optionalBlock('abundances', E);
+  if (!label || !cluster || !abundances) throw new Error('the file describes material maps but lacks their arrays');
+  return {
+    classes,
+    clusters,
+    endmembers,
+    label,
+    angle: optionalBlock('material_angle', 1),
+    angleStep: info.labels.angle_step_deg || 0.1,
+    cluster,
+    abundances,
+    labels: info.labels,
+    unmixing: info.unmixing,
+    score: info.score || null,
+    unknown: info.labels.unknown || 0,
   };
 }
 

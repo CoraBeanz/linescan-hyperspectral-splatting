@@ -45,7 +45,11 @@ const MODE_NOTES = {
   band: 'One wavelength, or the mean over a band, in gray. Past 740 nm the black panel shows a hidden word.',
   cir: 'Near infrared shown as red, red as green and green as blue. Leaves turn red, and so does the black panel, whose dye is clear past 740 nm.',
   index: 'The normalized difference (A − B) / (A + B) of two wavelengths. With A in the near infrared and B in the red, it is NDVI.',
+  materials: 'Each Gaussian in the color of the material its spectrum matches, or of its cluster. Pick a material in the list or click one in the scene to show it alone.',
+  abundance: 'How much of one endmember each Gaussian is made of, from linear unmixing: its spectrum as a mix of the endmembers, with shares that sum to one.',
 };
+
+const MATERIAL_MODES = ['materials', 'abundance'];
 
 const $ = (id) => document.getElementById(id);
 const view = $('view');
@@ -64,6 +68,9 @@ const state = {
   sceneId: null,
   probes: [],
   nextProbe: 1,
+  group: 'label',   // color materials by the library match ('label') or the cluster
+  highlight: -1,    // the one material or cluster shown in color, or -1 for all
+  endmember: 0,     // whose abundance is shown
 };
 
 let renderer = null;
@@ -108,12 +115,17 @@ function requestDraw() {
 function draw() {
   if (!renderer || !state.scene || !camera) return;
   const cam = frame();
-  renderer.render(cam, { mode: displayMode(), gain: 2 ** state.exposure });
+  const material = MATERIAL_MODES.includes(state.mode);
+  renderer.render(cam, {
+    mode: displayMode(),
+    gain: material ? 1 : 2 ** state.exposure,
+    background: material ? [0, 0, 0] : undefined,
+  });
   drawOverlay(cam);
 }
 
 function displayMode() {
-  return state.mode === 'band' ? 1 : state.mode === 'index' ? 2 : 0;
+  return { band: 1, index: 2, abundance: 3 }[state.mode] || 0;
 }
 
 // Points in camera space, clipped to the near plane, then projected.
@@ -196,7 +208,7 @@ function channelWeights() {
       return colorInfraredWeights(wl);
     case 'index':
       return [wavelengthWeights(wl, state.indexA), wavelengthWeights(wl, state.indexB)];
-    default:
+    default:  // true color, which the material views also use for their grays
       return trueColorCache || (trueColorCache = trueColorWeights(wl));
   }
 }
@@ -205,9 +217,123 @@ function updateChannels() {
   if (!state.scene) return;
   weights = channelWeights();
   renderer.setChannels(weights);
+  applyColorBy();
   updateReadout();
   updateLegend();
   requestDraw();
+}
+
+// --- Material maps ------------------------------------------------------------
+
+// The materials or clusters the material view colors by.
+function categories() {
+  const m = state.scene?.materials;
+  if (!m) return [];
+  return state.group === 'cluster' ? m.clusters : m.classes;
+}
+
+function applyColorBy() {
+  const m = state.scene?.materials;
+  if (!renderer) return;
+  if (m && state.mode === 'materials')
+    renderer.setColorBy({ by: 'category', category: state.group, highlight: state.highlight }, categories().map((c) => c.color));
+  else if (m && state.mode === 'abundance')
+    renderer.setColorBy({ by: 'abundance', endmember: state.endmember });
+  else
+    renderer.setColorBy({ by: 'spectra' });
+}
+
+function percent(x) {
+  const p = 100 * x;
+  return p > 0 && p < 1 ? '<1%' : `${Math.round(p)}%`;
+}
+
+// The material (or cluster) covering most of a sampled point, and its share:
+// {name, index, share}, index -1 where no library material matches.
+function dominantMaterial(result) {
+  const m = state.scene?.materials;
+  if (!m || !result.materials || !(result.coverage > 0)) return null;
+  const shares = state.group === 'cluster' ? result.materials.clusters : result.materials.labels;
+  let best = 0;
+  for (let k = 1; k < shares.length; k++) if (shares[k] > shares[best]) best = k;
+  const known = best < categories().length;
+  return { index: known ? best : -1, name: known ? categories()[best].name : 'No match', share: shares[best] / result.coverage };
+}
+
+function setHighlight(index) {
+  state.highlight = index;
+  applyColorBy();
+  updateMaterialList();
+  updateReadout();
+  requestDraw();
+}
+
+// The list of materials or clusters, largest first: a color, a name, the
+// share of Gaussians, and for a cluster the library material nearest it.
+function updateMaterialList() {
+  const list = $('material-list');
+  list.replaceChildren();
+  const m = state.scene?.materials;
+  if (!m) return;
+  const N = state.scene.count;
+  const rows = categories().map((c, k) => ({ c, k })).sort((a, b) => b.c.count - a.c.count);
+  for (const { c, k } of rows) {
+    const li = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.index = String(k);
+    button.setAttribute('aria-pressed', String(state.highlight === k));
+    button.disabled = c.count === 0;
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.style.background = c.css;
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = c.name;
+    if (state.group === 'cluster') {
+      const sub = document.createElement('span');
+      sub.className = 'sub';
+      const near = c.nearest >= 0 ? m.classes[c.nearest].name : '';
+      sub.textContent = !near ? 'Like no library spectrum'
+        : c.brightnessMatches ? `Nearest: ${near}, ${c.angleDeg.toFixed(1)}°`
+        : `Shaped like ${near}, ${c.angleDeg.toFixed(1)}°, but brighter or darker`;
+      name.appendChild(sub);
+    }
+    const share = document.createElement('span');
+    share.className = 'share';
+    share.textContent = percent(c.count / N);
+    share.title = `${formatCount(c.count)} Gaussians`;
+    button.append(chip, name, share);
+    button.addEventListener('click', () => setHighlight(state.highlight === k ? -1 : k));
+    li.appendChild(button);
+    list.appendChild(li);
+  }
+  if (state.group === 'label' && m.unknown) {
+    const li = document.createElement('li');
+    li.className = 'unmatched';
+    li.textContent = `No match: ${percent(m.unknown / N)} of Gaussians, shown in gray`;
+    list.appendChild(li);
+  }
+  $('show-all').hidden = state.highlight < 0;
+  const score = m.score?.view;
+  const scored = score ? ` Against the known materials, ${percent(score.label_accuracy)} of the opening view's pixels that show one material get the right one (${percent(m.score.label_accuracy)} of Gaussians).` : '';
+  $('material-note').textContent = state.group === 'cluster'
+    ? `k-means on the spectra with ${m.clusters.length} clusters, weighted by opacity, found without the library; each is named after the library spectrum nearest its mean, if one is within ${m.labels.max_angle_deg}°.`
+    : `Spectral angle against ${m.classes.length} library spectra, among those within ${m.labels.brightness_window}× in brightness, up to ${m.labels.max_angle_deg}°.${scored}`;
+}
+
+function updateEndmembers() {
+  const select = $('endmember');
+  select.replaceChildren();
+  const m = state.scene?.materials;
+  if (!m) return;
+  m.endmembers.forEach((e, k) => {
+    const o = document.createElement('option');
+    o.value = String(k);
+    o.textContent = e.name;
+    select.appendChild(o);
+  });
+  select.value = String(state.endmember);
 }
 
 function wavelengthLabel(nm) {
@@ -228,7 +354,28 @@ function updateReadout() {
   let accent = '#d9d4c7';
   const gain = 2 ** state.exposure;
   const fmt = (v) => String(+v.toFixed(2));
-  if (state.mode === 'band') {
+  const m = state.scene?.materials;
+  if (state.mode === 'materials' && m) {
+    $('readout-kicker').textContent = state.group === 'cluster' ? 'Clusters' : 'Materials';
+    const picked = state.highlight >= 0 ? categories()[state.highlight] : null;
+    main.textContent = picked ? picked.name : state.group === 'cluster' ? `${m.clusters.length} clusters` : 'Library match';
+    if (picked) {
+      accent = picked.css;
+      swatch.hidden = false;
+      caption.textContent = `${formatCount(picked.count)} Gaussians · ${percent(picked.count / state.scene.count)}`;
+    } else {
+      caption.textContent = state.group === 'cluster' ? 'k-means on the spectra' : `Spectral angle, ${m.classes.length} library spectra`;
+    }
+  } else if (state.mode === 'abundance' && m) {
+    const e = m.endmembers[state.endmember];
+    $('readout-kicker').textContent = 'Abundance';
+    main.textContent = e.name;
+    accent = e.css;
+    caption.textContent = `Linear unmixing, ${m.endmembers.length} endmembers`;
+    scale.hidden = false;
+    bar.style.background = 'linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725)';
+    ticks.replaceChildren(...['0', '0.5', '1'].map(textSpan));
+  } else if (state.mode === 'band') {
     $('readout-kicker').textContent = state.bandwidth > 0 ? 'Band' : 'Wavelength';
     main.className = 'readout-main number';
     main.replaceChildren(String(Math.round(state.wavelength)));
@@ -262,7 +409,8 @@ function updateReadout() {
   document.documentElement.style.setProperty('--accent', accent);
   $('mode-note').textContent = MODE_NOTES[state.mode];
   for (const [id, modes] of [['ctl-wavelength', ['band']], ['ctl-bandwidth', ['band']], ['ctl-index-a', ['index']],
-    ['ctl-index-b', ['index']], ['ctl-exposure', ['true', 'band', 'cir']]])
+    ['ctl-index-b', ['index']], ['ctl-exposure', ['true', 'band', 'cir']], ['ctl-materials', ['materials']],
+    ['ctl-endmember', ['abundance']]])
     $(id).hidden = !modes.includes(state.mode);
   $('wavelength').value = Math.round(state.wavelength);
   $('wavelength-out').textContent = wavelengthLabel(state.wavelength);
@@ -271,7 +419,23 @@ function updateReadout() {
   $('index-b-out').textContent = wavelengthLabel(state.indexB);
   $('exposure-out').textContent = `${state.exposure > 0 ? '+' : state.exposure < 0 ? '−' : ''}${Math.abs(state.exposure)} EV`;
   chart.setMarkers(chartMarkers());
+  chart.setReference(chartReference());
   chart.render();
+}
+
+// The picked material's or the endmember's own spectrum, dashed on the chart.
+function chartReference() {
+  const m = state.scene?.materials;
+  if (!m) return null;
+  if (state.mode === 'materials' && state.highlight >= 0) {
+    const c = categories()[state.highlight];
+    return { label: state.group === 'cluster' ? `${c.name} mean` : `${c.name} (library)`, color: c.css, spectrum: c.spectrum };
+  }
+  if (state.mode === 'abundance') {
+    const e = m.endmembers[state.endmember];
+    return { label: `${e.name} (endmember)`, color: e.css, spectrum: e.spectrum };
+  }
+  return null;
 }
 
 function textSpan(text) {
@@ -315,6 +479,8 @@ function addProbe(label, result, anchor) {
     label: label || `Point ${number}`,
     color: freeColor(),
     spectrum: result.spectrum,
+    coverage: result.coverage,
+    materials: result.materials,
     point: anchor || result.point,
   });
   updateProbeViews();
@@ -331,6 +497,12 @@ function sampleAt(clientX, clientY) {
     return;
   }
   addProbe(null, r);
+  // In the material view, a click also picks the material there.
+  if (state.mode === 'materials') {
+    const d = dominantMaterial(r);
+    if (d && d.index >= 0) setHighlight(d.index);
+    else if (d) toast('No library material matches the spectrum there.');
+  }
 }
 
 function addPresetProbes() {
@@ -346,12 +518,20 @@ function resampleProbes() {
   for (const p of state.probes) {
     const r = sampleWorldPoint(p.point);
     p.spectrum = r ? r.spectrum : new Float64Array(state.scene.numBands);
+    p.coverage = r ? r.coverage : 0;
+    p.materials = r ? r.materials : null;
   }
   updateProbeViews();
 }
 
 function probeValueText(p) {
   if (!weights) return '';
+  if (state.mode === 'materials' && state.scene?.materials) {
+    const d = dominantMaterial(p);
+    return d ? `${d.name} ${percent(d.share)}` : '–';
+  }
+  if (state.mode === 'abundance' && p.materials)
+    return p.coverage > 0 ? (p.materials.abundances[state.endmember] / p.coverage).toFixed(2) : '–';
   if (state.mode === 'band') return dot(weights[0], p.spectrum).toFixed(3);
   if (state.mode === 'index') {
     const a = dot(weights[0], p.spectrum), b = dot(weights[1], p.spectrum);
@@ -469,8 +649,25 @@ function useScene(scene, { keepView }) {
   $('about-sample').textContent = sample ? sample.about
     : `${scene.title}: ${formatCount(scene.count)} Gaussians${scene.header.source?.scene ? ` from ${scene.header.source.scene}` : ''}.`;
 
+  // Material views, for files that have material maps.
+  const m = scene.materials;
+  for (const id of MATERIAL_MODES) {
+    $(`mode-${id}`).disabled = !m;
+    document.querySelector(`label[for="mode-${id}"]`).hidden = !m;
+  }
+  state.highlight = -1;
+  // Vegetation is the classic abundance map; otherwise the first endmember.
+  state.endmember = m ? Math.max(0, m.endmembers.findIndex((e) => e.name === 'leaf')) : 0;
+  updateMaterialList();
+  updateEndmembers();
+  if (!m && MATERIAL_MODES.includes(state.mode)) {
+    state.mode = 'true';
+    $('mode-true').checked = true;
+  }
+
   weights = channelWeights();
   renderer.setChannels(weights);
+  applyColorBy();
   if (sameFrame) {
     resampleProbes();
   } else {
@@ -622,6 +819,24 @@ function bindControls() {
     state.showSweeps = e.target.checked;
     // The fans start 15 cm up; back off far enough to see them.
     if (state.showSweeps && camera.distance < 0.42) camera.dolly(0.42 / camera.distance);
+    requestDraw();
+  });
+  for (const input of document.querySelectorAll('input[name="group"]'))
+    input.addEventListener('change', () => {
+      state.group = input.value;
+      state.highlight = -1;
+      applyColorBy();
+      updateMaterialList();
+      updateReadout();
+      updateLegend();
+      requestDraw();
+    });
+  $('show-all').addEventListener('click', () => setHighlight(-1));
+  $('endmember').addEventListener('change', (e) => {
+    state.endmember = Number(e.target.value);
+    applyColorBy();
+    updateReadout();
+    updateLegend();
     requestDraw();
   });
   $('clear-probes').addEventListener('click', () => {
@@ -779,5 +994,7 @@ function start() {
   });
 }
 
-window.viewer = { state, get camera() { return camera; }, get renderer() { return renderer; }, frame, setMode, draw };
+window.viewer = {
+  state, get camera() { return camera; }, get renderer() { return renderer; }, frame, setMode, draw, setHighlight, openFile,
+};
 start();

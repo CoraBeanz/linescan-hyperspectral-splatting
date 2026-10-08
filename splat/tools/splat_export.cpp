@@ -25,7 +25,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <limits>
 #include <nlohmann/json.hpp>
@@ -34,6 +33,7 @@
 #include <vector>
 
 #include "linesplat/dataset.hpp"
+#include "linesplat/lsplat.hpp"
 #include "linesplat/npy.hpp"
 #include "linesplat/preview.hpp"
 #include "linesplat/render_cpu.hpp"
@@ -47,7 +47,6 @@ using nlohmann::json;
 
 namespace {
 
-constexpr char kMagic[4] = {'L', 'S', 'P', 'V'};
 constexpr uint32_t kVersion = 1;
 constexpr double kDeg = kPi / 180.0;
 
@@ -56,81 +55,6 @@ void usage() {
                "usage: splat_export SCENE OUT.lsplat [--dataset DIR] [--poses POSES.npy] [--title TEXT]\n"
                "                    [--reference OUT.json]\n");
   std::exit(2);
-}
-
-// The scene as the file stores it.
-struct Packed {
-  int n = 0, k = 0;
-  std::vector<float> means;            // [N, 3] (m)
-  float log_scale_lo = 0, log_scale_hi = 0;
-  std::vector<uint16_t> log_scales;    // [N, 3] lo + q / 65535 * (hi - lo)
-  std::vector<int16_t> rotations;      // [N, 4] unit quaternion (w, x, y, z) * 32767, w >= 0
-  std::vector<uint8_t> opacity;        // [N] opacity * 255
-  std::vector<float> feature_range;    // [N, 2] offset and scale of the Gaussian's features
-  std::vector<uint8_t> features;       // [N, K] offset + scale * q / 255
-};
-
-template <typename T>
-T quantize(double x, double lo, double hi, double levels) {
-  const double t = hi > lo ? (x - lo) / (hi - lo) : 0.0;
-  return T(std::lround(std::min(std::max(t, 0.0), 1.0) * levels));
-}
-
-Packed pack(const GaussianScene& s) {
-  Packed p;
-  p.n = s.size();
-  p.k = s.num_features;
-  p.means = s.means;
-
-  const auto ls = std::minmax_element(s.log_scales.begin(), s.log_scales.end());
-  p.log_scale_lo = p.n ? *ls.first : 0.0f;
-  p.log_scale_hi = p.n ? *ls.second : 0.0f;
-  for (float v : s.log_scales) p.log_scales.push_back(quantize<uint16_t>(v, p.log_scale_lo, p.log_scale_hi, 65535));
-
-  for (int i = 0; i < p.n; ++i) {
-    const float* q = &s.rotations[4 * size_t(i)];
-    double n = std::sqrt(double(q[0]) * q[0] + double(q[1]) * q[1] + double(q[2]) * q[2] + double(q[3]) * q[3]);
-    double u[4] = {1.0, 0.0, 0.0, 0.0};
-    if (n > 0.0)
-      for (int c = 0; c < 4; ++c) u[c] = q[c] / n;
-    // q and -q are the same rotation; keeping w >= 0 makes the file canonical.
-    const double sign = u[0] < 0.0 ? -1.0 : 1.0;
-    for (int c = 0; c < 4; ++c) p.rotations.push_back(int16_t(std::lround(sign * u[c] * 32767.0)));
-
-    const double o = 1.0 / (1.0 + std::exp(-double(s.opacity_logits[size_t(i)])));
-    p.opacity.push_back(quantize<uint8_t>(o, 0.0, 1.0, 255));
-
-    const float* f = &s.features[size_t(i) * p.k];
-    const auto mm = std::minmax_element(f, f + p.k);
-    const double lo = *mm.first, range = double(*mm.second) - lo;
-    p.feature_range.push_back(float(lo));
-    p.feature_range.push_back(float(range));
-    for (int c = 0; c < p.k; ++c) p.features.push_back(quantize<uint8_t>(f[c], lo, lo + range, 255));
-  }
-  return p;
-}
-
-// The scene the viewer will see: the file's values decoded the way it decodes them.
-GaussianScene unpack(const Packed& p, const GaussianScene& original) {
-  GaussianScene s;
-  s.num_features = p.k;
-  s.means = p.means;
-  const float ls_step = (p.log_scale_hi - p.log_scale_lo) / 65535.0f;
-  for (uint16_t q : p.log_scales) s.log_scales.push_back(p.log_scale_lo + float(q) * ls_step);
-  for (int16_t q : p.rotations) s.rotations.push_back(float(q) / 32767.0f);
-  for (uint8_t q : p.opacity) {
-    // Opacity 0 and 1 would need infinite logits; +-40 gives the same floats.
-    const double o = q / 255.0;
-    s.opacity_logits.push_back(q == 0 ? -40.0f : q == 255 ? 40.0f : float(std::log(o / (1.0 - o))));
-  }
-  for (int i = 0; i < p.n; ++i) {
-    const float off = p.feature_range[2 * size_t(i)], scale = p.feature_range[2 * size_t(i) + 1];
-    for (int c = 0; c < p.k; ++c) s.features.push_back(off + scale * float(p.features[size_t(i) * p.k + c]) / 255.0f);
-  }
-  s.basis = original.basis;
-  s.background = original.background;
-  s.validate();
-  return s;
 }
 
 // x rounded to `decimals` places. Dividing by a power of ten gives the double
@@ -183,16 +107,6 @@ json default_view(const GaussianScene& s, bool synthetic) {
           {"fov_axis", "short"}};
 }
 
-// Camera -> world pose and focal length (px) of a view at width x height px.
-Pose view_pose(const json& v, int width, int height, double* f) {
-  auto vec = [&](const char* key) {
-    const auto a = v.at(key).get<std::vector<double>>();
-    return Vec3d{a.at(0), a.at(1), a.at(2)};
-  };
-  *f = 0.5 * std::min(width, height) / std::tan(0.5 * v.at("fov_deg").get<double>() * kDeg);
-  return look_at(vec("eye"), vec("target"), vec("up"));
-}
-
 // Each sweep's fan: the virtual camera's centre and where the first and the
 // last line's slit ends meet the board.
 json sweep_fans(const Dataset& d, const std::vector<Pose>& poses) {
@@ -228,7 +142,7 @@ json sweep_fans(const Dataset& d, const std::vector<Pose>& poses) {
 
 LineImage render_view(const GaussianScene& s, const json& view, int width, int height) {
   double f = 0.0;
-  const Pose cam = view_pose(view, width, height, &f);
+  const Pose cam = lsplat_view_pose(view, width, height, &f);
   return features_to_bands(s, render_lines_cpu<float>(s, pinhole_rows(cam, width, height, f)));
 }
 
@@ -256,7 +170,7 @@ json reference(const GaussianScene& s, const json& view, const std::vector<doubl
                       {"fov_axis", "short"}};
   for (const Cam& c : {Cam{view, 480, 360, 8, 6, 0.2, 0.8, 0.3, 0.85}, Cam{close, 320, 240, 8, 6, 0.0, 1.0, 0.0, 1.0}}) {
     double f = 0.0;
-    const Pose pose = view_pose(c.view, c.width, c.height, &f);
+    const Pose pose = lsplat_view_pose(c.view, c.width, c.height, &f);
     const std::vector<LineCamera> all_rows = pinhole_rows(pose, c.width, c.height, f);
     std::vector<int> ys;
     std::vector<LineCamera> rows;
@@ -286,42 +200,6 @@ json reference(const GaussianScene& s, const json& view, const std::vector<doubl
           {"true_color_weights", weights(true_color)},
           {"color_infrared_weights", weights(color_infrared)},
           {"cameras", cams}};
-}
-
-// Appends an array to the binary section, 4-byte aligned, and describes it.
-template <typename T>
-void add_block(json& blocks, std::vector<char>& bin, const char* name, const char* type, const std::vector<T>& v,
-               const std::vector<size_t>& shape) {
-  while (bin.size() % 4) bin.push_back(0);
-  blocks[name] = {{"type", type}, {"shape", shape}, {"offset", bin.size()}, {"bytes", v.size() * sizeof(T)}};
-  const char* p = reinterpret_cast<const char*>(v.data());
-  bin.insert(bin.end(), p, p + v.size() * sizeof(T));
-}
-
-void write_file(const std::string& path, json header, const Packed& p) {
-  std::vector<char> bin;
-  json blocks = json::object();
-  const size_t n = size_t(p.n), k = size_t(p.k);
-  add_block(blocks, bin, "means", "float32", p.means, {n, 3});
-  add_block(blocks, bin, "log_scales", "uint16", p.log_scales, {n, 3});
-  add_block(blocks, bin, "rotations", "int16", p.rotations, {n, 4});
-  add_block(blocks, bin, "opacity", "uint8", p.opacity, {n});
-  add_block(blocks, bin, "feature_range", "float32", p.feature_range, {n, 2});
-  add_block(blocks, bin, "features", "uint8", p.features, {n, k});
-  while (bin.size() % 4) bin.push_back(0);
-  blocks["log_scales"]["range"] = {p.log_scale_lo, p.log_scale_hi};
-  header["blocks"] = blocks;
-
-  std::string text = header.dump();
-  while (text.size() % 4) text.push_back(' ');
-  std::ofstream f(path, std::ios::binary);
-  if (!f) throw std::runtime_error("cannot write " + path);
-  const uint32_t words[2] = {kVersion, uint32_t(text.size())};
-  f.write(kMagic, 4);
-  f.write(reinterpret_cast<const char*>(words), sizeof words);  // little-endian, like the .npy files
-  f.write(text.data(), std::streamsize(text.size()));
-  f.write(bin.data(), std::streamsize(bin.size()));
-  if (!f) throw std::runtime_error("failed writing " + path);
 }
 
 double rmse(const std::vector<float>& a, const std::vector<float>& b, double* max_abs) {
@@ -394,32 +272,18 @@ int main(int argc, char** argv) {
     source["synthetic"] = synthetic;
     header["source"] = source;
 
-    // An identity basis (features are the bands) is the common case, so the
-    // file says so rather than storing B x B numbers.
-    bool identity = scene.num_features == B;
-    for (int b = 0; b < B && identity; ++b)
-      for (int k = 0; k < scene.num_features; ++k)
-        if (scene.basis[size_t(b) * scene.num_features + k] != (b == k ? 1.0f : 0.0f)) identity = false;
-    if (identity) {
-      header["basis"] = "identity";
-    } else {
-      json rows = json::array();
-      for (int b = 0; b < B; ++b)
-        rows.push_back(std::vector<float>(scene.basis.begin() + size_t(b) * scene.num_features,
-                                          scene.basis.begin() + size_t(b + 1) * scene.num_features));
-      header["basis"] = rows;
-    }
-    header["background"] = scene.background;
     header["view"] = default_view(scene, synthetic);
 
-    const Packed packed = pack(scene);
-    write_file(out, header, packed);
+    LsplatFile file;
+    file.header = header;
+    put_scene(file, scene);
+    write_lsplat(out, file);
     const size_t bytes = size_t(std::ifstream(out, std::ios::binary | std::ios::ate).tellg());
     std::printf("wrote     %s: %d Gaussians, %d features, %d bands (%.0f to %.0f nm), %.0f KB\n", out.c_str(),
                 scene.size(), scene.num_features, B, wl.front(), wl.back(), bytes / 1024.0);
     if (header.contains("sweeps")) std::printf("sweeps    %d fans\n", int(header["sweeps"].size()));
 
-    const GaussianScene decoded = unpack(packed, scene);
+    const GaussianScene decoded = unpack_scene(file);
     double max_abs = 0.0;
     const double err = rmse(render_view(scene, header["view"], 240, 180).values,
                             render_view(decoded, header["view"], 240, 180).values, &max_abs);

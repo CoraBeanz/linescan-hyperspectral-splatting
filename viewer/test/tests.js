@@ -6,13 +6,14 @@
 //
 //   splat_export SCENE trained.lsplat ... --reference reference.json
 //
-// for the trained sample in data/.
+// for the trained sample in data/. Both samples also carry material maps from
+// splat_materials, checked against the probe and the GPU below.
 
 import { decodeSplat, fetchSplat, gaussianFeatures } from '../js/format.js';
 import { bandMeanWeights, colorInfraredWeights, dot, trueColorWeights, wavelengthWeights } from '../js/spectral.js';
 import { OrbitCamera, focalForFov, lookAt, projectPoint, unproject } from '../js/camera.js';
 import { NEAR, probe } from '../js/probe.js';
-import { SplatRenderer } from '../js/renderer.js';
+import { SplatRenderer, UNKNOWN } from '../js/renderer.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -112,6 +113,98 @@ test('rejects files that are not splats', async () => {
     }
     check(threw, 'a bad file was accepted');
   }
+});
+
+// --- Material maps -------------------------------------------------------------
+
+// The same file without its material maps: the header without "materials" and
+// the four blocks, which splat_materials appends after the others.
+function withoutMaterials(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const length = new DataView(buffer).getUint32(8, true);
+  const header = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + length)));
+  delete header.materials;
+  for (const name of ['material_label', 'material_angle', 'cluster', 'abundances']) delete header.blocks[name];
+  const end = Math.max(...Object.values(header.blocks).map((b) => b.offset + b.bytes));
+  let text = JSON.stringify(header);
+  while (new TextEncoder().encode(text).length % 4) text += ' ';
+  const h = new TextEncoder().encode(text);
+  const out = new Uint8Array(12 + h.length + end);
+  out.set(bytes.subarray(0, 12));
+  new DataView(out.buffer).setUint32(8, h.length, true);
+  out.set(h, 12);
+  out.set(bytes.subarray(12 + length, 12 + length + end), 12 + h.length);
+  return out.buffer;
+}
+
+test('reads the material maps of both samples', async () => {
+  const { trained, truth } = await fixtures();
+  const out = [];
+  for (const s of [trained, truth]) {
+    const m = s.materials;
+    check(m, `${s.title} has no material maps`);
+    check(m.classes.length === 11 && m.classes[0].name === 'white paper', `${m.classes.length} library materials`);
+    check(m.classes.every((c) => c.spectrum.length === s.numBands), 'a library spectrum has the wrong length');
+    const E = m.endmembers.length;
+    const perClass = new Array(m.classes.length).fill(0), perCluster = new Array(m.clusters.length).fill(0);
+    let unknown = 0;
+    for (let i = 0; i < s.count; i++) {
+      const l = m.label[i];
+      if (l === UNKNOWN) unknown++;
+      else {
+        check(l < m.classes.length, `Gaussian ${i} has label ${l}`);
+        perClass[l]++;
+      }
+      check(m.cluster[i] < m.clusters.length, `Gaussian ${i} is in cluster ${m.cluster[i]}`);
+      perCluster[m.cluster[i]]++;
+      // Each share is rounded to 1/255, so the sum is off by at most E/2 of those.
+      let sum = 0;
+      for (let e = 0; e < E; e++) sum += m.abundances[i * E + e];
+      check(Math.abs(sum - 255) <= E / 2, `Gaussian ${i}'s abundances sum to ${sum}/255`);
+    }
+    m.classes.forEach((c, k) => check(c.count === perClass[k], `${c.name}: header says ${c.count}, labels count ${perClass[k]}`));
+    m.clusters.forEach((c, k) => check(c.count === perCluster[k], `${c.name}: header says ${c.count}, labels count ${perCluster[k]}`));
+    check(unknown === m.unknown, `${unknown} unknown, header says ${m.unknown}`);
+    check(m.score && m.score.view.label_accuracy > 0, `${s.title} has no score against the truth`);
+    out.push(`${s.title}: ${(100 * m.score.label_accuracy).toFixed(1)}% of Gaussians, ` +
+      `${(100 * m.score.view.label_accuracy).toFixed(1)}% of map pixels`);
+  }
+  check(truth.materials.score.label_accuracy === 1, 'the ground truth should match its own library exactly');
+  return out.join('; ');
+});
+
+test('a file without material maps still loads', async () => {
+  const { trained } = await fixtures();
+  const bytes = await (await fetch('../data/trained-16-sweeps.lsplat')).arrayBuffer();
+  const plain = await decodeSplat(withoutMaterials(bytes));
+  check(plain.materials === null, 'the stripped file still has material maps');
+  check(plain.count === trained.count, `${plain.count} Gaussians, expected ${trained.count}`);
+  check(plain.means.every((v, i) => v === trained.means[i]), 'positions differ');
+  check(plain.features.every((v, i) => v === trained.features[i]), 'features differ');
+  const cam = referenceCamera((await fixtures()).reference.cameras[0]);
+  check(probe(plain, cam, 240, 180).materials === null, 'the probe returned material shares');
+  return `${(bytes.byteLength / 1024).toFixed(0)} KB with, ${(plain.bytes / 1024).toFixed(0)} KB without`;
+});
+
+test('a probe\'s material shares add up to its coverage', async () => {
+  const { reference, trained } = await fixtures();
+  const m = trained.materials;
+  let worst = 0, n = 0;
+  for (const c of reference.cameras) {
+    const cam = referenceCamera(c);
+    for (const p of c.pixels) {
+      const r = probe(trained, cam, p.x, p.y);
+      const sum = (a) => a.reduce((x, y) => x + y, 0);
+      near(sum(r.materials.labels), r.coverage, 1e-9, `material shares at (${p.x}, ${p.y})`);
+      near(sum(r.materials.clusters), r.coverage, 1e-9, `cluster shares at (${p.x}, ${p.y})`);
+      const d = Math.abs(sum(r.materials.abundances) - r.coverage);
+      check(d <= (m.endmembers.length / 2 / 255) * r.coverage + 1e-9, `abundances at (${p.x}, ${p.y}) sum to ` +
+        `${sum(r.materials.abundances).toFixed(4)}, coverage ${r.coverage.toFixed(4)}`);
+      worst = Math.max(worst, d);
+      n++;
+    }
+  }
+  return `${n} pixels, abundances within ${fmt(worst)} of the coverage`;
 });
 
 // --- Color -------------------------------------------------------------------
@@ -324,6 +417,57 @@ test('Gaussians are drawn back to front, file order breaking ties', async () => 
     check(da > db || (da === db && a > b), `drawn out of order at ${j}: ${a} (${da}) before ${b} (${db})`);
   }
   return `${renderer.visible} Gaussians`;
+});
+
+// With the spectral channels at zero, a Gaussian that isn't shown in color
+// adds nothing, so a palette of red for one category and green for the rest
+// draws, in the red and green channels, exactly the shares the probe blends.
+test('WebGL2 draws the material maps and abundances the CPU probe blends', async () => {
+  const { reference, trained } = await fixtures();
+  const renderer = await gpuRenderer();
+  const m = trained.materials;
+  const c = reference.cameras[0];
+  const cam = referenceCamera(c);
+  const pixels = grid(c, 6);
+  const shares = pixels.map((p) => probe(trained, cam, p.x, p.y, { stopEarly: false }));
+  const leaf = m.classes.findIndex((k) => k.name === 'leaf');
+  const cases = [
+    ['library match', { by: 'category', category: 'label', highlight: -1 }, m.classes.length, leaf,
+      (r) => [r.materials.labels[leaf], r.materials.labels.reduce((a, b) => a + b, 0) - r.materials.labels[leaf] - r.materials.labels[m.classes.length]]],
+    ['leaf alone', { by: 'category', category: 'label', highlight: leaf }, m.classes.length, leaf,
+      (r) => [r.materials.labels[leaf], 0]],
+    ['cluster 2', { by: 'category', category: 'cluster', highlight: -1 }, m.clusters.length, 1,
+      (r) => [r.materials.clusters[1], r.coverage - r.materials.clusters[1]]],
+    ['leaf abundance', { by: 'abundance', endmember: leaf }, 0, -1,
+      (r) => [r.materials.abundances[leaf], r.materials.abundances[leaf]]],
+  ];
+  renderer.canvas.width = c.width;
+  renderer.canvas.height = c.height;
+  renderer.setChannels([]);
+  const out = [];
+  let worst = 0;
+  try {
+    for (const [name, colorBy, n, red, want] of cases) {
+      const palette = Array.from({ length: n }, (_, k) => (k === red ? [1, 0, 0] : [0, 1, 0]));
+      renderer.setColorBy(colorBy, palette);
+      renderer.render(cam, { mode: 0, gain: 1 });
+      const img = renderer.readLinear();
+      let caseWorst = 0;
+      pixels.forEach((p, j) => {
+        const o = 4 * (p.y * img.width + p.x);
+        const [r, g] = want(shares[j]);
+        const d = Math.max(Math.abs(img.data[o] - r), Math.abs(img.data[o + 1] - g));
+        check(d < 5e-3, `${name} at (${p.x}, ${p.y}): ${img.data[o].toFixed(4)}, ${img.data[o + 1].toFixed(4)} ` +
+          `vs ${r.toFixed(4)}, ${g.toFixed(4)}`);
+        caseWorst = Math.max(caseWorst, d);
+      });
+      worst = Math.max(worst, caseWorst);
+      out.push(name);
+    }
+  } finally {
+    renderer.setColorBy({ by: 'spectra' });
+  }
+  return `${pixels.length} pixels each for ${out.join(', ')}: largest difference ${fmt(worst)}`;
 });
 
 // --- Running -----------------------------------------------------------------

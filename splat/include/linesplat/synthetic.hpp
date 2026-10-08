@@ -64,13 +64,16 @@ struct SyntheticData {
   std::vector<Pose> true_head_pose;        // [S]
   std::vector<double> true_mirror_angle;   // [L]
   std::vector<float> clean_lines;          // [L, W, B] before noise
+  std::vector<int32_t> materials;          // [N] each Gaussian's Material, the truth for material maps
 };
 
-GaussianScene make_synthetic_scene(const SyntheticOptions& opt, const std::vector<double>& wavelengths_nm);
+// `materials`, if given, gets each Gaussian's Material (spectra.hpp), in order.
+GaussianScene make_synthetic_scene(const SyntheticOptions& opt, const std::vector<double>& wavelengths_nm,
+                                   std::vector<int32_t>* materials = nullptr);
 SyntheticData make_synthetic_dataset(const SyntheticOptions& opt, const LineRenderFn& render = cpu_renderer());
 
 // Writes the dataset to dir, the ground truth to dir/gt/ (scene/, poses,
-// mirror angles, clean lines) and PNG previews to dir/preview/.
+// mirror angles, clean lines, materials) and PNG previews to dir/preview/.
 void save_synthetic(const SyntheticData& data, const std::string& dir, const LineRenderFn& render = cpu_renderer());
 
 // The camera -> world pose of the overview image in the previews.

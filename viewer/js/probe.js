@@ -25,6 +25,10 @@ export const NEAR = 0.005;
 // counted from the top-left; its centre is at (px + 0.5, py + 0.5).
 // Returns the spectrum (one value per band), how much of the pixel the
 // Gaussians cover, and the 3D point they cover it at (null if nothing does).
+// For a file with material maps it also returns `materials`: how much of the
+// pixel each library material (and unknown, last), each cluster and each
+// endmember's abundance cover, blended the same way, so they sum to the
+// coverage.
 //
 // Like the C++ renderer, it stops at the Gaussian that would leave less than
 // 1e-4 of the pixel's light, and leaves that one out. Drawing back to front,
@@ -99,6 +103,13 @@ export function probe(scene, cam, px, py, { stopEarly = true } = {}) {
   hits.sort((x, y) => x.depth - y.depth);
   const feats = new Float64Array(K);
   const acc = new Float64Array(K);
+  const mat = scene.materials;
+  const E = mat ? mat.endmembers.length : 0;
+  const materials = mat ? {
+    labels: new Float64Array(mat.classes.length + 1),
+    clusters: new Float64Array(mat.clusters.length),
+    abundances: new Float64Array(E),
+  } : null;
   let trans = 1, weight = 0, depth = 0;
   for (const h of hits) {
     const next = trans * (1 - h.alpha);
@@ -106,6 +117,12 @@ export function probe(scene, cam, px, py, { stopEarly = true } = {}) {
     const w = h.alpha * trans;
     gaussianFeatures(scene, h.i, feats);
     for (let c = 0; c < K; c++) acc[c] += w * feats[c];
+    if (materials) {
+      const l = mat.label[h.i];
+      materials.labels[l < mat.classes.length ? l : mat.classes.length] += w;
+      materials.clusters[mat.cluster[h.i]] += w;
+      for (let e = 0; e < E; e++) materials.abundances[e] += w * mat.abundances[h.i * E + e] / 255;
+    }
     weight += w;
     depth += w * h.depth;
     trans = next;
@@ -118,5 +135,5 @@ export function probe(scene, cam, px, py, { stopEarly = true } = {}) {
     spectrum[b] = s;
   }
   const point = weight > 0 ? unproject(cam, px + 0.5, py + 0.5, depth / weight) : null;
-  return { spectrum, coverage: 1 - trans, point };
+  return { spectrum, coverage: 1 - trans, point, materials };
 }

@@ -90,6 +90,7 @@ class SceneBuilder {
     std::vector<float> f = spectra_[size_t(m)];
     for (float& v : f) v *= tint;
     scene_.add(mean, sc, q, 0.98f, f.data());
+    materials_.push_back(int32_t(m));
   }
 
   GaussianScene finish() {
@@ -99,11 +100,13 @@ class SceneBuilder {
   }
 
   double spacing() const { return spacing_; }
+  const std::vector<int32_t>& materials() const { return materials_; }
 
  private:
   double spacing_;
   Rng rng_;
   GaussianScene scene_;
+  std::vector<int32_t> materials_;
   std::vector<std::vector<float>> spectra_;
 };
 
@@ -169,7 +172,8 @@ Pose overview_camera() {
   return look_at(Vec3d{0.105, -0.135, 0.125}, Vec3d{0.0, -0.002, 0.004}, Vec3d{0.0, 0.0, 1.0});
 }
 
-GaussianScene make_synthetic_scene(const SyntheticOptions& opt, const std::vector<double>& wl) {
+GaussianScene make_synthetic_scene(const SyntheticOptions& opt, const std::vector<double>& wl,
+                                   std::vector<int32_t>* materials) {
   SceneBuilder b(wl, opt.spacing, opt.seed);
   const double s_mm = opt.spacing * 1e3;
   const Vec3d up{0.0, 0.0, 1.0};
@@ -225,6 +229,7 @@ GaussianScene make_synthetic_scene(const SyntheticOptions& opt, const std::vecto
   face(0, x1, y0, y1, 0.0, h, Vec3d{1, 0, 0});
   face(1, y0, x0, x1, 0.0, h, Vec3d{0, -1, 0});
   face(1, y1, x0, x1, 0.0, h, Vec3d{0, 1, 0});
+  if (materials) *materials = b.materials();
   return b.finish();
 }
 
@@ -233,7 +238,7 @@ SyntheticData make_synthetic_dataset(const SyntheticOptions& opt, const LineRend
     throw std::runtime_error("synthetic: bad options");
   SyntheticData out;
   const std::vector<double> wl = wavelength_grid(opt.wl_min_nm, opt.wl_max_nm, opt.bands);
-  out.scene = make_synthetic_scene(opt, wl);
+  out.scene = make_synthetic_scene(opt, wl, &out.materials);
 
   Dataset& d = out.dataset;
   d.intrinsics = intrinsics_from_optics(opt.width);
@@ -300,10 +305,14 @@ SyntheticData make_synthetic_dataset(const SyntheticOptions& opt, const LineRend
 
   nlohmann::json meta;
   meta["synthetic"] = options_json(opt);
+  nlohmann::json names = nlohmann::json::array();
+  for (int m = 0; m < int(Material::kCount); ++m) names.push_back(material_name(Material(m)));
   meta["ground_truth"] = {{"scene", "gt/scene"},
                           {"sweep_head_pose", "gt/sweep_head_pose.npy"},
                           {"line_mirror_angle", "gt/line_mirror_angle.npy"},
-                          {"clean_lines", "gt/lines_clean.npy"}};
+                          {"clean_lines", "gt/lines_clean.npy"},
+                          {"materials", "gt/materials.npy"},
+                          {"material_names", names}};
   d.metadata_json = meta.dump();
   return out;
 }
@@ -323,6 +332,7 @@ void save_synthetic(const SyntheticData& data, const std::string& dir, const Lin
   npy_save(join_path(gt, "line_mirror_angle.npy"), data.true_mirror_angle, {data.true_mirror_angle.size()});
   npy_save(join_path(gt, "lines_clean.npy"), data.clean_lines,
            {size_t(d.num_lines()), size_t(d.width()), size_t(d.num_bands())});
+  npy_save(join_path(gt, "materials.npy"), data.materials, {data.materials.size()});
 
   // Previews: each sweep stacked line by line (the pushbroom image), and the
   // scene from an oblique pinhole camera.

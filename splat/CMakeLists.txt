@@ -76,6 +76,8 @@ endif()
 add_library(linesplat_core STATIC
   src/backward_cpu.cpp
   src/dataset.cpp
+  src/lsplat.cpp
+  src/materials.cpp
   src/npy.cpp
   src/png.cpp
   src/preview.cpp
@@ -117,7 +119,7 @@ if(LINESPLAT_HAVE_CUDA)
   target_link_libraries(linesplat INTERFACE linesplat_cuda)
 endif()
 
-foreach(tool splat_synth splat_render splat_train splat_export)
+foreach(tool splat_synth splat_render splat_train splat_export splat_materials)
   add_executable(${tool} tools/${tool}.cpp)
   target_link_libraries(${tool} PRIVATE linesplat)
   target_compile_options(${tool} PRIVATE ${_warn})
@@ -135,7 +137,8 @@ if(LINESPLAT_TESTS)
     tests/test_synthetic.cpp
     tests/test_cuda.cpp
     tests/test_gradients.cpp
-    tests/test_trainer.cpp)
+    tests/test_trainer.cpp
+    tests/test_materials.cpp)
   target_link_libraries(splat_tests PRIVATE linesplat)
   target_compile_options(splat_tests PRIVATE ${_warn})
   # Scratch files go in the build tree, wherever the tests are run from.
