@@ -18,12 +18,14 @@ import pytest
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.parameter import Parameter
+from sensor_msgs.msg import Image
 from std_srvs.srv import Trigger
 
+from so101_scan_camera import spectral
 from so101_scan_camera.binning import LineBinner, load_calibration
 from so101_scan_camera.camera_node import LineCamera
 from so101_scan_camera.sources import FakeSource, SensorTiming
-from so101_scan_camera.synthetic import Instrument, scene_radiance
+from so101_scan_camera.synthetic import Instrument, halogen, scene_radiance
 from so101_scan_interfaces.msg import FrameStamp, ScanLine
 from so101_scan_interfaces.srv import CaptureReference, StartRecording, StartSweep
 from so101_scan_sweep.bridge import ScanMirrorBridge
@@ -73,13 +75,14 @@ def rig(tmp_path):
     fake = FakeMirror(link=str(tmp_path / "mirror"), drift_ppm=50.0, seed=2).start()
     timing = SensorTiming(18.904, *binner.rows)          # what line_camera works out from the calibration
     exposures = []
+    scene = [scene_radiance]          # what the camera looks at: radiance(t, nm, line)
 
     def render(sof_ns, exposure_us, gain):
         # the scene at every instant of the exposure: a blur if the mirror moved during it
         start, end = timing.window(sof_ns, exposure_us)
         steps = [fake.pos_at_wall(int(t)) for t in np.linspace(start, end, 9)]
         exposures.append((start, end, steps))
-        return inst.render(lambda t, nm: np.mean([scene_radiance(t, nm, s / 2.0) for s in steps], axis=0),
+        return inst.render(lambda t, nm: np.mean([scene[0](t, nm, s / 2.0) for s in steps], axis=0),
                            exposure_us, gain)
 
     context = rclpy.Context()
@@ -102,7 +105,7 @@ def rig(tmp_path):
     client.wait_for(lambda: bridge.clock_sync.ready and bridge.frames.fit() is not None, 15.0,
                     "the bridge's clock sync and frame fit")
     yield dict(client=client, bridge=bridge, camera=camera, fake=fake, inst=inst, binner=binner,
-               exposures=exposures, tmp=tmp_path)
+               exposures=exposures, tmp=tmp_path, scene=scene)
     executor.shutdown()
     camera.destroy_node()
     bridge.destroy_node()
@@ -185,6 +188,40 @@ def test_sweeps_record_every_line_cleanly(rig):
     info = json.loads((scan / "frames" / "camera.json").read_text())
     assert info["lines"]["ok"] >= N_LINES and info["binning"]["slit_bins"] == SLIT_BINS
     assert (scan / "binned" / "binning.npz").exists() and (scan / "binned" / "reference_dark.npy").exists()
+
+
+def test_the_sweep_shows_in_colour_as_it_comes(rig):
+    """With a white taken, the waterfalls are the scene's reflectance in true colour and CIR."""
+    client = rig["client"]
+    got = {}
+    for mode in ("true_color", "cir"):
+        client.node.create_subscription(Image, "/line_camera/scan_preview_" + mode,
+                                        lambda m, k=mode: got.__setitem__(k, m), 5)
+    assert client.call("home", Trigger.Request()).success
+    rig["scene"][0] = lambda t, nm, line: 0.98 * halogen(nm)        # the PTFE sheet under the lamp
+    time.sleep(0.3)
+    ref = client.call("capture_reference", CaptureReference.Request(kind="white", frames=4))
+    assert ref.success, ref.message
+    rig["scene"][0] = scene_radiance
+    time.sleep(0.3)
+    res, lines = sweep(client, -0.02, N_LINES, 0.0333)
+    assert res.frame_locked
+
+    def full(m):
+        return m is not None and m.height == N_LINES and np.frombuffer(bytes(m.data), np.uint8)[-3 * SLIT_BINS:].any()
+    client.wait_for(lambda: full(got.get("true_color")) and full(got.get("cir")), 5.0, "the colour waterfalls")
+    t = (np.arange(SLIT_BINS) + 0.5) / SLIT_BINS
+    nm = 500.0 + 10.0 * np.arange(46)
+    for mode, msg in got.items():
+        assert (msg.encoding, msg.width, msg.step) == ("rgb8", SLIT_BINS, 3 * SLIT_BINS)
+        img = np.frombuffer(bytes(msg.data), np.uint8).reshape(N_LINES, SLIT_BINS, 3).astype(int)
+        w = spectral.weights(mode, nm)
+        want = np.stack([spectral.srgb8(scene_radiance(t[:, None], nm[None, :], m.step / 2.0) / halogen(nm) @ w)
+                         for m in sorted(lines, key=lambda m: m.index)]).astype(int)
+        err = np.abs(img - want)
+        # a small, noisy sensor: a few slit bins stray (most in blue, held from the 500 nm band)
+        assert np.median(err) <= 3 and np.percentile(err, 90) <= 20, (mode, np.median(err), np.percentile(err, 90))
+        np.testing.assert_allclose(img.mean(axis=1), want.mean(axis=1), atol=6)     # each line's mean colour
 
 
 def test_without_frames_recording_is_refused(rig, tmp_path):
