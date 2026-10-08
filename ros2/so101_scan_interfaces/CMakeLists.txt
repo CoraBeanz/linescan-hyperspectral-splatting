@@ -12,6 +12,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MirrorState.msg"
   "msg/ScanLinePose.msg"
   "msg/FrameStamp.msg"
+  "msg/ArmSafety.msg"
   "srv/StartSweep.srv"
   "srv/MoveMirror.srv"
   "srv/StartRecording.srv"

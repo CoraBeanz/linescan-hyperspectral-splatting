@@ -32,6 +32,9 @@ class Reg:
     RETURN_DELAY_TIME = 7
     MIN_POSITION_LIMIT = 9    # 2
     MAX_POSITION_LIMIT = 11   # 2
+    MAX_TEMPERATURE_LIMIT = 13  # deg C
+    MAX_INPUT_VOLTAGE = 14    # 0.1 V
+    MIN_INPUT_VOLTAGE = 15    # 0.1 V
     P_COEFFICIENT = 21
     D_COEFFICIENT = 22
     I_COEFFICIENT = 23
@@ -48,6 +51,14 @@ class Reg:
     PRESENT_VOLTAGE = 62      # 0.1 V
     PRESENT_TEMPERATURE = 63  # deg C
     MOVING = 66
+
+
+# Error bits in a status packet.
+ERR_VOLTAGE = 0x01
+ERR_ANGLE = 0x02
+ERR_OVERHEAT = 0x04
+ERR_OVERCURRENT = 0x08
+ERR_OVERLOAD = 0x20
 
 
 # The SO-101 follower's servo IDs, as LeRobot sets them up.
