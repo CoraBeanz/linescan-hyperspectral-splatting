@@ -54,7 +54,8 @@ def main(argv=None):
     node = ScanSweep()
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
-    threading.Thread(target=executor.spin, daemon=True).start()
+    spinner = threading.Thread(target=executor.spin, daemon=True)
+    spinner.start()
     code = 0
     try:
         node.wait_for(lambda: node.robot is not None, 10.0, "/robot_description")
@@ -77,6 +78,7 @@ def main(argv=None):
         code = 1
     finally:
         executor.shutdown()
+        spinner.join(timeout=5.0)  # as in sweep.main: don't exit with the spinner in rclpy's C++
         node.destroy_node()
         rclpy.try_shutdown()
     return code
