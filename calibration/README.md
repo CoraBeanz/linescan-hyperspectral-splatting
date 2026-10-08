@@ -9,6 +9,8 @@
 
 The parts haven't arrived yet, so the kit is built and tested on synthetic frames rendered through the [Optiland model](../optics/spectrograph_model.py). `python -m hsical selftest` renders a session from a deliberately imperfect copy of the design, calibrates it, and compares the result with the answer the frames were built from.
 
+The other calibration here, [`headcal`](headcal/README.md), measures where the scanner head's cameras and mirror really sit on the wrist, from one scan of a printed tag board, and writes them into the URDF and the trainer's head model.
+
 <p align="center">
   <img src="img/rectified.png" width="100%" alt="A synthetic CFL frame after calibration: wavelength from 484 to 970 nm across, slit rows down; every lamp line is a straight vertical stripe.">
   <br><sub>A synthetic CFL frame after calibration. On the sensor these lines bow by up to 35 px; here each one is a straight column at its own wavelength.</sub>
@@ -259,7 +261,7 @@ The synthetic instrument is deliberately not the design. Its spectrum is shifted
 
 The largest wavelength errors sit beyond the outermost lamp lines, where the curve is extrapolated.
 
-A real M12 lens will likely be softer than this synthetic one, so the tests also run a session with twice the blur, where lines come out about 6 nm wide; it stays within the same limits. `pytest` runs 24 tests in about a minute and a half: the whole chain on quarter-size sessions (as designed, with the soft lens, and with the camera turned sideways and mirrored), the drift check on fresh lamp frames of the calibrated instrument as it was and knocked, plus the building blocks. They need numpy 2 and scipy 1.15 or newer, which is what pip installs on Python 3.10 and up: with older versions the wavelength fit finds fewer near-infrared lines or fits them less closely, and a few tests miss their limits.
+A real M12 lens will likely be softer than this synthetic one, so the tests also run a session with twice the blur, where lines come out about 6 nm wide; it stays within the same limits. `pytest` runs 24 tests of `hsical` in about a minute and a half (and [`headcal`](headcal/README.md#testing-without-the-hardware)'s 22 in about 20 seconds more): the whole chain on quarter-size sessions (as designed, with the soft lens, and with the camera turned sideways and mirrored), the drift check on fresh lamp frames of the calibrated instrument as it was and knocked, plus the building blocks. They need numpy 2 and scipy 1.15 or newer, which is what pip installs on Python 3.10 and up: with older versions the wavelength fit finds fewer near-infrared lines or fits them less closely, and a few tests miss their limits.
 
 ## Limits
 
@@ -293,9 +295,10 @@ calibration/
 │   ├── synth.py            synthetic sessions with a known answer
 │   ├── selftest.py         render, calibrate, compare
 │   └── data/               lines.csv (lamp lines), optiland_map.json
+├── headcal/                the head's hand-eye calibration: python -m headcal (see its README)
 ├── tools/export_optiland_map.py   regenerates optiland_map.json from the optics model
 ├── tests/                  pytest
-└── img/                    figures for this page, from a synthetic full-resolution run
+└── img/                    figures for this page and headcal's, from synthetic runs
 ```
 
-`capture.py`, `__init__.py` and `__main__.py` run on Python 3.6 with only numpy, so the capture commands work on a stock Jetson; everything else needs Python 3.10 or newer, with numpy 2 and scipy 1.15.
+`capture.py`, `__init__.py` and `__main__.py` run on Python 3.6 with only numpy, so the capture commands work on a stock Jetson (and so does `headcal record`); everything else needs Python 3.10 or newer, with numpy 2 and scipy 1.15.

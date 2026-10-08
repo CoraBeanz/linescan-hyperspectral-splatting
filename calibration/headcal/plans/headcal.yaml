@@ -1,0 +1,77 @@
+# Hand-eye calibration scan, from `python -m headcal plan`. Put the tag board flat on the
+# table, its centre at x = 0.260, y = 0.000 m in base_link (the centre ticks on its edges),
+# light it evenly, start the pose-camera recorder, then run this plan with scan_sweep.
+# Every viewpoint looks at the board; see calibration/headcal/README.md.
+name: headcal
+home_mirror: true
+target_m: [0.26, 0.0, -0.0024]
+move: {max_joint_speed_deg: 20.0, min_move_s: 1.5, settle_s: 1.0}
+sweep: {start_angle_deg: -6.0, steps_per_line: 1, n_lines: 213, line_period_s: 0.0333}
+camera: {record: required, references: ''}
+viewpoints:
+- name: t0_a0_+0_+0_+0
+  joints_deg: {shoulder_pan: -0.046, shoulder_lift: -8.98, elbow_flex: 60.808, wrist_flex: -51.828,
+    wrist_roll: -87.211}
+- name: t0_a0_-30_-25_+12
+  joints_deg: {shoulder_pan: 7.398, shoulder_lift: -31.526, elbow_flex: 73.235, wrist_flex: -41.709,
+    wrist_roll: -87.211}
+- name: t0_a0_+30_+25_-12
+  joints_deg: {shoulder_pan: -5.724, shoulder_lift: 9.009, elbow_flex: 44.988, wrist_flex: -53.997,
+    wrist_roll: -87.211}
+- name: t0_a0_+30_-25_+0
+  joints_deg: {shoulder_pan: 5.644, shoulder_lift: 3.905, elbow_flex: 44.652, wrist_flex: -48.556,
+    wrist_roll: -87.211}
+- name: t0_a0_-30_+25_+0
+  joints_deg: {shoulder_pan: -7.503, shoulder_lift: -23.765, elbow_flex: 74.779, wrist_flex: -51.014,
+    wrist_roll: -87.211}
+- name: t0_a0_+0_+40_+6
+  joints_deg: {shoulder_pan: -10.297, shoulder_lift: -10.365, elbow_flex: 58.535,
+    wrist_flex: -48.17, wrist_roll: -87.211}
+- name: t0_a0_+0_-40_-6
+  joints_deg: {shoulder_pan: 10.207, shoulder_lift: -4.233, elbow_flex: 59.295, wrist_flex: -55.061,
+    wrist_roll: -87.211}
+- name: t0_a0_+40_+0_+6
+  joints_deg: {shoulder_pan: -0.039, shoulder_lift: 5.041, elbow_flex: 39.522, wrist_flex: -44.563,
+    wrist_roll: -87.211}
+- name: t0_a0_-40_+0_-6
+  joints_deg: {shoulder_pan: -0.056, shoulder_lift: -26.662, elbow_flex: 80.912, wrist_flex: -54.25,
+    wrist_roll: -87.211}
+- name: t20_a60_-13_+7_+10
+  joints_deg: {shoulder_pan: 9.731, shoulder_lift: -18.462, elbow_flex: 77.134, wrist_flex: -65.858,
+    wrist_roll: -105.925}
+- name: t20_a90_+0_+0_+0
+  joints_deg: {shoulder_pan: 11.469, shoulder_lift: -6.247, elbow_flex: 58.472, wrist_flex: -48.086,
+    wrist_roll: -106.795}
+- name: t20_a120_-13_-8_+0
+  joints_deg: {shoulder_pan: 11.476, shoulder_lift: -7.719, elbow_flex: 50.994, wrist_flex: -29.721,
+    wrist_roll: -102.059}
+- name: t20_a180_+0_-15_-10
+  joints_deg: {shoulder_pan: 3.187, shoulder_lift: 6.854, elbow_flex: 32.653, wrist_flex: -19.535,
+    wrist_roll: -86.121}
+- name: t20_a240_+13_-8_+10
+  joints_deg: {shoulder_pan: -6.929, shoulder_lift: -0.513, elbow_flex: 38.079, wrist_flex: -25.23,
+    wrist_roll: -71.344}
+- name: t20_a270_+0_+0_-6
+  joints_deg: {shoulder_pan: -11.558, shoulder_lift: -3.121, elbow_flex: 58.721, wrist_flex: -51.428,
+    wrist_roll: -67.633}
+- name: t20_a300_+13_+8_+0
+  joints_deg: {shoulder_pan: -12.571, shoulder_lift: -0.015, elbow_flex: 63.073, wrist_flex: -69.279,
+    wrist_roll: -68.165}
+- name: t35_a90_+0_+0_+12
+  joints_deg: {shoulder_pan: 18.817, shoulder_lift: -6.498, elbow_flex: 52.588, wrist_flex: -33.363,
+    wrist_roll: -120.093}
+- name: t35_a120_+0_+0_+0
+  joints_deg: {shoulder_pan: 14.143, shoulder_lift: 7.661, elbow_flex: 29.879, wrist_flex: -11.543,
+    wrist_roll: -111.516}
+- name: t35_a150_+0_+0_-12
+  joints_deg: {shoulder_pan: 7.474, shoulder_lift: 19.728, elbow_flex: 13.209, wrist_flex: -0.043,
+    wrist_roll: -99.905}
+- name: t35_a210_+0_+0_+0
+  joints_deg: {shoulder_pan: -7.544, shoulder_lift: 16.888, elbow_flex: 11.724, wrist_flex: 4.296,
+    wrist_roll: -74.555}
+- name: t35_a240_+0_+0_+6
+  joints_deg: {shoulder_pan: -14.219, shoulder_lift: 5.95, elbow_flex: 29.121, wrist_flex: -9.043,
+    wrist_roll: -62.939}
+- name: t35_a270_+0_+0_+12
+  joints_deg: {shoulder_pan: -18.904, shoulder_lift: -6.526, elbow_flex: 52.569, wrist_flex: -33.26,
+    wrist_roll: -54.347}

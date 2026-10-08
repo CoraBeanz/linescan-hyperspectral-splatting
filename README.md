@@ -182,6 +182,7 @@ Without the hardware, it is tested on sessions rendered through the Optiland mod
 | Reflectance of a test scene, rms | 0.8% | 3% |
 
 First light step by step, and how each fit works: [`calibration/`](calibration/).
+Where the head's cameras and mirror really sit on the wrist, measured from one scan of a printed tag board: [`calibration/headcal/`](calibration/headcal/README.md).
 
 ### Instrument simulator
 

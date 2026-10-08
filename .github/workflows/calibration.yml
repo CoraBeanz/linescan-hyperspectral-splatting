@@ -1,14 +1,27 @@
-# Calibration kit: the self-test and the unit tests on the PC side, and the
-# Jetson's capture commands on JetPack 4's Python 3.6 and numpy 1.13, with a
-# stand-in for v4l2-ctl that writes frames the way the IMX219 driver does.
+# Calibration kit: the self-tests (hsical's spectrograph calibration, headcal's
+# head calibration) and the unit tests on the PC side, and the Jetson's capture
+# commands on JetPack 4's Python 3.6 and numpy 1.13, with a stand-in for
+# v4l2-ctl that writes frames the way the IMX219 driver does. headcal builds the
+# URDF from ros2/so101_scan_description and logs lines with so101_scan_sweep, so
+# changes there run it too.
 name: calibration
 
 on:
   push:
     branches: [main]
-    paths: ["calibration/**", ".github/scripts/fake_v4l2_ctl.py", ".github/workflows/calibration.yml"]
+    paths:
+      - "calibration/**"
+      - "ros2/so101_scan_description/**"
+      - "ros2/so101_scan_sweep/**"
+      - ".github/scripts/fake_v4l2_ctl.py"
+      - ".github/workflows/calibration.yml"
   pull_request:
-    paths: ["calibration/**", ".github/scripts/fake_v4l2_ctl.py", ".github/workflows/calibration.yml"]
+    paths:
+      - "calibration/**"
+      - "ros2/so101_scan_description/**"
+      - "ros2/so101_scan_sweep/**"
+      - ".github/scripts/fake_v4l2_ctl.py"
+      - ".github/workflows/calibration.yml"
   workflow_dispatch:
 
 permissions:
@@ -42,6 +55,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Self-test (render a session, calibrate it, compare with the truth)
         run: python -m hsical selftest
+      - name: Head calibration self-test (render a calibration scan, solve it, compare with the truth)
+        run: python -m headcal selftest
       - name: Unit tests
         run: python -m pytest -v
 
@@ -74,6 +89,9 @@ jobs:
           python -m hsical capture /tmp/session cfl --kind lamp --source cfl --auto 0.75 "${cam[@]}"
           python -m hsical capture /tmp/session dark_10000us --kind dark --frames 4 "${cam[@]}"
           python -m hsical focus --count 3 --scratch /tmp/focus "${cam[@]}"
+          python -m headcal record /tmp/focus --device /dev/video0 --width 656 --height 480 --focus --count 2
+          python -m headcal record /tmp/pose --device /dev/video0 --width 656 --height 480 --auto 0.7 \
+            --all --count 3 --period 0
       - name: Check what the capture wrote
         run: |
           python - <<'EOF'
@@ -83,4 +101,12 @@ jobs:
           assert m["frames"] == 8 and m["stride_bytes"] == 1344 and m["raw_shift"] == 0, m
           assert m["exposure_us"] > 10000, "the exposure helper never adjusted the exposure"
           assert 0.45 <= m["levels"]["peak_frac"] <= 0.95, m["levels"]
+          import csv, numpy as np
+          c = json.load(open("/tmp/pose/camera.json"))
+          rows = list(csv.DictReader(open("/tmp/pose/frames.csv")))
+          print(json.dumps(c, indent=1))
+          assert c["format"] == "headcal pose frames v1" and (c["width"], c["height"]) == (328, 240), c
+          assert len(rows) == 3 and all(int(r["stamp_ns"]) > 0 for r in rows), rows
+          img = np.load("/tmp/pose/" + rows[0]["file"])
+          assert img.shape == (240, 328) and img.dtype == np.uint16 and img.max() > 64, (img.shape, img.dtype)
           EOF
