@@ -18,6 +18,10 @@ What's here:
 - a **trainer** that fits the Gaussians to the lines and corrects each sweep's
   head pose at the same time, with the backward pass on the CPU or the GPU
   ([Training](#training))
+- **material maps** for a trained splat: each Gaussian's material by spectral
+  angle against a library, clusters found without one, and each material's
+  share by linear unmixing, for the web viewer to show
+  ([Material maps](#material-maps))
 - tools to make and inspect datasets and to train, and unit tests that pin the
   math down
 
@@ -296,6 +300,157 @@ What this says for the rig:
   direction. A target with textured relief instead of a flat board should
   pin it down better (not yet tried).
 
+## Material maps
+
+Every Gaussian carries a whole spectrum, so a trained splat can say what each
+part of the scene is made of, which a color camera can't: the black panel's
+dye and its carbon-black letters look the same to the eye but not past
+740 nm, and green paint looks like a leaf but has no red edge.
+`splat_materials` works that out for each Gaussian and writes it into the
+viewer's file, where the [viewer](../viewer/) shows it:
+
+```bash
+./splat_materials synth.lsplat synth.lsplat [--library builtin|FILE.csv] [--truth DATASET] [--png DIR]
+```
+
+It makes three maps, from the spectra as the viewer decodes them:
+
+- **Library match, by spectral angle.** Think of a spectrum as an arrow with
+  one coordinate per band (46 here). The angle between two such arrows,
+  acos(a·b / |a||b|), depends only on the spectra's shapes, not on how bright
+  they are, so a white sheet in light shadow still matches white paper. Each
+  Gaussian gets the library material at the smallest angle, or no match if
+  every one is more than 10° away (`--max-angle`). Brightness can't be
+  ignored altogether, though: carbon black, 18% gray and white paper are all
+  flat, the same shape. So a material is only a candidate if its spectrum,
+  scaled to fit the Gaussian's, needs a scale between ½ and 2
+  (`--brightness`).
+- **Clusters, by k-means.** Without any library: k-means sorts the spectra
+  into 12 groups (`--clusters`), each as close as it can be to its group's
+  mean, weighting each Gaussian by its opacity so that faint floaters don't
+  pull the means. Each cluster is then named after the library material
+  nearest its mean, if one is within the angle. It's how you'd look at a scene
+  with materials you have no spectra for.
+- **Abundances, by linear unmixing.** A Gaussian that straddles a checker
+  edge sees both squares, and its spectrum is a mix of theirs. Unmixing finds
+  the shares a₁…a_E, none negative and adding up to 1, that make
+  a₁s₁ + … + a_E s_E closest to the spectrum, where s₁…s_E are the
+  *endmembers*: the library's spectra, or with `--endmembers clusters` the
+  cluster means. That is fully constrained least squares (Heinz and Chang,
+  2001): non-negative least squares (Lawson and Hanson's active-set method)
+  with one heavily weighted extra row that asks the shares to sum to 1.
+
+The library is the synthetic scene's 11 materials unless `--library` names a
+CSV file: a header row `nm,<name>,<name>,...`, one row per wavelength, and
+optionally a `color` row of `#rrggbb` map colors. For the rig that would be
+spectra measured with the spectrometer itself, from samples of what will be
+scanned.
+
+<img src="docs/material_maps.png" width="100%" alt="Four views of the trained splat from its default camera. True color. The library match, each material in its own color, with the word NIR showing on the black panel as carbon black letters on the IR dye. The true materials, matching it. The twelve k-means clusters, which split the white paper and the checkers into several groups but find the panel, the ball and the box.">
+
+The splat trained from 16 synthetic sweeps, from the viewer's opening camera:
+true color, the library match, the true materials, and the k-means clusters.
+The word NIR, invisible in true color, is in the library match because the
+letters' carbon black and the panel's dye have different spectra past 740 nm.
+
+`--truth` scores the maps against a synthetic dataset's ground truth. Each
+Gaussian counts as the material of the nearest true Gaussian within 1.5 mm,
+and the material map rendered from the opening camera (480 × 360) is scored
+against the true materials rendered the same way, on the pixels that one
+material covers at least 90% of and the splat covers at least 90% of. For the
+viewer's two samples:
+
+| | Ground truth | Trained from 16 sweeps |
+|---|---|---|
+| Gaussians labelled right | 100% | 71.7% (74.5% weighted by opacity) |
+| Map pixels labelled right | 100% of 80,482 | 97.1% of 21,074 |
+| Gaussians with no match | 0% | 13.9% |
+| Largest abundance is the true material: Gaussians, map pixels | 100%, 100% | 80.9%, 95.6% |
+| The true material's mean abundance: Gaussians, map pixels | 0.98, 0.95 | 0.72, 0.84 |
+| Cluster purity, adjusted Rand index | 99.3%, 0.66 | 77.2%, 0.36 |
+
+The map is much better than the Gaussians because what you see is mostly the
+large, opaque Gaussians, and those have clean spectra. Training also leaves
+small, faint Gaussians that each fix up a little of a few lines, and their
+spectra can be anything; most of the misses are those, with no match rather
+than the wrong one. The weakest material is carbon black (11% of its
+Gaussians, 70% of its pixels): the checker squares are 4 mm and the splat
+blurs their edges into the white squares, so a black square's spectrum comes
+out too bright, and 40% of its Gaussians are left unmatched. *Purity* is the share of Gaussians in a
+cluster whose commonest true material is theirs; the *adjusted Rand index* is
+1 when the clusters are exactly the materials and 0 for a random split. Even
+on the ground truth it is only 0.66, because k-means with 12 clusters for 11
+materials gives the big ones (paper, wood) two clusters each and merges the
+small blue patch into another: clusters find what differs, not what the names
+are.
+
+### On the simulator
+
+The [instrument simulator](../sim/) renders whole scans of scenes whose
+materials are known, through the arm, the mirror, the spectrograph and the
+camera, so the maps can be scored on data that went through `hsical`'s
+calibration, `tools/scan_to_dataset.py` and `splat_train` like a real scan
+will. `tools/sim_material_truth.py` rebuilds the scene and writes the library
+(the simulator's 13 materials, PTFE and the rare-earth tile among them) and
+the truth three ways: each Gaussian's material (that of the nearest surface),
+the opening view's, and what each pixel of each scan line saw:
+
+```bash
+# From the repo root; build/ is ignored by git
+(cd sim && python -m hsisim scan ../build/sim --plan ring --scene board)
+(cd calibration && python -m hsical calibrate ../build/sim/calibration -o ../build/sim/cal)
+python3 splat/tools/scan_to_dataset.py build/sim build/sim_ds --calibration build/sim/cal
+cd build/splat
+./splat_train ../sim_ds ../sim_train
+./splat_export ../sim_train/scene ../sim.lsplat --dataset ../sim_ds --poses ../sim_train/sweep_head_pose.npy
+python3 ../../splat/tools/sim_material_truth.py ../sim ../sim_ds ../sim.lsplat ../sim_truth \
+    --poses ../sim_train/sweep_head_pose.npy
+./splat_materials ../sim.lsplat ../sim.lsplat --library ../sim_truth/library.csv \
+    --truth-labels ../sim_truth/labels.npy --truth-map ../sim_truth/view.npy \
+    --dataset ../sim_ds --poses ../sim_train/sweep_head_pose.npy --truth-lines ../sim_truth/lines.npy
+```
+
+A trained splat can sit anywhere: moving the scene and every pose together
+changes nothing in the lines. These splats sat 2.2 to 2.4 mm low (the
+simulator's board and plate are 2 mm thick, and training starts every
+Gaussian at z = 0), so the helper first moves each one back by the rigid
+motion that best takes its trained sweep poses onto the true ones. The scan
+lines are the fairest test, because a trained splat reproduces its lines
+whatever its shape: rendering the material map through each line camera
+scores the materials alone. The Gaussians and the opening view also score the
+shape.
+
+| Scene, scan | Board, `ring` (4 views) | Relief, `ring` (4 views) | Relief, 16 views |
+|---|---|---|---|
+| Lines | 428 | 428 | 1,712 |
+| Measured line pixels, matched directly | 98.5% | 96.9% | 96.8% |
+| The splat's line pixels labelled right | 98.6% | 85.9% | 93.9% |
+| Largest abundance right, line pixels | 98.0% | 71.0% | 82.4% |
+| Map pixels labelled right | 87.8% | 51.2% | 58.3% |
+| Gaussians labelled right | 63.8% | 17.4% | 17.0% |
+| Training on a 4-core CPU | 3,000 steps, 128 s, RMSE 0.008 | 3,000 steps, 224 s, RMSE 0.014 | 9,000 steps, 19 min, RMSE 0.015 |
+
+The first row needs no splat: each measured pixel's spectrum matched against
+the library as `splat_materials` matches a Gaussian's. It is what the
+instrument and its calibration allow. Most of the misses are white paper
+taken for PTFE, both nearly flat and bright, so only the paper's slight
+slope tells them apart; the rest are carbon black, whose 4% reflectance
+leaves the least signal over the noise. On the flat board the splat's maps,
+seen along the lines, are as good as that.
+
+The relief is harder. From four views the trainer flattens its 1 to 12 mm
+pillars onto the plate. Sixteen views (a plan from `make_plan --tilts 0 15 25
+--azimuths 0 45 90 135 180 225 270 315`; 3,000 steps left it at RMSE 0.028
+and 90.2%, so it got 9,000) bring the pillars up and the lines to within 3
+points of the measured ones, but the pillars' shape stays rough, so in the
+opening view a material often lands beside where it really is. And most of
+its Gaussians match nothing: 39% of them have a negative reflectance
+somewhere, which no material has, and 97% of those go unmatched. The trainer
+lets a Gaussian go negative where that corrects the blend of the ones around
+it, so the blend is right while its own spectrum isn't (6% of the synthetic
+splat's Gaussians and 13% of the board's do the same). Keeping the features
+non-negative in training is the obvious next step for per-Gaussian maps.
+
 ## Dataset format
 
 A dataset is a directory. The synthetic generator writes it, and the capture
@@ -426,6 +581,13 @@ python3 ../../splat/tools/scan_to_dataset.py ~/so101_scan/scans/<scan> rig_scan
 
 # Pack a trained splat into one file for the web viewer in viewer/
 ./splat_export synth/train/scene synth.lsplat --dataset synth --poses synth/train/sweep_head_pose.npy
+
+# Add material maps to it, scored against the truth; --png writes them as images
+./splat_materials synth.lsplat synth.lsplat --truth synth --png synth/materials
+
+# The true materials behind a splat of a simulator scan, to score its maps
+# (with sim/requirements.txt; Material maps has the whole chain)
+python3 ../../splat/tools/sim_material_truth.py sim_out sim_ds sim.lsplat sim_truth --poses sim_train/sweep_head_pose.npy
 ```
 
 ## Code map
@@ -445,14 +607,16 @@ include/linesplat/
 ├── dataset.hpp           the dataset format above
 ├── synthetic.hpp         the synthetic scene and scan
 ├── spectra.hpp           material spectra, true color (CIE 1931) and CIR
+├── lsplat.hpp            the web viewer's .lsplat file: read, write, pack a scene
+├── materials.hpp         spectral angle, k-means, unmixing, spectral libraries
 └── preview.hpp, png.hpp, npy.hpp, rng.hpp, util.hpp
 src/                      a .cpp per header
 src/cuda/
 ├── rasterizer.cu         the passes, forward and backward
 ├── optimizer.cu          Adam and densification on the GPU (--gpu-adam)
 └── cuda_common.cuh, rasterizer_impl.cuh   buffers, timers and the GPU state
-tools/                    splat_synth, splat_render, splat_train, splat_export,
-                          scan_to_dataset.py, nano_budget.py
+tools/                    splat_synth, splat_render, splat_train, splat_export, splat_materials,
+                          scan_to_dataset.py, nano_budget.py, sim_material_truth.py
 tests/                    one file per topic; test_cuda skips without a GPU
 docs/                     nano_budget.md, figures
 ```
@@ -469,3 +633,6 @@ docs/                     nano_budget.md, figures
 3. **Pick K for real spectra.** `--basis 8` matches the full spectrum on the
    synthetic scene, whose spectra are smooth curves; real materials and the
    spectrograph's noise may want 10 or 12.
+4. **Non-negative spectra in training**, so that each Gaussian's own spectrum
+   means something and the material maps can label it
+   ([On the simulator](#on-the-simulator) says why).
