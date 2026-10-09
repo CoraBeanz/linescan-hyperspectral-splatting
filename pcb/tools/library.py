@@ -33,7 +33,7 @@ FOOTPRINTS = {
     "Connector_JST": ["JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical", "JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical"],
     "Connector_PinHeader_2.54mm": ["PinHeader_1x03_P2.54mm_Vertical"],
     "Jumper": ["SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm_NumberLabels"],
-    "MountingHole": ["MountingHole_3.2mm_M3", "MountingHole_2.2mm_M2"],
+    "MountingHole": ["MountingHole_3.2mm_M3"],
 }
 
 # ESP32-DevKitC V4 headers, pin 1 at the antenna end (Espressif's user guide)
@@ -265,8 +265,22 @@ def a3144_leads():
                       "hall A3144 UA SIP-3", it, (0, 2.2), (0, 3.2))
 
 
+def m2_hole():
+    """An unplated 2.2 mm hole for an M2 screw. The courtyard is the screw head (4 mm across)
+    plus 0.1 mm, tighter than KiCad's own M2 hole, because on the hall board the hole sits
+    where an M2 x 5 clears the mirror clamp, close to the cable pads."""
+    it = [[A("pad"), "", A("np_thru_hole"), A("circle"), [A("at"), 0, 0], [A("size"), 2.2, 2.2], [A("drill"), 2.2],
+           [A("layers"), "*.Cu", "*.Mask"]],
+          _circle(0, 0, 2.1, "F.CrtYd", 0.05),
+          _circle(0, 0, 2.0, "F.Fab", 0.1)]
+    fp = _footprint("Hole_M2_2.2mm", "Unplated 2.2 mm hole for an M2 screw; courtyard is the 4 mm head",
+                    "hole M2 mounting", it, (0, -2.8), (0, 2.8))
+    fp[fp.index([A("attr"), A("through_hole")])] = [A("attr"), A("exclude_from_pos_files"), A("exclude_from_bom")]
+    return fp
+
+
 def npth_hole():
-    """A plain 1.5 mm hole, for tying the hall cable down with thread or a thin cable tie."""
+    """A plain 1.5 mm hole, for tying the hall cable down with thread."""
     it = [[A("pad"), "", A("np_thru_hole"), A("circle"), [A("at"), 0, 0], [A("size"), 1.5, 1.5], [A("drill"), 1.5],
            [A("layers"), "*.Cu", "*.Mask"]],
           _circle(0, 0, 1.0, "F.CrtYd", 0.05),
@@ -281,7 +295,7 @@ def wire_pads():
     """Three holes 2.54 mm apart for soldering a cable straight in (or a pin header)."""
     it = [_tht_pad("1", 0, 0, "rect"), _tht_pad("2", 2.54, 0), _tht_pad("3", 5.08, 0),
           _rect(-1.27, -1.27, 6.35, 1.27, "F.Fab", 0.1),
-          _rect(-1.5, -1.5, 6.58, 1.5, "F.CrtYd", 0.05),
+          _rect(-1.1, -1.1, 6.18, 1.1, "F.CrtYd", 0.05),
           _fp_text("user", "${REFERENCE}", 2.54, 0, "F.Fab", size=0.8, thick=0.12)]
     return _footprint("Wire_Pads_1x03_P2.54mm", "Three 1.0 mm holes on 2.54 mm for a soldered-in cable",
                       "cable wire solder pads", it, (2.54, -2.4), (2.54, 2.4))
@@ -296,5 +310,5 @@ def build_footprint_lib(kicad_footprints, out_dir):
             # copyfile, not copy: KiCad's installed files are read-only
             shutil.copyfile(kicad_footprints / (lib + ".pretty") / (name + ".kicad_mod"),
                             out_dir / (name + ".kicad_mod"))
-    for fp in (devkitc_socket(), stepstick_socket(), a3144_leads(), npth_hole(), wire_pads()):
+    for fp in (devkitc_socket(), stepstick_socket(), a3144_leads(), npth_hole(), m2_hole(), wire_pads()):
         (out_dir / (fp[1] + ".kicad_mod")).write_text(dump(fp) + "\n", encoding="utf-8")

@@ -215,7 +215,7 @@ def build_layout(path, comps, nets, size, place, routes, vias, texts, holes, thi
     for i, (x, y) in enumerate(holes, 1):
         board_only(footprint("MountingHole_3.2mm_M3", "H%d" % i, "M3", x, y, 0))
     if m2:
-        board_only(footprint("MountingHole_2.2mm_M2", "H%d" % (len(holes) + 1), "M2", m2[0], m2[1], 0))
+        board_only(footprint("Hole_M2_2.2mm", "H%d" % (len(holes) + 1), "M2", m2[0], m2[1], 0))
     for i, (x, y) in enumerate(relief, 1):
         board_only(footprint("Hole_NPTH_1.5mm", "H%d" % (len(holes) + 1 + i), "tie", x, y, 0))
 
