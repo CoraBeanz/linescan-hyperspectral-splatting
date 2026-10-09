@@ -114,7 +114,7 @@ Each frame is the scan line (vertical) by its spectrum (horizontal), at about 5.
 | B: M12 IMX219 + 12 mm f/2 lens | 92–100% | 12–14% | 5.8 px/nm | 3.7 nm | 2,143 |
 | **C: B + 18 mm field lens** | **100%** | **98–99%** | **5.8 px/nm** | **4.1 nm** | **2,204** |
 
-Resolution is geometric, with perfect lenses: the slit image's width over the dispersion. For A and B it is the paraxial estimate. For C it is traced through the grating, which widens the slit image 1.08× as the beam leaves at 22°, and the field lens adds 1.03×. The parts that were bought trace to 5.4 nm the way `cad/` draws the head today, and to 4.1 nm with the field lens turned curved side to the slit (configs D and E, [design notes](docs/parts_list_and_design.md#with-the-parts-that-were-bought-configs-d-and-e)). Real M12 lenses will likely land around 5–8 nm. More in the [modeling notes](docs/parts_list_and_design.md#5-modeling-notes-and-limits).
+Resolution is geometric, with perfect lenses: the slit image's width over the dispersion. For A and B it is the paraxial estimate. For C it is traced through the grating, which widens the slit image 1.08× as the beam leaves at 22°, and the field lens adds 1.03×. The parts that were bought trace to 4.1 nm as [`cad/`](cad/README.md) builds the head, with the field lens curved side to the slit (config E); turned the other way it would be 5.4 nm (config D, [design notes](docs/parts_list_and_design.md#with-the-parts-that-were-bought-configs-d-and-e)). Real M12 lenses will likely land around 5–8 nm. More in the [modeling notes](docs/parts_list_and_design.md#5-modeling-notes-and-limits).
 
 ```bash
 pip install optiland                   # tested with 0.6.2
