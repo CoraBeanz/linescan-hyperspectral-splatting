@@ -1,0 +1,28 @@
+# First light with the real parts: the same chain on a scan from the rig.
+#
+#   python3 pipeline/first_light.py pipeline/configs/rig.yaml --set scan.path=~/so101_scan/scans/<scan>
+#
+# The scan folder is what scan_sweep and line_camera write (ros2/README.md). If line_camera ran
+# with a calibration, its lines are already binned and nothing else is needed; otherwise give
+# the hsical calibration they were taken with (scan.calibration), or an hsical capture session
+# to calibrate first (scan.calibration_session). With no truth to compare against, the checks
+# are the ones a real scan can have: lines kept, values filled in, the fit to the measured lines
+# and the viewer's reader. Look at report.md, train/preview/ and the splat in the viewer.
+name: rig
+source: scan
+scan:
+  path: null                 # --set scan.path=<scan folder>
+  calibration: null          # e.g. ~/hsical/cal_20261009 (has maps.npz)
+  calibration_session: null  # or an hsical session to calibrate into <out>/cal
+convert:
+  slit_bins: 256
+train:
+  iterations: 3000
+export:
+  title: "First light"
+limits:
+  lines_left_out_max: 0.05
+  values_filled_max: 0.02
+  rmse_measured_max: 0.05
+  export_decoded_rms_max: 0.005
+  viewer_covered_min: 0.5

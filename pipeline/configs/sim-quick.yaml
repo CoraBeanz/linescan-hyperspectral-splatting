@@ -1,0 +1,35 @@
+# A small virtual first light for pull requests: two viewpoints of the relief target with half
+# as many lines (twice the mirror step, so the same fan), 128 px x 23 bands and 600 training
+# steps. A few minutes on a 4-core CPU. It proves the chain runs and the conventions agree
+# (pixel 0's end of the slit, poses, bands, the viewer's reader); the limits on what training
+# reaches are the nightly's job.
+name: sim-quick
+source: sim
+sim:
+  scene: relief
+  plan: ring
+  views: [down, tilt25_az90]
+  lines: 53
+  steps_per_line: 4
+  binning: 4
+  seed: 7
+convert:
+  slit_bins: 128
+  nm_step: 20
+train:
+  iterations: 600
+export:
+  title: "Relief target, quick simulated scan"
+limits:
+  lines_left_out_max: 0.0
+  values_filled_max: 0.001
+  reflectance_ratio_median_max: 0.01
+  reflectance_ratio_rms_max: 0.03
+  profile_correlation_min: 0.99
+  profile_correlation_mirrored_max: 0.5
+  profile_shift_px_max: 0.25
+  rmse_measured_max: 0.05
+  rmse_truth_max: 0.06
+  pose_error_ratio_max: 1.0
+  export_decoded_rms_max: 0.005
+  viewer_covered_min: 0.5
