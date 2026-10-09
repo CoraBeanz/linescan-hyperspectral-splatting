@@ -147,7 +147,10 @@ LineImage render_view(const GaussianScene& s, const json& view, int width, int h
 }
 
 // Spectra rendered by the C++ renderer at a grid of pixels of two cameras,
-// with the color weights, for the viewer's tests.
+// with the color weights, for the viewer's tests. They are rendered in double,
+// as the viewer's probe works: in float, rounding moves each Gaussian's alpha a
+// little, so one at the 1/255 cut-off, or two at almost the same depth, can come
+// out the other way from the probe and move a spectrum by up to 1e-2.
 json reference(const GaussianScene& s, const json& view, const std::vector<double>& wl) {
   json cams = json::array();
   const Vec3d target = [&] {
@@ -171,14 +174,14 @@ json reference(const GaussianScene& s, const json& view, const std::vector<doubl
   for (const Cam& c : {Cam{view, 480, 360, 8, 6, 0.2, 0.8, 0.3, 0.85}, Cam{close, 320, 240, 8, 6, 0.0, 1.0, 0.0, 1.0}}) {
     double f = 0.0;
     const Pose pose = lsplat_view_pose(c.view, c.width, c.height, &f);
-    const std::vector<LineCamera> all_rows = pinhole_rows(pose, c.width, c.height, f);
+    const std::vector<LineCameraT<double>> all_rows = pinhole_rows_d(pose, c.width, c.height, f);
     std::vector<int> ys;
-    std::vector<LineCamera> rows;
+    std::vector<LineCameraT<double>> rows;
     for (int j = 0; j < c.rows; ++j) {
       ys.push_back(int(c.height * (c.y0 + (c.y1 - c.y0) * (j + 0.5) / c.rows)));
       rows.push_back(all_rows[size_t(ys.back())]);
     }
-    const LineImage img = features_to_bands(s, render_lines_cpu<float>(s, rows));
+    const LineImageT<double> img = features_to_bands(s, render_lines_cpu<double>(s, rows));
     json pixels = json::array();
     for (int j = 0; j < c.rows; ++j)
       for (int i = 0; i < c.cols; ++i) {
