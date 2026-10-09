@@ -23,6 +23,8 @@
                        (reflectance 0.98) under the scan's light
       calibration/     an hsical calibration session of the same simulated instrument (lamps,
                        flat, wires, laser, darks): `python -m hsical calibrate <out>/calibration`
+      pose/            with the pose camera: its stills, as headcal's recorder keeps them
+                       (posecam.py)
       truth/           what the frames were made from (see truth.py)
 
 `python -m hsical apply <cal> <out>/frames/sweep_001 --dark <out>/reference/dark
@@ -47,7 +49,7 @@ from . import timing as T
 from .arm import Arm, PoseErrors
 from .instrument import Spectrograph
 from .linecam import Objective, SlitRays
-from .scenes import DEFAULT_TARGET, make as make_scene
+from .scenes import CARD, DEFAULT_TARGET, make as make_scene
 from hsical.synth import Truth, write_session  # noqa: E402
 from so101_scan_camera.session import CSV_COLUMNS as FRAMES_COLUMNS, FRAMES_FORMAT  # noqa: E402
 from so101_scan_camera.sources import IMX219_MODES  # noqa: E402
@@ -84,6 +86,11 @@ class Settings:
     stamp_error_us: float = 0.0    # how late the camera's frame stamps are against row 0's read-out
     stamp_offset_us: float = 0.0   # line_camera's stamp_offset_us, added to every stamp
     slit_reversed: bool = False    # the camera mounted the other way along the slit
+    pose_camera: bool = False      # also render the pose camera's stills into pose/ (needs OpenCV)
+    pose_stills: int = 1           # stills the recorder keeps during each sweep
+    pose_exposure_us: float = 20000.0
+    # the head off its CAD numbers, x what a hand-built one is (as headcal's synthetic head); 0: the CAD head
+    head_errors: float = 0.0
     truth: dict = field(default_factory=dict)  # hsical Truth overrides, e.g. {"blur_px": 12.0}
 
     def instrument_truth(self):
@@ -96,13 +103,14 @@ class Settings:
 
 
 def load_plan(plan, lines=None, steps_per_line=None, start_angle_deg=None, line_period_s=None, views=None):
-    """A plan (path, a name in ros2's plans/, or a dict) with the sweep settings overridden."""
+    """A plan (path, a name in ros2's plans/ or headcal's, or a dict) with the sweep settings overridden."""
     if isinstance(plan, dict):
         data = json.loads(json.dumps(plan))
     else:
         path = Path(plan)
-        if not path.exists() and (repo.PLANS / f"{plan}.yaml").exists():
-            path = repo.PLANS / f"{plan}.yaml"
+        for folder in (repo.PLANS, repo.HEADCAL_PLANS):
+            if not path.exists() and (folder / f"{plan}.yaml").exists():
+                path = folder / f"{plan}.yaml"
         data = yaml.safe_load(path.read_text()) or {}
     over = {k: v for k, v in (("n_lines", lines), ("steps_per_line", steps_per_line),
                                ("start_angle_deg", start_angle_deg), ("line_period_s", line_period_s)) if v is not None}
@@ -156,20 +164,31 @@ def simulate(out_dir, plan, settings: Settings | None = None, calibration_sessio
                          f"{1e3 / s.frame_rate():.1f} ms frame at {s.frame_rate():g} fps")
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    (out / "truth").mkdir(exist_ok=True)
     target = tuple(plan.source.get("target_m") or DEFAULT_TARGET)
-    scene = make_scene(s.scene, target, s.lighting)
+    scene = make_scene(s.scene, target, s.lighting, **_scene_kw(s, target))
     truth = s.instrument_truth()
     seq = np.random.SeedSequence(s.seed)
     rng_pose, rng_rays = (np.random.default_rng(x) for x in seq.spawn(2))
 
     log(f"Instrument: binning {s.binning:g}, seed {s.seed}")
     sp = Spectrograph(truth, temp_k=s.halogen_k, nm_step=s.nm_step)
-    obj = Objective.from_design(sp.inst.design.config, blur_um=s.objective_blur_um)
+    robot = repo.robot()
+    head = _head(s, robot, scene, out / "truth") if s.pose_camera or s.head_errors else None
+    true_robot = repo.robot(out / "truth" / "head_calibration.yaml") if s.head_errors else robot
+    obj = Objective.from_design(sp.inst.design.config, blur_um=s.objective_blur_um,
+                                **(head["objective"] if s.head_errors else {}))
     rays = SlitRays(obj, sp.h, s.slices, s.rays_per_point, seed=int(rng_rays.integers(2 ** 31)))
     names = spectra.NAMES
     table = spectra.table(sp.nm)
-    robot = repo.robot()
-    arm = Arm(robot, PoseErrors().scaled(s.errors), rng_pose)
+    arm = Arm(true_robot, PoseErrors().scaled(s.errors), rng_pose, logged_robot=robot)
+    stills = pcam = None
+    if s.pose_camera:
+        from .posecam import PoseCamera, StillLog
+        log(f"Pose camera: {s.pose_stills} still{'s' if s.pose_stills != 1 else ''} a sweep")
+        pcam = PoseCamera(head["truth"].camera, truth, temp_k=s.halogen_k, exposure_us=s.pose_exposure_us)
+        stills = StillLog(out / "pose", out / "truth", pcam, _iso(s.start_ns))
+        rng_stills = np.random.default_rng([s.seed, 2])
 
     # the white reference sets the exposure: its peak at `fill` of full scale
     white_scene = make_scene("white", target, s.lighting)
@@ -221,7 +240,7 @@ def simulate(out_dir, plan, settings: Settings | None = None, calibration_sessio
         log(f"  {vp.name}: {sw.n_lines} lines, {st.lock.frames_per_line} camera frame"
             f"{'s' if st.lock.frames_per_line > 1 else ''} a line")
         for k, lt in enumerate(st.lines):
-            head, cam = arm.poses(q_reads[k], angles[k])
+            head_l, cam = arm.logged_poses(q_reads[k], angles[k])
             head_t, cam_t = arm.poses(vp.joints, angles_true[k], flex)
             w, depth = rays.weights(scene, cam_t, len(names))
             row = [sweep_id, k]
@@ -250,7 +269,7 @@ def simulate(out_dir, plan, settings: Settings | None = None, calibration_sessio
             else:
                 row += ["no_frame", "", "", "", "", "", "", "", "", 0]
             frames_log.writerow(row)
-            lines.write(i, sweep_id, k, lt.stamp_ns, lt.hold_until_ns, True, angles[k], head, cam, q_reads[k])
+            lines.write(i, sweep_id, k, lt.stamp_ns, lt.hold_until_ns, True, angles[k], head_l, cam, q_reads[k])
             tl.csv.write(i, sweep_id, k, lt.stamp_ns, lt.hold_until_ns, True, angles_true[k], head_t, cam_t,
                          vp.joints)
             tl.weights.append(w.mean(0).astype(np.float16))
@@ -264,8 +283,16 @@ def simulate(out_dir, plan, settings: Settings | None = None, calibration_sessio
             design_scale=s.binning), indent=2) + "\n")
         info["viewpoints"].append(_summary(vp, sweep_id, move_s, start_step * rad_per_step, rad_per_step,
                                            stamps, logged_joints, st.lock))
+        if pcam is not None:
+            from .posecam import still_stamps
+            pose = arm.pose_camera(vp.joints, flex)
+            signal = pcam.signal(scene, pose)
+            for stamp in still_stamps(stamps[0], stamps[-1], s.pose_stills):
+                stills.write(pcam.expose(signal, rng_stills), stamp, sweep_id, pose)
         t_ns = st.end_ns + int(0.6e9)
     lines.close()
+    if stills is not None:
+        stills.close()
     tl.csv.close()
     frames_csv.close()
     timing_csv.close()
@@ -297,11 +324,14 @@ def simulate(out_dir, plan, settings: Settings | None = None, calibration_sessio
         "by": "sim/ (python -m hsisim)", "scene": scene.name, "lighting": scene.lighting.to_dict(),
         "settings": asdict(s), "instrument": asdict(truth), "objective": obj.to_dict(),
         "exposure_level_e_per_us": level, "seconds": round(time.time() - t_start, 1)}
+    if stills is not None:
+        info["simulated"]["pose_camera"] = {"stills": "pose", "count": stills.count,
+                                            "truth": "truth/pose_camera.json, truth/stills_true.csv"}
     (out / "scan.json").write_text(json.dumps(info, indent=2) + "\n")
     (out / "robot.urdf").write_text(repo.robot_description())
     with open(out / "plan.yaml", "w") as f:
         yaml.safe_dump(plan.source, f, sort_keys=False)
-    _write_truth(tl, sp, scene, arm, names, table)
+    _write_truth(tl, sp, scene, arm, names, table, head, stills)
     log(f"Wrote {lines.rows} lines in {len(plan.viewpoints)} sweeps to {out} ({time.time() - t_start:.0f} s)")
     return info
 
@@ -395,7 +425,35 @@ def _summary(vp, sweep_id, move_s, start_angle, rad_per_step, stamps, joints, lo
     return out
 
 
-def _write_truth(tl, sp, scene, arm, names, table):
+def _scene_kw(s, target):
+    """The tag board's place on the table: near the target and turned a little, as a person puts it."""
+    if s.scene != "tagboard":
+        return {}
+    from headcal.board import Board
+    from headcal.synth import board_on_table
+    rng = np.random.default_rng([s.seed, 3])
+    centre = np.asarray(target[:2], float) + rng.normal(0.0, 0.008, 2)
+    return dict(pose=board_on_table(Board(), centre, np.radians(rng.uniform(-20.0, 20.0)), target[2] + CARD))
+
+
+def _head(s, robot, scene, truth_dir):
+    """The head as it really is, and the pose camera's lens: headcal's synthetic truth for this seed
+    (the CAD head with --head-errors 0). Writes truth/head_calibration.yaml, the true head as
+    headcal writes a calibration, for the true URDF and to compare a calibration with."""
+    from headcal.model import HeadGeometry
+    from headcal.synth import make_truth
+    nominal = HeadGeometry.from_urdf(robot)
+    t = make_truth(nominal, board=getattr(scene, "board", None), seed=s.seed, errors=s.head_errors,
+                   joint_noise_deg=0.0, slit_reversed=s.slit_reversed)
+    if hasattr(scene, "board_pose"):
+        t.board_in_base = scene.board_pose
+    (truth_dir / "head_calibration.yaml").write_text(t.head.calibration_yaml(
+        "The simulated head as it really is (hsisim --head-errors %g, seed %d)" % (s.head_errors, s.seed)))
+    return dict(truth=t, nominal=nominal,
+                objective=dict(line_scale=t.head.half_line / nominal.half_line, slit_k1=t.head.slit_k1))
+
+
+def _write_truth(tl, sp, scene, arm, names, table, head=None, stills=None):
     p = tl.path
     np.save(p / "weights.npy", np.stack(tl.weights))
     np.save(p / "depth.npy", np.stack(tl.depth))
@@ -425,4 +483,31 @@ def _write_truth(tl, sp, scene, arm, names, table):
                                "the tick and move (start, end) onto its line, and moving_share, the most "
                                "of any slit row's exposure spent while the mirror was off the line",
             "scene.json": "the scene: solids, textures, lighting",
+            **_head_truth_files(p, head, stills, arm),
         }), indent=1) + "\n")
+
+
+def _head_truth_files(p, head, stills, arm):
+    """truth/head.json and pose_camera.json; their entries for truth.json's file list."""
+    if head is None:
+        return {}
+    t = head["truth"]
+    (p / "head.json").write_text(json.dumps(dict(
+        head=t.head.to_json(), cad=head["nominal"].to_json(), pose_camera_lens=t.camera.to_json(),
+        board=t.board.to_json(), board_in_base=np.asarray(t.board_in_base).tolist(),
+        slit_reversed=t.slit_reversed, seed=t.seed), indent=1) + "\n")
+    files = {"head.json": "the head as it really is and as the CAD model has it (headcal's HeadGeometry: the "
+                          "mount, mirror, objective and pose camera in the head frame), the pose camera's lens, "
+                          "and the tag board's pose in base_link",
+             "head_calibration.yaml": "the true head, written as headcal writes a calibration: the "
+                                      "true poses come from the URDF built with it"}
+    if stills is not None:
+        in_head = arm.robot.fk("pose_camera_optical_frame", {}, arm.poser.head)
+        (p / "pose_camera.json").write_text(json.dumps(dict(
+            lens=t.camera.to_json(), lens_model="OpenCV plumb bob (k1, k2, p1, p2, k3), pixel centres at integers",
+            pose_camera_in_head=in_head.tolist(),
+            grey_reflectance=dict(zip(spectra.NAMES, stills.camera.grey.tolist())),
+            level_e_per_us=stills.camera.level), indent=1) + "\n")
+        files["pose_camera.json"] = "the pose camera's true lens, its pose in the head, and each material's grey"
+        files["stills_true.csv"] = "where the pose camera really was (base_link, x y z and quaternion) for each still"
+    return files

@@ -10,6 +10,9 @@ board   a flat target board like the splat's synthetic scene: a checker border, 
         patches, a panel with a word hidden in the near infrared, a rare-earth tile, a
         PTFE patch, a leaf-green ball and an orange box.
 white   a PTFE sheet: what the white reference frames look at.
+tagboard
+        the hand-eye calibration's ChArUco board (calibration/headcal), printed on Letter paper
+        and lying on the table, for the pose camera and for headcal's calibration scan.
 
 `target` is the plan's scan target in base_link (the table top under it, metres).
 """
@@ -18,7 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .scene import Bitmap, Box, Checker, Lamp, Plane, Scene, Speckle, Sphere, Texture, Uniform
+from .scene import Bitmap, Box, Checker, Lamp, Plane, Raster, Scene, Speckle, Sphere, Texture, Uniform
 
 MM = 1e-3
 DEFAULT_TARGET = (0.26, 0.0, -0.0024)  # make_plan's default: 26 cm in front of the base, on the table
@@ -125,14 +128,58 @@ def white(target=DEFAULT_TARGET, lighting=None):
                  name="white", target=(tx, ty, tz), description="a PTFE sheet filling the view")
 
 
-SCENES = {"relief": relief, "board": board, "white": white}
+LETTER = (279.4 * MM, 215.9 * MM)   # the paper the board is printed on, landscape
+CARD = 1.5 * MM                     # glued flat on card
 
 
-def make(name, target=DEFAULT_TARGET, lighting=None):
+def tagboard(target=DEFAULT_TARGET, lighting=None, board=None, pose=None, px_per_mm=20):
+    """headcal's tag board (board: a headcal Board, the default one if None) lying face up on the
+    table. pose: board frame -> base_link, headcal's convention (origin at the board's outer
+    corner, z into the paper; headcal.synth.board_on_table); default: centred on the target,
+    its x along base_link's. The black squares and tag cells are drawn at px_per_mm, a pixel
+    black when its centre is."""
+    from headcal.board import Board
+    from headcal.synth import board_on_table
+
+    tx, ty, tz = (float(v) for v in target)
+    board = board or Board()
+    if pose is None:
+        pose = board_on_table(board, (tx, ty), 0.0, tz + CARD)
+    pose = np.asarray(pose, float)
+    w_mm, h_mm = board.squares_x * board.square_mm, board.squares_y * board.square_mm
+    grid = np.zeros((int(round(h_mm * px_per_mm)), int(round(w_mm * px_per_mm))), bool)
+    for x, y, w, h in board.black_rects():
+        c0, c1 = (int(np.ceil(v * px_per_mm - 0.5)) for v in (x, x + w))
+        r0, r1 = (int(np.ceil(v * px_per_mm - 0.5)) for v in (y, y + h))
+        grid[max(r0, 0):r1, max(c0, 0):c1] = True
+    # the card's top is the board's plane; its local x is the board's x, its local y the board's -y
+    rot = pose[:3, :3] @ np.diag([1.0, -1.0, -1.0])
+    centre = pose[:3, :3] @ board.centre + pose[:3, 3] - 0.5 * CARD * rot[:, 2]
+    top = Texture.solid("white_paper").add(
+        Raster(grid, 1e-3 / px_per_mm, "carbon_black", "white_paper",
+               source=f"headcal board {board.squares_x} x {board.squares_y} squares of {board.square_mm:g} mm, "
+                      f"{board.marker_mm:g} mm {board.dictionary} tags"),
+        (-0.5e-3 * w_mm, -0.5e-3 * h_mm, 0.5e-3 * w_mm, 0.5e-3 * h_mm))
+    solids = [Plane(tz, Texture.solid("wood"), name="table"),
+              Box(centre, (LETTER[0], LETTER[1], CARD), top, sides=Texture.solid("white_paper"), rotation=rot,
+                  name="tag board")]
+    scene = Scene(solids, _lighting(lighting, (tx, ty, tz)), name="tagboard", target=(tx, ty, tz),
+                  description=f"headcal's {board.squares_x} x {board.squares_y} ChArUco board of {board.square_mm:g} "
+                              f"mm squares, laser-printed on Letter paper glued to card, on a wooden table")
+    scene.board, scene.board_pose = board, pose
+    scene.extra = dict(board=board.to_json(), board_in_base=pose.tolist())
+    return scene
+
+
+SCENES = {"relief": relief, "board": board, "white": white, "tagboard": tagboard}
+
+
+def make(name, target=DEFAULT_TARGET, lighting=None, **kw):
     try:
-        return SCENES[name](target, lighting)
+        build = SCENES[name]
     except KeyError:
         raise ValueError(f"unknown scene '{name}'; built in: {', '.join(SCENES)}") from None
+    return build(target, lighting, **kw)
 
 
 def heights_mm():

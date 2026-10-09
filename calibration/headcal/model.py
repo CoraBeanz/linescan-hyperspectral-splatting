@@ -250,8 +250,12 @@ class PinholeCamera:
     def rays(self, uv):
         """Unit directions (N,3) in the camera frame through pixels uv (N,2)."""
         import cv2
-        pts = cv2.undistortPoints(np.asarray(uv, np.float64).reshape(-1, 1, 2), self.matrix, np.asarray(self.dist),
-                                  criteria=(cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 30, 1e-10))
+        src, dist = np.asarray(uv, np.float64).reshape(-1, 1, 2), np.asarray(self.dist)
+        criteria = (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 30, 1e-10)
+        if hasattr(cv2, "undistortPointsIter"):     # OpenCV 4
+            pts = cv2.undistortPointsIter(src, self.matrix, dist, None, None, criteria)
+        else:                                       # OpenCV 5 folded it into undistortPoints
+            pts = cv2.undistortPoints(src, self.matrix, dist, criteria=criteria)
         d = np.concatenate([pts.reshape(-1, 2), np.ones((len(pts), 1))], axis=1)
         return d / np.linalg.norm(d, axis=1, keepdims=True)
 

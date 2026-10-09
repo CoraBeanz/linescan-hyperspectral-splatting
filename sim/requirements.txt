@@ -6,5 +6,6 @@ scipy>=1.15
 pyyaml>=6.0                        # scan plans
 xacro>=2.1                         # builds robot.urdf from ros2/so101_scan_description's xacro files
 matplotlib>=3.9                    # previews and hsical's report (optional)
-opencv-python-headless>=4.10.0.84  # faster rectification in hsical (optional)
+opencv-python-headless>=4.10.0.84  # the pose camera, the tag board and --head-errors (headcal's);
+                                   # faster rectification in hsical
 pytest>=7                          # tests (optional)

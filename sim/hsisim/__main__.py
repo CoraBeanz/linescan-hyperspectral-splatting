@@ -3,6 +3,8 @@
   scan       render a scan session of a built-in scene, in the rig's on-disk format
   selftest   scan, calibrate with hsical, turn the scan into reflectance, compare with the truth
   evaluate   compare a calibrated session with its truth (after `python -m hsical calibrate`)
+  bin        bin a session's frames with its calibration, as line_camera does (for headcal solve)
+  handeye    headcal's calibration scan of a head off its CAD numbers, solved and compared with it
   preview    pictures of a session (needs matplotlib)
 """
 
@@ -27,7 +29,8 @@ def _settings(a):
     kw = dict(scene=a.scene, lighting=a.lighting, binning=a.binning, seed=a.seed, errors=a.errors,
               exposure_us=a.exposure_ms * 1000.0, gain=a.gain, slices=a.slices, rays_per_point=a.rays,
               fps=a.fps, stamp_error_us=a.stamp_error_us, stamp_offset_us=a.stamp_offset_us,
-              slit_reversed=a.slit_reversed)
+              slit_reversed=a.slit_reversed, pose_camera=a.pose_camera, pose_stills=a.pose_stills,
+              pose_exposure_us=a.pose_exposure_ms * 1000.0, head_errors=a.head_errors)
     return Settings(**kw)
 
 
@@ -106,6 +109,22 @@ def cmd_selftest(a):
             shutil.rmtree(base, ignore_errors=True)
 
 
+def cmd_bin(a):
+    from .binned import bin_session
+    bin_session(a.session, a.calibration, slit_bins=a.slit_bins)
+
+
+def cmd_handeye(a):
+    from .handeye import run
+    views = a.views.split(",") if a.views else None
+    got, cad = run(keep=a.keep, seed=a.seed, head_errors=a.head_errors, errors=a.errors, views=views)
+    good = got["slit_reversed_ok"] and got["f_px"] < 1.0 and got["c_px"] < 2.0 \
+        and got["logged_mm_median"] < 0.5 * cad["logged_mm_median"]
+    print(f"Hand-eye check {'passed' if good else 'FAILED'}: the calibrated head puts the scan line "
+          f"{got['logged_mm_median']:.2f} mm from where it was, the CAD head {cad['logged_mm_median']:.2f} mm.")
+    sys.exit(0 if good else 1)
+
+
 def cmd_preview(a):
     from .preview import preview
     preview(a.session, a.out)
@@ -127,7 +146,8 @@ def main(argv=None):
         g.add_argument("--start-angle-deg", type=float, help="mirror angle of the first line")
         g.add_argument("--line-period-s", type=float, help="time per line")
         g = q.add_argument_group("the scene and the instrument")
-        g.add_argument("--scene", default="relief", choices=["relief", "board", "white"])
+        g.add_argument("--scene", default="relief", choices=["relief", "board", "white", "tagboard"],
+                       help="tagboard: headcal's tag board, for a hand-eye calibration scan (--plan headcal)")
         g.add_argument("--lighting", default="uniform", choices=["uniform", "lamp"])
         g.add_argument("--binning", type=float, default=4.0, help="1 = the full 3280 x 2464 sensor (slow), 2, 4")
         g.add_argument("--seed", type=int, default=7, help="the instrument's flaws, the pose errors and the noise")
@@ -138,6 +158,14 @@ def main(argv=None):
         g.add_argument("--rays", type=int, default=12, help="rays through the objective per slit point")
         g.add_argument("--slit-reversed", action="store_true",
                        help="the camera mounted the other way along the slit (camera.json says so)")
+        g.add_argument("--head-errors", type=float, default=0.0,
+                       help="the head off its CAD numbers, x what a hand-built head is (as headcal's synthetic "
+                            "head); lines.csv still logs the CAD head. 0 (default): the CAD head")
+        g = q.add_argument_group("the pose camera (needs OpenCV)")
+        g.add_argument("--pose-camera", action="store_true",
+                       help="also render its stills into pose/, as headcal's recorder keeps them")
+        g.add_argument("--pose-stills", type=int, default=1, help="stills a sweep (default 1)")
+        g.add_argument("--pose-exposure-ms", type=float, default=20.0)
         g = q.add_argument_group("the camera's clock")
         g.add_argument("--fps", type=float, help="frame rate (default 30, or 21 at --binning 1)")
         g.add_argument("--stamp-error-us", type=float, default=0.0,
@@ -164,6 +192,20 @@ def main(argv=None):
     q.add_argument("--spectra", help="where to write the reflectance cubes (default <session>/spectra)")
     q.add_argument("--json", help="also write the errors to this file")
     q.set_defaults(func=cmd_evaluate)
+
+    q = sub.add_parser("bin", help="bin a session's frames with its calibration, as line_camera does")
+    q.add_argument("session")
+    q.add_argument("calibration", help="output folder of `python -m hsical calibrate <session>/calibration`")
+    q.add_argument("--slit-bins", type=int, default=256, help="as line_camera's slit_bins (default 256)")
+    q.set_defaults(func=cmd_bin)
+
+    q = sub.add_parser("handeye", help="headcal's calibration scan, solved and compared with the true head")
+    q.add_argument("--keep", help="keep the scan, the stills and the results in this folder")
+    q.add_argument("--seed", type=int, default=7)
+    q.add_argument("--head-errors", type=float, default=1.0, help="how far off its CAD numbers the head is")
+    q.add_argument("--errors", type=float, default=1.0, help="the arm's errors (0: a perfect arm)")
+    q.add_argument("--views", help="these viewpoints of headcal's plan (default every other one)")
+    q.set_defaults(func=cmd_handeye)
 
     q = sub.add_parser("preview", help="pictures of a session")
     q.add_argument("session")

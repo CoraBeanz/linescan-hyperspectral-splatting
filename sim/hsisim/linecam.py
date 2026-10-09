@@ -35,6 +35,11 @@ class Objective:
     slit_length_mm: float = 5.0
     slit_width_mm: float = 0.050
     blur_um: float = 5.0           # the objective's own blur at the slit, 1 sigma (a guess for an M12 lens)
+    # the scan line's true length over the design's (a head off its CAD numbers), and the distortion
+    # along the slit as headcal models it: h = u + k1 u^3, with u where the ray points along the line
+    # (-1 and +1 at its ends)
+    line_scale: float = 1.0
+    slit_k1: float = 0.0
 
     @classmethod
     def from_design(cls, config, **kw):
@@ -58,6 +63,14 @@ class Objective:
     @property
     def line_width_m(self):
         return 1e-3 * self.slit_width_mm * self.magnification
+
+    def line_x(self, h):
+        """How far along the in-focus scan line (m) slit position h looks."""
+        h = np.asarray(h, float)
+        u = h.copy()
+        for _ in range(4):
+            u = u - (u + self.slit_k1 * u ** 3 - h) / (1.0 + 3.0 * self.slit_k1 * u ** 2)
+        return u * (self.half_line_m * self.line_scale)
 
     @property
     def aperture_radius_m(self):
@@ -94,7 +107,7 @@ class SlitRays:
         blur = objective.blur_um * 1e-6 * m
         ex, ey = blur * rng.standard_normal((2, n_h, K, N))
         target = np.stack([
-            np.broadcast_to(self.h[:, None, None] * objective.half_line_m, (n_h, K, N)) + ex,
+            np.broadcast_to(objective.line_x(self.h)[:, None, None], (n_h, K, N)) + ex,
             (frac - 0.5) * objective.line_width_m + ey,
             np.full((n_h, K, N), objective.focus_mm * 1e-3)], -1)
         origin = np.stack([ax, ay, np.zeros_like(ax)], -1)

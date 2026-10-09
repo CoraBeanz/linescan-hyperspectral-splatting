@@ -1,9 +1,13 @@
 """The rest of the repo, imported rather than copied.
 
-The simulator reuses four parts of the repo, so it can't drift from them:
+The simulator reuses five parts of the repo, so it can't drift from them:
 
   calibration/hsical            the synthetic spectrograph and IMX219 (hsical.synth), the
                                 design map traced in Optiland, and the calibration itself
+  calibration/headcal           the hand-eye calibration's tag board, the head's geometry and
+                                how far a hand-built head is off it, and the pose camera's lens
+                                and still format (only for the pose camera and --head-errors;
+                                they need OpenCV)
   ros2/so101_scan_description   kinematics.py: forward kinematics straight from the URDF
   ros2/so101_scan_sweep         line_log.py, plan.py and frame_lock.py: the lines.csv writer, scan
                                 plans, and how the mirror's line clock locks to the camera
@@ -30,6 +34,7 @@ CALIBRATION = REPO / "calibration"
 ROS2 = REPO / "ros2"
 XACRO = ROS2 / "so101_scan_description" / "urdf" / "so101_scan.urdf.xacro"
 PLANS = ROS2 / "so101_scan_sweep" / "plans"
+HEADCAL_PLANS = CALIBRATION / "headcal" / "plans"
 
 _PATHS = (CALIBRATION, ROS2 / "so101_scan_description", ROS2 / "so101_scan_sweep", ROS2 / "so101_scan_camera")
 
@@ -66,20 +71,31 @@ def setup():
 setup()
 
 
-@lru_cache(maxsize=4)
-def robot_description(use_mock_hardware=True):
+def robot_description(use_mock_hardware=True, head_calibration=None):
     """The URDF that robot_state_publisher would publish, as an XML string.
 
     Mock hardware by default: the kinematics are the same either way, and the simulated
-    arm has no servo bus."""
+    arm has no servo bus. head_calibration: a head_calibration.yaml (headcal's) whose head
+    replaces the CAD model's, as the launch file's head_calibration argument does."""
+    if not head_calibration:
+        return _cad_description(bool(use_mock_hardware))
+    return _xacro({"use_mock_hardware": str(use_mock_hardware).lower(),
+                   "head_calibration": str(Path(head_calibration).resolve())})
+
+
+@lru_cache(maxsize=2)
+def _cad_description(use_mock_hardware):
+    return _xacro({"use_mock_hardware": str(use_mock_hardware).lower()})
+
+
+def _xacro(mappings):
     import xacro
 
-    doc = xacro.process_file(str(XACRO), mappings={"use_mock_hardware": str(use_mock_hardware).lower()})
-    return doc.toprettyxml(indent="  ")
+    return xacro.process_file(str(XACRO), mappings=mappings).toprettyxml(indent="  ")
 
 
-def robot():
+def robot(head_calibration=None):
     """so101_scan_description.kinematics.Robot built from robot_description()."""
     from so101_scan_description.kinematics import Robot
 
-    return Robot(robot_description())
+    return Robot(robot_description(head_calibration=head_calibration))
