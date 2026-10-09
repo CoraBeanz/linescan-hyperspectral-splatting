@@ -31,7 +31,7 @@
   keystone                : 11.2 px
   light reaching sensor   :  center@500nm=100%  center@750nm=100%  center@1000nm=100%  edge@500nm= 98%  edge@750nm= 99%  edge@1000nm= 99%
 
-== D: bought parts, as cad/ draws them
+== D: bought parts, as cad/ first drew them
   scene line length       : 43.1 mm at 150 mm
   spectrum 500-1000 nm    : 3.27 mm on sensor (sensor is 3.68 x 2.76 mm)
   dispersion              : 5.84 px/nm
