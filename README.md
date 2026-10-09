@@ -112,9 +112,9 @@ Each frame is the scan line (vertical) by its spectrum (horizontal), at about 5.
 |---|---|---|---|---|---|
 | A: stock Pi NoIR v2 lens | 8% | 0% | 1.5 px/nm | 3.7 nm | 543 |
 | B: M12 IMX219 + 12 mm f/2 lens | 92–100% | 12–14% | 5.8 px/nm | 3.7 nm | 2,143 |
-| **C: B + 18 mm field lens** | **100%** | **98–99%** | **5.8 px/nm** | **3.7 nm** | **2,204** |
+| **C: B + 18 mm field lens** | **100%** | **98–99%** | **5.8 px/nm** | **4.1 nm** | **2,204** |
 
-Resolution is geometric, with perfect lenses; real M12 lenses will likely land around 5–8 nm. More in the [modeling notes](docs/parts_list_and_design.md#5-modeling-notes-and-limits).
+Resolution is geometric, with perfect lenses: the slit image's width over the dispersion. For A and B it is the paraxial estimate. For C it is traced through the grating, which widens the slit image 1.08× as the beam leaves at 22°, and the field lens adds 1.03×. The parts that were bought trace to 5.4 nm the way `cad/` draws the head today, and to 4.1 nm with the field lens turned curved side to the slit (configs D and E, [design notes](docs/parts_list_and_design.md#with-the-parts-that-were-bought-configs-d-and-e)). Real M12 lenses will likely land around 5–8 nm. More in the [modeling notes](docs/parts_list_and_design.md#5-modeling-notes-and-limits).
 
 ```bash
 pip install optiland                   # tested with 0.6.2
@@ -226,7 +226,7 @@ It also shows what each part of the scene is made of: [`splat_materials`](splat/
 
 ## Roadmap
 
-- [x] First-order optical design and Optiland model (configs A, B, C)
+- [x] First-order optical design and Optiland model (configs A, B, C, and D and E with the parts bought)
 - [x] [FreeCAD model](cad/) of the arm and scanner head, with printable housing, optics carriers and wrist mount
 - [x] [Software](#software), tested in CI against simulated hardware: scan-mirror firmware, ROS 2 scan arm, calibration kit, line-camera splat renderer and trainer, browser viewer, the Jetson Nano build and an instrument simulator
 - [ ] **Bench spectrometer:** slit, field lens, collimator, grating and camera aimed at neon and CFL lamps; fit the wavelength map and the smile/keystone warp with the [calibration kit](calibration/)
@@ -259,7 +259,7 @@ docs/
 ├── img/                       README figures; img/src/ holds the scripts that draw the SVGs
 └── site/                      the GitHub Pages front page, and the script that builds the site
 optics/
-├── spectrograph_model.py      Optiland model of the spectrograph, configs A–C
+├── spectrograph_model.py      Optiland model of the spectrograph, configs A–E
 ├── readme_figures.py          traces the model and renders the Optiland figures
 └── model_output/              results.txt and ray layouts
 cad/
