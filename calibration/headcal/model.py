@@ -54,7 +54,7 @@ class HeadGeometry:
     pose_camera: np.ndarray           # scan_head_link -> pose_camera_optical_frame
     pose_camera_lens: float = 0.0045  # pose_camera_link -> its optical frame, along z (m)
     scene_distance: float = 0.15      # objective to the in-focus scan line (m)
-    half_line: float = 0.020937       # half the scan line's length at scene_distance (m)
+    half_line: float = 0.021538       # half the scan line's length at scene_distance (m)
     slit_k1: float = 0.0              # distortion along the slit (the trainer's pinhole has none)
 
     @property

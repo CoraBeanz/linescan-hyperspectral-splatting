@@ -10,9 +10,13 @@ The calibration kit uses that table twice:
   * to render synthetic lamp, flat and dark frames (hsical synth), so the
     whole pipeline can be tested before the parts arrive.
 
-Default layout is the as-built head: the spacings the CAD actually builds
-(cad/build_report.json) with the 15 mm Edmund field lens, as in
-cad/optics_check.py. --layout design uses config C from the model instead.
+Default layout is the as-built head with ideal thin lenses: config C's
+train with the focal lengths and stop of the parts that were bought (the
+15 mm Edmund field lens, the 15.6 mm CIL161 at f/3.9), at the spacings the
+CAD actually builds (cad/build_report.json). Layout E, which cad/optics_check.py
+traces, has the real field lens, and that also stretches the slit's image
+unevenly along its length, by up to about 12 px; this map leaves it out.
+--layout design uses config C from the model instead.
 
     python calibration/tools/export_optiland_map.py [--layout as-built|design]
 
@@ -33,7 +37,6 @@ sys.path.insert(0, str(ROOT / "optics"))
 import spectrograph_model as sm  # noqa: E402
 
 OUT = ROOT / "calibration" / "hsical" / "data" / "optiland_map.json"
-F_FIELD_BOUGHT = 15.0  # Edmund #49-840, the field lens on the shopping list
 
 # Slit position h: -1 and +1 are the slit ends. The grid runs a little past them so
 # pixels just beyond the ends can be mapped back too (they get no light).
@@ -48,9 +51,10 @@ def config_for(layout):
     design = next(c for c in sm.CONFIGS if c.name.startswith("C:"))
     if layout == "design":
         return design
+    bought = next(c for c in sm.CONFIGS if c.name.startswith("E:"))
     st = json.loads((ROOT / "cad" / "build_report.json").read_text())["stations_mm"]
-    return replace(design, name="as built, 15 mm field lens", f_field=F_FIELD_BOUGHT,
-                   coll_to_grating=round(st["z_film"] - st["z_coll"], 2),
+    return replace(design, name="as built, ideal lenses", f_field=bought.f_field, f_obj=bought.f_obj,
+                   fno_obj=bought.fno_obj, coll_to_grating=round(st["z_film"] - st["z_coll"], 2),
                    grating_to_cam=round(st["g2c"], 2))
 
 

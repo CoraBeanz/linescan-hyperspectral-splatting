@@ -69,7 +69,11 @@ def test_lines_cover_band(synthetic):
 def test_long_exposures_add_lines(synthetic):
     # The long neon set is taken at gain 4, where hot pixels sit at full scale.
     # They are masked and filled, so they must not knock out the lines around them.
+    # How many of the faint lines past 800 nm turn up depends on the noise: 12 to 17
+    # over 52 sessions (seeds, both design maps, and AVX2 against AVX-512 machines,
+    # which render the gain-4 dark differently from one seed). Knocked-out lines
+    # left 5 (scipy 1.13).
     _, result = synthetic
     used = [f for f in result.calibration.info["lines"] if f["used"]]
     nir = [f for f in used if f["lamp"] == "neon_long" and f["nm"] > 800]
-    assert len(nir) >= 15, len(nir)
+    assert len(nir) >= 10, len(nir)

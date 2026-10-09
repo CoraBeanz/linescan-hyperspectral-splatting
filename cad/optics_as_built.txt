@@ -1,29 +1,27 @@
-layout C (design)
-  collimator -> grating   : 22.00 mm
-  grating -> camera lens  : 3.00 mm
-  chief rays cross at     : 24.0 mm behind the collimator
-  spectrum 500-1000 nm    : 3.27 mm on sensor
-  smile / keystone        : 33.3 / 11.2 px
-  light reaching sensor   : center@500nm=100%  center@750nm=100%  center@1000nm=100%  edge@500nm= 98%  edge@750nm= 99%  edge@1000nm= 99%
-
-as built, 17.9 mm field lens
+layout E (design)
+  stop / filter front     : 8.10 / 11.10 mm ahead of the objective
+  collimator              : 26.76 mm behind the slit
   collimator -> grating   : 6.00 mm
   grating -> camera lens  : 16.03 mm
-  chief rays cross at     : 24.0 mm behind the collimator
+  slit image, resolution  : 26.8 um, 4.1 nm
   spectrum 500-1000 nm    : 3.27 mm on sensor
-  smile / keystone        : 33.3 / 11.2 px
-  light reaching sensor   : center@500nm= 60%  center@750nm=100%  center@1000nm= 58%  edge@500nm= 60%  edge@750nm= 99%  edge@1000nm= 57%
+  line on the sensor      : 2.56 mm
+  smile / keystone at end : 35.7 / 11.8 px
+  light reaching sensor   : center@500nm= 56%  center@750nm= 99%  center@1000nm= 55%  mid@500nm= 52%  mid@750nm= 81%  mid@1000nm= 50%  end@500nm= 35%  end@750nm= 54%  end@1000nm= 33%
 
-as built, 15 mm field lens
+as built
+  stop / filter front     : 8.50 / 11.50 mm ahead of the objective
+  collimator              : 26.76 mm behind the slit (the CAD: 26.76)
   collimator -> grating   : 6.00 mm
   grating -> camera lens  : 16.03 mm
-  chief rays cross at     : 17.3 mm behind the collimator
+  slit image, resolution  : 26.8 um, 4.1 nm
   spectrum 500-1000 nm    : 3.27 mm on sensor
-  smile / keystone        : 33.7 / 11.3 px
-  light reaching sensor   : center@500nm= 60%  center@750nm=100%  center@1000nm= 58%  edge@500nm= 59%  edge@750nm= 98%  edge@1000nm= 55%
+  line on the sensor      : 2.56 mm
+  smile / keystone at end : 35.7 / 11.9 px
+  light reaching sensor   : center@500nm= 56%  center@750nm= 99%  center@1000nm= 55%  mid@500nm= 51%  mid@750nm= 80%  mid@1000nm= 49%  end@500nm= 34%  end@750nm= 52%  end@1000nm= 32%
 
 light at 500 / 750 / 1000 nm (centre field) vs grating -> camera stop distance
-   4 mm :  97% / 100% / 100%
-   8 mm :  86% / 100% /  88%
-  12 mm :  73% / 100% /  73%
-  16 mm :  60% / 100% /  58%
+   4 mm :  91% /  99% /  95%
+   8 mm :  80% /  99% /  81%
+  12 mm :  68% /  99% /  68%
+  16 mm :  56% /  99% /  55%

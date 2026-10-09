@@ -9,9 +9,9 @@ direction meets the box, is solved for the arm's joints like make_plan's views. 
 point when, at some line of its sweep, the point is
 
   * inside the scan line's fan: within the slit's length across and the sweep's lines along;
-  * in focus: within focus_depth of the scene distance. The objective is f/4 with a 16 mm focal
-    length, so 4 mm across: 30 mm out of focus at 0.15 m blurs a point over 0.8 mm, two of the
-    50 um slit's 0.42 mm footprints, which is about where the splat stops gaining detail;
+  * in focus: within focus_depth of the scene distance. The objective is f/3.9 with a 15.6 mm
+    focal length, so 4 mm across: 30 mm out of focus at 0.15 m blurs a point over 0.8 mm, two of
+    the 50 um slit's 0.43 mm footprints, which is about where the splat stops gaining detail;
   * facing the line camera within max_incidence: a surface seen more obliquely gives a
     stretched, dim line.
 

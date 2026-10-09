@@ -12,7 +12,7 @@ from pathlib import Path
 MODEL = Path(__file__).resolve().parents[2] / "optics" / "spectrograph_model.py"
 
 
-def read_layout(tag="C", path=MODEL):
+def read_layout(tag="E", path=MODEL):
     """Return the Config fields of layout `tag`, plus the module constants."""
     tree = ast.parse(Path(path).read_text())
     consts, defaults, configs = {}, {}, {}

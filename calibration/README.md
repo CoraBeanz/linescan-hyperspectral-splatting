@@ -241,7 +241,7 @@ It exits with 0 when the instrument is still calibrated and 2 when it has moved,
 
 ## Testing without the hardware
 
-[`tools/export_optiland_map.py`](tools/export_optiland_map.py) traces the Optiland model, at the spacings the CAD model actually builds and with the 15 mm Edmund field lens, and records where each point of the slit lands on the sensor at each wavelength. The result, [`hsical/data/optiland_map.json`](hsical/data/optiland_map.json), is used two ways: as the starting guess for which column sees which wavelength, and to render synthetic sessions.
+[`tools/export_optiland_map.py`](tools/export_optiland_map.py) traces the Optiland model with ideal thin lenses, at the spacings the CAD model actually builds and with the focal lengths and stop of the lenses that were bought, and records where each point of the slit lands on the sensor at each wavelength. The result, [`hsical/data/optiland_map.json`](hsical/data/optiland_map.json), is used two ways: as the starting guess for which column sees which wavelength, and to render synthetic sessions.
 
 ```bash
 python -m hsical synth synth_session --binning 2     # 1 = full 3280 x 2464, 2 = half, 4 = quarter

@@ -15,7 +15,9 @@ Parts:
   obj_plate   carries the objective's M12 holder
   slit_block  slit blades, field lens, collimator holder on its back
   grat_plate  grating film
-  filter_cap  long-pass filter and the 4 mm aperture stop on the objective
+  filter_cap  holds the long-pass filter and the stop washer on the objective
+  stop_washer the 4 mm aperture stop, on the objective's front face; a 5 mm
+              one to compare (stop_washer_5mm)
   tray        holds the scan-mirror controller board on the table behind the arm
 
 Each function returns a dict with the container, the final solid feature and
@@ -141,6 +143,10 @@ def shell(doc, parent, P):
     # the solder on the back of its cable pads and the strain-relief thread between its tie holes
     yb, zb_top = P.hall_y - P.hb_lead_x, P.hall_z - P.hall_lead_dz + P.hb_lead_y     # board's -Y and top edges
     cuts.append(b.box("hall_board_recess", xo - 0.8, yb + 1.4, zb_top - 11.8, 0.81, 11.2, 5.4))
+    # pilot for the M2 x 5 through the board's M2 hole: its tip comes 1.7 mm through the wall, clear of
+    # the mirror clamp (the board's hole sits where that holds, pcb/tools/boards.py HALL_M2)
+    cuts.append(b.cyl("hall_board_pilot", "x", (xi - 0.1, yb + P.hb_m2_x, zb_top - P.hb_m2_y), P.m2_pilot / 2,
+                      P.wall + 0.2))
     # end wall: opening the board's square M12 holder passes through at any angle; M2 inserts in the standoffs
     cuts.append(b.cyl("cam_opening", "z", (0, 0, zw_in - 1), P.brd_holder_w / 2 ** 0.5 + 0.5, P.carrier_t + 2, cf))
     for i, (sx, sy) in enumerate(cam_holes):
@@ -334,8 +340,8 @@ def slit_block(doc, parent, P):
         # blades lie flush in a recess on the front face, edges meeting on the axis
         b.box("blade_recess", -P.blade_l / 2 - 0.3, P.y_axis - P.blade_w - 0.4, z0 - 0.1,
               P.blade_l + 0.6, 2 * P.blade_w + 0.8, rec + 0.1),
-        # field lens drops in from the front, convex side seated on the edge of
-        # the aperture and flat face toward the blades
+        # field lens drops in from the front, convex side up toward the blades, flat face on
+        # the ledge the aperture leaves at the bottom of its pocket
         b.cyl("lens_pocket", "z", (0, P.y_axis, z0 + rec - 0.01), P.fl_d / 2 + 0.15, P.fl_seat + 0.01),
         b.cyl("aperture", "z", (0, P.y_axis, z0 - 0.1), P.fl_ap_r, P.slit_t + 0.2),
     ]
@@ -364,29 +370,58 @@ def grat_plate(doc, parent, P):
                   "flat, film recess up; tape the film in with its grooves along X")
 
 
-def filter_cap(doc, parent, P):
-    """Push-on cap: 4 mm stop, then the long-pass disc, then a sleeve on the lens.
+def _cap_seat_r(P):
+    """The filter cap's bore: takes the largest disc in tolerance, and the washers."""
+    return (P.filt_d + P.filt_tol) / 2 + 0.2
 
-    The seat takes the largest disc in tolerance. The lens barrel stops on the
-    step behind it, 0.05 mm short of a disc of nominal thickness."""
-    cont = container(doc, parent, "HSI_filter_cap", "Filter cap and stop (printed)")
+
+def filter_cap(doc, parent, P):
+    """Push-on cap: a lip, then the long-pass disc, the stop washer and a sleeve on the lens.
+
+    The lens's front face holds the washer against the disc and the disc against
+    the lip. The lens barrel stops on the step behind the washer, 0.05 mm short
+    of a disc of nominal thickness. The lip's opening is the disc less cap_lip
+    all round, wide of the beam: the washer is the stop."""
+    cont = container(doc, parent, "HSI_filter_cap", "Filter cap (printed)")
     b = Part(doc, cont, "fcap")
     zf = P.obj_back - P.obj_len                       # objective front face
-    front = 1.2
-    z0 = zf - P.filt_t - front
+    seat = P.filt_t + 0.05 + P.stop_t
+    z0 = zf - seat - P.cap_lip
     sleeve = 5.0
-    r_seat = (P.filt_d + P.filt_tol) / 2 + 0.2
+    r_seat = _cap_seat_r(P)
     r_out = emax(r_seat, P.obj_od / 2 + 0.15) + 1.2
-    body = b.cyl("body", "z", (0, P.y_axis, z0), r_out, front + P.filt_t + sleeve)
+    body = b.cyl("body", "z", (0, P.y_axis, z0), r_out, P.cap_lip + seat + sleeve)
     cuts = [
-        b.cyl("stop", "z", (0, P.y_axis, z0 - 0.1), P.pupil_d / 2, front + 0.2),
-        b.cyl("filter_seat", "z", (0, P.y_axis, zf - P.filt_t - 0.05), r_seat, P.filt_t + 0.06),
+        b.cyl("opening", "z", (0, P.y_axis, z0 - 0.1), P.filt_d / 2 - P.cap_lip, P.cap_lip + 0.2),
+        b.cyl("seat", "z", (0, P.y_axis, zf - seat), r_seat, seat + 0.01),
         b.cyl("sleeve", "z", (0, P.y_axis, zf), P.obj_od / 2 + 0.15, sleeve + 0.1),
     ]
     final = b.cut("Filter_cap", body, cuts)
     final.Label = "Filter cap"
     return _print("filter_cap", "Filter cap", cont, final, App.Rotation(),
-                  "stop face on the bed; check the sleeve is a snug push fit on the lens")
+                  "lip face on the bed; check the sleeve is a snug push fit on the lens")
+
+
+def _washer(doc, parent, P, name, label, d, z0):
+    cont = container(doc, parent, "HSI_" + name, label)
+    b = Part(doc, cont, name)
+    disc = b.cyl("disc", "z", (0, P.y_axis, z0), _cap_seat_r(P) - 0.15, P.stop_t)
+    final = b.cut(name.capitalize(), disc, [b.cyl("hole", "z", (0, P.y_axis, z0 - 0.1), d / 2, P.stop_t + 0.2)])
+    final.Label = label
+    return _print(name, label, cont, final, App.Rotation(),
+                  "flat on the bed, 0.2 mm layers; clear any stringing from the hole, whose edge is the stop")
+
+
+def stop_washer(doc, parent, P):
+    """The aperture stop: a washer on the objective's front face, inside the filter cap."""
+    zf = P.obj_back - P.obj_len
+    return _washer(doc, parent, P, "stop_washer", "Stop washer, 4 mm", P.pupil_d, zf - P.stop_t)
+
+
+def stop_washer_5mm(doc, parent, P):
+    """The same washer with a 5 mm hole, to compare at first light (not in the head)."""
+    zf = P.obj_back - P.obj_len
+    return _washer(doc, parent, P, "stop_washer_5mm", "Stop washer, 5 mm", P.stop_d2, zf - P.stop_t)
 
 
 def tray(doc, parent, P):
@@ -428,4 +463,5 @@ def tray(doc, parent, P):
                   "floor on the bed; 0.2 mm layers, 3 perimeters, 20% infill; 4x M3 heat-set inserts in the posts")
 
 
-ALL = [shell, lid, rotor, puck, bench_puck, obj_plate, slit_block, grat_plate, filter_cap]
+ALL = [shell, lid, rotor, puck, bench_puck, obj_plate, slit_block, grat_plate, filter_cap, stop_washer,
+       stop_washer_5mm]

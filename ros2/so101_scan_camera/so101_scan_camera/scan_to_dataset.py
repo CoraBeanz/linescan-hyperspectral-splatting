@@ -392,7 +392,7 @@ def convert(scan_dir, out_dir, values="auto", nm_min=500.0, nm_max=950.0, nm_ste
     # poses: one head pose per sweep, in a world frame with the table top at z = 0
     frames_info = scan.info.get("frames") or {}
     scene_distance = float(frames_info.get("scene_distance_m", 0.15))
-    half_line = float(frames_info.get("scan_line_half_length_m", 0.020937))
+    half_line = float(frames_info.get("scan_line_half_length_m", 0.021538))
     if urdf:
         # a head calibration made after the scan: the head's poses again, from the joint readings
         with open(os.path.expanduser(urdf)) as f:

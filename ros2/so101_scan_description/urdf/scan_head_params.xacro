@@ -27,9 +27,9 @@
   <!-- objective to the in-focus scan line, along the folded axis (scene_dist) -->
   <xacro:property name="scene_distance" value="0.15"/>
   <!-- half length of the scan line on the scene (half_line) -->
-  <xacro:property name="scan_line_half_length" value="0.020937"/>
+  <xacro:property name="scan_line_half_length" value="0.021538"/>
   <!-- objective focal length (f_obj) -->
-  <xacro:property name="objective_focal_length" value="0.016"/>
+  <xacro:property name="objective_focal_length" value="0.0156"/>
   <!-- slit length (slit_len) -->
   <xacro:property name="slit_length" value="0.005"/>
   <!-- Pi NoIR v2 pose camera board, lens centre on the PCB back -->
@@ -41,13 +41,13 @@
   <!-- PCB back to the front of the lens module (RPI-CAM-V2 drawing) -->
   <xacro:property name="pose_camera_lens" value="0.0045"/>
   <!-- mass budget in cad/build_report.json, wrist puck included -->
-  <xacro:property name="head_mass" value="0.1851"/>
+  <xacro:property name="head_mass" value="0.1868"/>
   <!-- centre of mass in the head frame (build_report.json) -->
-  <xacro:property name="head_com_x" value="-0.0108"/>
+  <xacro:property name="head_com_x" value="-0.0107"/>
   <xacro:property name="head_com_y" value="-0.0012"/>
-  <xacro:property name="head_com_z" value="0.0553"/>
-  <!-- inertia of a solid box the head's size (64 x 53 x 135 mm) about the centre of mass -->
-  <xacro:property name="head_ixx" value="0.000325"/>
-  <xacro:property name="head_iyy" value="0.000346"/>
+  <xacro:property name="head_com_z" value="0.0559"/>
+  <!-- inertia of a solid box the head's size (64 x 53 x 136 mm) about the centre of mass -->
+  <xacro:property name="head_ixx" value="0.000334"/>
+  <xacro:property name="head_iyy" value="0.000355"/>
   <xacro:property name="head_izz" value="0.000108"/>
 </robot>

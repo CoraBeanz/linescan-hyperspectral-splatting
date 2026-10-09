@@ -172,14 +172,15 @@ def filter_disc(doc, parent, P, z_front):
     return c
 
 
-def field_lens(doc, parent, P, z_flat):
-    """Plano-convex, flat face toward the slit at z_flat; modelled as flat + cone cap."""
-    f = Frame((0, P.y_axis, z_flat))
+def field_lens(doc, parent, P, z_vertex):
+    """Plano-convex, convex side toward the slit with its vertex at z_vertex, flat face
+    behind; modelled as a cone cap on a flat disc."""
+    f = Frame((0, P.y_axis, z_vertex))
     c = container(doc, parent, "HSI_field_lens", "Field lens: Edmund #49-840, PCX 12.7 mm, f = 15 mm", f)
     b = Part(doc, c, "field_lens").m("glass")
-    edge = b.cyl("edge", "z", (0, 0, 0), P.fl_d / 2, P.fl_et)
-    dome = b.cone("dome", "z", (0, 0, P.fl_et), P.fl_d / 2, P.fl_d / 2 * 0.25, P.fl_ct - P.fl_et)
-    b.fuse("lens", [edge, dome])
+    dome = b.cone("dome", "z", (0, 0, 0), P.fl_d / 2 * 0.25, P.fl_d / 2, P.fl_ct - P.fl_et)
+    edge = b.cyl("edge", "z", (0, 0, P.fl_ct - P.fl_et), P.fl_d / 2, P.fl_et)
+    b.fuse("lens", [dome, edge])
     return c
 
 
@@ -267,12 +268,13 @@ _ON_PLUS_X = App.Rotation(App.Matrix(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0
 
 
 def hall_board(doc, parent, P):
-    """Hall-sensor breakout (pcb/hall_breakout) glued flat on the outside of the +X wall.
+    """Hall-sensor breakout (pcb/hall_breakout) screwed flat on the outside of the +X wall.
 
     The A3144's leads come out of the wall's slot and through the board from
-    behind. Local frame: origin at the board's top corner on the -Y side, on
-    its back face; KiCad's board coordinates (bx, by), y down, sit at
-    (bx, -by, 0). Hole and part positions from pcb/tools/boards.py."""
+    behind, and an M2 x 5 through its M2 hole threads into the wall. Local
+    frame: origin at the board's top corner on the -Y side, on its back face;
+    KiCad's board coordinates (bx, by), y down, sit at (bx, -by, 0). Hole and
+    part positions from pcb/tools/boards.py."""
     f = Frame((P.x_in + P.wall, P.hall_y - P.hb_lead_x, P.hall_z - P.hall_lead_dz + P.hb_lead_y))
     c = container(doc, parent, "HSI_hall_board", "Hall-sensor breakout (pcb/hall_breakout)", f,
                   fixed_rot=_ON_PLUS_X)
@@ -283,9 +285,12 @@ def hall_board(doc, parent, P):
     pads = (4.46, 7.0, 9.54)                        # cable pads S, G, +: 1 mm holes
     holes += [b.cyl("pad_hole%d" % i, "z", (x, -7.6, -1), 0.5, P.hb_t + 2) for i, x in enumerate(pads)]
     # two 1.5 mm holes for a strain-relief tie, and the M2 hole
-    for i, (x, y, d) in enumerate(((2.4, 10.6, 1.5), (11.6, 10.6, 1.5), (12.0, 2.3, 2.2))):
+    for i, (x, y, d) in enumerate(((2.4, 10.6, 1.5), (11.6, 10.6, 1.5), (P.hb_m2_x, P.hb_m2_y, 2.2))):
         holes.append(b.cyl("hole%d" % i, "z", (x, -y, -1), d / 2, P.hb_t + 2))
     b.cut("pcb", pcb, holes)
+    # the M2 x 5 pan head (4 mm across); its shank is drawn at the thread's root, inside the wall's pilot
+    b.m("steel").cyl("m2_head", "z", (P.hb_m2_x, -P.hb_m2_y, P.hb_t), 2.0, 1.6)
+    b.cyl("m2_shank", "z", (P.hb_m2_x, -P.hb_m2_y, P.hb_t - 5.0), 0.8, 5.0)
     b.m("connector").cbox("c1", 7.635, -1.9, P.hb_t, 2.0, 1.25, 0.85)
     # the start of the 3-wire cable: soldered into the pads, it leaves past the board's lower edge
     b.m("chip")
