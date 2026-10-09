@@ -264,7 +264,7 @@ HALL_PLACE = {
 }
 HALL_HOLES = []
 HALL_REFS = {"U1": None, "C1": None, "J1": None}
-HALL_M2 = (12.0, 2.3)
+HALL_M2 = (1.8, 5.0)   # where an M2 x 5 into the head's +X wall clears the mirror clamp (1.1 mm)
 HALL_RELIEF = [(2.4, 10.6), (11.6, 10.6)]
 HALL_ROUTES = [
     ("+5V", 0.4, [("U1", "1"), (8.27, 3.2), ("C1", "1")]),

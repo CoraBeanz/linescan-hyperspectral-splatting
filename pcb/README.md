@@ -79,14 +79,13 @@ The A3144 sits in its pocket in the head's +X wall ([`cad/`](../cad/README.md)),
 
 Seen from outside the head, the leads run **OUT, GND, VCC from left to right**, mirrored from the datasheet's front view, because you're looking at the sensor's back. The square pad is VCC. The cable solders into the three pads marked S, G and + (OUT, GND, +5 V), in the controller's J4 order. The two 1.5 mm holes below them are for strain relief: tie the cable to the board with thread through both holes before you mount it, since the board lies flat on the wall. Even miniature cable ties (about 2.5 mm wide) won't fit through. Solder the cable straight in rather than fitting a pin header, which would stand about 9 mm off the head.
 
-**Where it goes**, in the head's frame (mm): the +X outer face is at x = 16.0. Bent under the body, the leads come out at about z = 21.2, at y = −11.54 (OUT), −10.27 (GND) and −9.00 (VCC). The board follows the leads: it spans y −17.27 to −3.27 and z 13.4 to 25.8, clear of the lid-bolt counterbores below it. Its M2 hole is at y −5.27, z 23.5, and the tie holes at y −14.87 and −5.67, z 15.2. It stands about 2 mm proud of the wall, or 3 mm with the cable.
+**Where it goes**, in the head's frame (mm): the +X outer face is at x = 16.0. Bent under the body, the leads come out at about z = 21.2, at y = −11.54 (OUT), −10.27 (GND) and −9.00 (VCC). The board follows the leads: it spans y −17.27 to −3.27 and z 13.4 to 25.8, clear of the lid-bolt counterbores below it. Its M2 hole is at y −15.47, z 20.8, where an M2 × 5 screwed into the wall clears the mirror clamp by 1.1 mm, and the tie holes are at y −14.87 and −5.67, z 15.2. It stands about 2 mm proud of the wall, or 3 mm with the cable.
 
-### Changes the CAD needs
+### In the CAD
 
-- **A base tray for the controller** beside the SO-101's base, from the outline above. Nothing in [`cad/`](../cad/) holds it yet.
-- **The hall sensor's lead slot.** The pocket and slot in `cad/rig/printed.py` let the leads leave the body's back face, at z 21.9 to 22.9, as the sensor model in `cad/rig/vendor.py` draws them. A real A3144 (UA package) has its leads on the bottom face. Once bent toward +X they run at or below the body's bottom (z 21.75), under the slot and into the pocket floor. Give the bend room under the body and lower the slot to it: for example, cut the pocket down to z = hall_z − 2.7 under the leads only, and make the slot z hall_z − 2.7 to hall_z − 1.7 (centre about 21.2). Keep a ledge under the body so it still sits at hall_z.
-- **The hall breakout on the +X face** as a part, with the wrist-roll and wrist-flex clearance checks rerun, since it adds about 3 mm there. To screw it on rather than glue it, add an M2 pilot hole at y −5.27, z 23.5.
-- **Cable clips along the arm** for the 4-wire motor cable and the 3-wire hall cable. Keep them apart, and give the hall cable strain relief at the head.
+- The [controller tray](../cad/README.md#controller-tray) and the hall breakout are in [`cad/`](../cad/README.md). The A3144's leads leave the bottom of its body and run out through a slot under its pocket, and the breakout sits on them as above.
+- The head's M2 pilot hole for the breakout has to sit under the board's hole, at y −15.47, z 20.8.
+- Still to add: cable clips along the arm for the 4-wire motor cable and the 3-wire hall cable. Keep them apart, and give the hall cable strain relief at the head.
 
 ## Parts
 
@@ -143,7 +142,7 @@ pcb/
     └── sexpr.py           reads and writes KiCad's file format
 ```
 
-The library holds copies of the KiCad parts the boards use, plus five footprints drawn here: the ESP32-DevKitC socket, the TMC2209 socket, the A3144's lead holes, the cable pads and the 1.5 mm tie hole. It also has three symbols drawn here: the DevKitC, the TMC2209 and the A3144. So the projects open the same way on any machine, and in CI, whatever KiCad libraries are installed.
+The library holds copies of the KiCad parts the boards use, plus six footprints drawn here: the ESP32-DevKitC socket, the TMC2209 socket, the A3144's lead holes, the cable pads, the 1.5 mm tie hole and the M2 hole. It also has three symbols drawn here: the DevKitC, the TMC2209 and the A3144. So the projects open the same way on any machine, and in CI, whatever KiCad libraries are installed.
 
 ## Editing and rebuilding
 
