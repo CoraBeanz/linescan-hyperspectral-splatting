@@ -19,9 +19,10 @@ Configs A to C are the design study. D and E use the parts that were bought,
 where the vendor publishes enough to model them: the Edmund #49-840 field lens
 as real N-BK7 surfaces, the 3 mm GG-495 filter as a glass plate, the printed
 stop and the 20 x 20 mm scan mirror as apertures, and the CIL161's 15.6 mm focal
-length. D places them as cad/ draws them; E flips the field lens and moves the
-stop, the two changes the trace argues for. For D and E the script also traces
-the slit image width, the band that lands on the sensor and the spot sizes.
+length. D places them as cad/ first drew them; E flips the field lens and moves
+the stop, the two changes the trace argues for, and is what cad/ builds now. For
+D and E the script also traces the slit image width, the band that lands on the
+sensor and the spot sizes.
 
 Conventions: z is the optical axis, y is the dispersion direction, x is along
 the slit (the spatial / scan-line direction). Units are mm; wavelengths in um.
@@ -334,14 +335,15 @@ CONFIGS = [
     # #49-840 field lens (N-BK7, R 7.75, CT 5.25) behind 0.38 mm blades, LN016
     # collimator (12.5 mm aperture) focused on the slit, CIL122 camera lens.
     # Stop and lens positions are cad/ estimates until the lenses are measured.
-    Bought("D: bought parts, as cad/ draws them", f_cam=12.0, d_cam=6.0, f_field=15.0,
+    Bought("D: bought parts, as cad/ first drew them", f_cam=12.0, d_cam=6.0, f_field=15.0,
            coll_to_grating=6.0, grating_to_cam=16.03, f_obj=15.6, fno_obj=3.9, d_coll=12.5,
            field_r=7.75, field_ct=5.25, field_flat_first=True, field_gap=0.43, refocus=True,
            stop_ahead=11.7, stop_t=1.2, d_obj=7.8, filter_t=3.0, filter_ahead=10.5,
            mirror_ahead=21.0, mirror_w=20.0),
     # D with two changes: the field lens turned round (convex face toward the
     # slit), and the stop moved from the front of the cap to a 0.6 mm washer on the
-    # lens's front face, with the filter in front of it.
+    # lens's front face, with the filter in front of it. cad/ builds this one:
+    # cad/rig/optics_link.py reads its stations from here by the tag "E".
     Bought("E: D with the field lens flipped and the stop on the lens", f_cam=12.0, d_cam=6.0,
            f_field=15.0, coll_to_grating=6.0, grating_to_cam=16.03, f_obj=15.6, fno_obj=3.9,
            d_coll=12.5, field_r=7.75, field_ct=5.25, field_flat_first=False, field_gap=0.43,
