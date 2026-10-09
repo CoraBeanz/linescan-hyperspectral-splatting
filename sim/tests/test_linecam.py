@@ -16,9 +16,9 @@ def objective():
 
 
 def test_objective_matches_the_design_and_the_urdf(objective):
-    assert objective.slit_distance_mm == pytest.approx(17.9104, abs=1e-3)   # 1 / (1/16 - 1/150)
-    assert objective.half_line_m == pytest.approx(0.0209375)                 # 5 mm slit x 8.375
-    assert objective.line_width_m == pytest.approx(0.00041875)
+    assert objective.slit_distance_mm == pytest.approx(17.4107, abs=1e-3)   # 1 / (1/15.6 - 1/150)
+    assert objective.half_line_m == pytest.approx(0.0215385, rel=1e-5)      # 5 mm slit x 8.615
+    assert objective.line_width_m == pytest.approx(0.00043077, rel=1e-4)
     poser = LinePoser(repo.robot())
     assert poser.scene_distance == pytest.approx(objective.focus_mm * 1e-3)
     assert poser.half_line == pytest.approx(objective.half_line_m, rel=1e-4)

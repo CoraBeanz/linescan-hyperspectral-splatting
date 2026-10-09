@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hsical.drift import check
+from hsical.drift import MAX_NM, check
 from hsical.synth import Truth, write_session
 
 QUIET = dict(log=lambda *a: None)
@@ -45,8 +45,10 @@ def test_moved_instrument_is_caught(lamps):
     assert not r.ok and not r.spectral_ok and not r.slit_ok
     assert abs(r.offset_px - 1.5) < 0.15, r.offset_px
     assert abs(r.slit_top_px - 2.0) < 0.4 and abs(r.slit_bottom_px - 2.0) < 0.4, (r.slit_top_px, r.slit_bottom_px)
-    # every band of the slit sees the same move, so it's an offset, not a tilt
-    assert abs(r.along_slit_nm) < 0.15 and abs(r.across_nm) < 0.15, (r.along_slit_nm, r.across_nm)
+    # every band of the slit sees the same move, so it's an offset, not a tilt: the tilts the plane
+    # fit finds are its noise, 0.1 to 0.2 nm on synthetic frames like these, so they're held to the
+    # check's own 0.2 nm limit
+    assert abs(r.along_slit_nm) < MAX_NM and abs(r.across_nm) < MAX_NM, (r.along_slit_nm, r.across_nm)
 
 
 def test_command_line(lamps, tmp_path):

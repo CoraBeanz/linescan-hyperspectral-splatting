@@ -63,10 +63,11 @@ def build(doc):
     head.Placement = App.Placement(App.Vector(0, 0, -P.horn_z.v), App.Rotation(App.Vector(1, 0, 0), 180))
     head.setExpression(".Placement.Base.z", "-" + P.horn_z.s)
 
-    parts = [fn(doc, head, P) for fn in printed.ALL if fn is not printed.bench_puck]
+    spares = (printed.bench_puck, printed.stop_washer_5mm)
+    parts = [fn(doc, head, P) for fn in printed.ALL if fn not in spares]
     acc = doc.addObject("App::Part", "Accessories")
-    acc.Label = "Accessories (hidden): bench puck"
-    parts.append(printed.bench_puck(doc, acc, P))
+    acc.Label = "Accessories (hidden): bench puck, 5 mm stop washer"
+    parts += [fn(doc, acc, P) for fn in spares]
     acc.Visibility = False
 
     cf = Frame((0, P.y_cam, P.z_cam), P.theta)
@@ -77,18 +78,18 @@ def build(doc):
     vendor.hall_sensor(doc, head, P)
     vendor.hall_board(doc, head, P)
     zf = P.obj_back - P.obj_len
-    vendor.filter_disc(doc, head, P, zf - P.filt_t)
-    vendor.m12_lens(doc, head, "HSI_objective", "Objective: Commonlands CIL161 16 mm (at f/4)",
+    vendor.filter_disc(doc, head, P, zf - P.stop_t - P.filt_t)
+    vendor.m12_lens(doc, head, "HSI_objective", "Objective: Commonlands CIL161 15.6 mm (4 mm stop)",
                     Frame((0, P.y_axis, P.obj_back)), P.obj_od, P.obj_len, P.obj_thread)
     vendor.m12_holder(doc, head, "HSI_obj_holder", "M12 holder: uxcell, cut down (objective)",
                       Frame((0, P.y_axis, P.z_obj_plate)), P, P.h12_cut_obj)
     rec = P.blade_t + 0.05
     vendor.slit_blades(doc, head, P, P.z_slit + rec)
-    vendor.field_lens(doc, head, P, P.z_slit + rec)
+    vendor.field_lens(doc, head, P, P.z_slit + P.fl_gap)
     vendor.m12_holder(doc, head, "HSI_coll_holder", "M12 holder: uxcell, cut down (collimator)",
                       Frame((0, P.y_axis, P.z_slit + P.slit_t)), P, P.h12_cut_coll, flip=True)
     vendor.m12_lens(doc, head, "HSI_collimator", "Collimator: Arducam LN016 25 mm (reversed)",
-                    Frame((0, P.y_axis, P.z_slit + P.coll_bfl)), P.coll_od, P.coll_len, P.coll_thread,
+                    Frame((0, P.y_axis, P.z_slit + P.field_dz + P.coll_bfl)), P.coll_od, P.coll_len, P.coll_thread,
                     flip=True)
     vendor.grating_film(doc, head, P, P.z_film)
     vendor.m12_lens(doc, head, "HSI_cam_lens", "Camera lens: Commonlands CIL122 12 mm",
@@ -164,7 +165,7 @@ def rotor_sweep(head, P, step=10):
     moving = Part.makeCompound([shape_in(doc.getObject(n), head)
                                 for n in ("HSI_rotor", "HSI_mirror", "HSI_magnet")])
     fixed = {n: shape_in(doc.getObject(n), head)
-             for n in ("HSI_shell", "HSI_lid", "HSI_filter_cap", "HSI_hall", "HSI_objective")}
+             for n in ("HSI_shell", "HSI_lid", "HSI_filter_cap", "HSI_hall", "HSI_hall_board", "HSI_objective")}
     centre = App.Vector(0, P.y_shaft.v, P.z_shaft.v)
     worst = {}
     for k in range(0, 360, step):
@@ -432,7 +433,8 @@ def main():
         }
         report["stations_mm"] = {a: round(float(P.sheet.get(a)), 2) for a in (
             "z_mirror", "z_obj", "z_slit", "z_coll", "z_grat", "z_film", "g2c", "z_cam", "y_cam",
-            "z_sensor", "y_sensor", "theta", "hall_y", "hall_z", "y_shaft", "z_shaft")}
+            "z_sensor", "y_sensor", "theta", "stop_ahead", "filter_ahead", "hall_y", "hall_z", "y_shaft",
+            "z_shaft")}
         report["stl"] = export_stl(parts, CAD / "stl")
         export_step(head, CAD / "step" / "hsi_head.step")
         (CAD / "build_report.json").write_text(json.dumps(report, indent=1))

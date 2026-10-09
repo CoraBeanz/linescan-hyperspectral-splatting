@@ -247,9 +247,9 @@ controller until a reset. If the cause is still there 5 s later, it switches the
 driver puts it through the URDF: the head's collision box and the arm's links stay 10 mm above
 the table, the head stays out of a cylinder around the `shoulder_pan` axis (80 mm radius, up to
 140 mm) that holds the base and the electronics, and no joint holds more than 60% of its stall
-torque against gravity (the CAD report has the stretched-out arm at 74%; the ring plan peaks at
-49%). A step that would cross one isn't taken: the arm waits at the edge, any move back is
-allowed, and `/arm_safety/state` says which limit held it.
+torque against gravity (the CAD report has the stretched-out arm at 75%; the ring plan peaks
+just under 50%). A step that would cross one isn't taken: the arm waits at the edge, any move
+back is allowed, and `/arm_safety/state` says which limit held it.
 
 **E-stop and reset:**
 

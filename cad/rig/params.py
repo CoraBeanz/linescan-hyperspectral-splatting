@@ -6,7 +6,7 @@ and where the number came from. Formulas reference other aliases, so derived
 positions update when an input changes.
 
 Source tags used in the last column:
-  model     optics/spectrograph_model.py, layout C (read live via optics_link)
+  model     optics/spectrograph_model.py, layout E (read live via optics_link)
   ds        vendor datasheet or drawing
   listing   vendor product page
   measured  measured on the part in hand, or from TheRobotStudio's SO-101 meshes
@@ -76,7 +76,7 @@ if MOTOR not in MOTORS:
 
 
 def rows():
-    m = read_layout("C")
+    m = read_layout("E")
     R = []
 
     def sec(title):
@@ -85,13 +85,13 @@ def rows():
     def p(alias, value, unit, what, src):
         R.append((alias, value, unit, what, src))
 
-    sec("Optical model (layout C of optics/spectrograph_model.py)")
+    sec("Optical model (layout E of optics/spectrograph_model.py: the bought parts)")
     p("f_obj", m["f_obj"], "mm", "objective focal length", "model")
-    p("fno_obj", m["fno_obj"], "", "objective f-number (4 mm printed stop)", "model")
+    p("fno_obj", m["fno_obj"], "", "objective f-number (the 4 mm stop washer)", "model")
     p("scene_dist", m["scene_dist"], "mm", "objective to scene", "model")
     p("slit_len", m["slit_len"], "mm", "slit length (along X)", "model")
     p("slit_width", m["slit_width"], "mm", "slit width", "model")
-    p("f_field", m["f_field"], "mm", "field lens focal length in the model (bought lens is 15 mm)", "model")
+    p("f_field", m["f_field"], "mm", "field lens focal length", "model")
     p("f_coll", m["f_coll"], "mm", "collimator focal length", "model")
     p("coll_to_grating", m["coll_to_grating"], "mm", "collimator to grating", "model")
     p("grating_to_cam", m["grating_to_cam"], "mm", "grating to camera lens (along the tilted axis)", "model")
@@ -100,6 +100,7 @@ def rows():
     p("wl_center_um", m["center_wl_um"], "um", "wavelength on the camera axis", "model")
     p("sensor_w", m["sensor_w"], "mm", "IMX219 active area, dispersion direction", "model")
     p("sensor_h", m["sensor_h"], "mm", "IMX219 active area, along the slit", "model")
+    p("stop_t", m["stop_t"], "mm", "stop washer thickness, on the objective's front face", "model")
     p("scan_half", 12, "deg", "half-angle of the scan fan (63 mm patch at 150 mm)", "design")
 
     sec("Derived optics")
@@ -131,13 +132,21 @@ def rows():
       "hall_z (the breakout's lead holes follow it)", "design")
     p("z_obj", "=z_mirror + mirror_to_obj", "mm", "objective principal plane", "model")
     p("z_slit", "=z_obj + s_img", "mm", "slit plane", "model")
-    p("z_coll", "=z_slit + f_coll", "mm", "collimator principal plane", "model")
+    p("field_dz", "=fl_gap + fl_ct - fl_gap / (1 - fl_gap * (n_bk7 - 1) / fl_r) - fl_ct / n_bk7", "mm",
+      "the slit's image through the field lens, behind the slit: the collimator focuses on it "
+      "(field_lens_image in the model)", "model")
+    p("z_coll", "=z_slit + field_dz + f_coll", "mm", "collimator principal plane", "model")
     p("z_grat", "=z_coll + coll_to_grating", "mm", "grating plane in the model (not used: see z_film)", "model")
     p("obj_back", "=z_obj + f_obj - obj_bfl", "mm", "objective rear end (image side)", "design")
     p("z_obj_plate", "=obj_back + h12_lift", "mm", "objective carrier front face = M12 holder mounting face", "design")
-    p("slit_t", "=coll_bfl - h12_lift", "mm", "slit block thickness (collimator holder bolts to its back)", "design")
+    p("stop_ahead", "=z_obj - (obj_back - obj_len) + stop_t", "mm",
+      "stop washer's front face, ahead of the objective's principal plane", "design")
+    p("filter_ahead", "=stop_ahead + filt_t", "mm",
+      "long-pass disc's front face, ahead of the objective's principal plane", "design")
+    p("slit_t", "=coll_bfl + field_dz - h12_lift", "mm",
+      "slit block thickness: the collimator holder on its back focuses the lens on the slit's image", "design")
     p("grat_gap", 1.0, "mm", "collimator front to grating carrier", "design")
-    p("z_film", "=z_slit + coll_bfl + coll_len + grat_gap + carrier_t", "mm",
+    p("z_film", "=z_slit + field_dz + coll_bfl + coll_len + grat_gap + carrier_t", "mm",
       "grating film as built: as close to the collimator as the parts allow", "design")
     p("cam_front", "=cam_len - f_cam + cam_bfl", "mm", "camera lens front ahead of its principal plane", "est")
     p("g2c", "=cam_front + cam_od / 2 * tan(theta) + 1", "mm",
@@ -200,6 +209,7 @@ def rows():
     p("fl_ct", 5.25, "mm", "field lens centre thickness (+/-0.1)", "ds")
     p("fl_et", 1.94, "mm", "field lens edge thickness", "ds")
     p("fl_r", 7.75, "mm", "field lens convex radius", "ds")
+    p("n_bk7", 1.5118, "", "field lens glass, N-BK7, index at wl_center", "ds")
     p("grat_w", 15.0, "mm", "grating film piece, square", "design")
     p("grat_t", 0.25, "mm", "grating film thickness", "est")
     p("blade_l", 20.0, "mm", "slit blade piece length (along the slit)", "design")
@@ -228,6 +238,8 @@ def rows():
     p("hb_t", 0.8, "mm", "hall breakout thickness (ordered 0.8 mm)", "pcb")
     p("hb_lead_x", 7.0, "mm", "hall breakout: the A3144's middle lead hole, from the board's -Y edge", "pcb")
     p("hb_lead_y", 4.6, "mm", "hall breakout: the A3144's lead holes, down from the board's +Z edge", "pcb")
+    p("hb_m2_x", 1.8, "mm", "hall breakout: its M2 hole, from the board's -Y edge", "pcb")
+    p("hb_m2_y", 5.0, "mm", "hall breakout: its M2 hole, down from the board's +Z edge", "pcb")
 
     sec("Printed parts")
     p("wall", 2.5, "mm", "housing wall thickness", "design")
@@ -245,9 +257,12 @@ def rows():
     p("pad_x1", 12.5, "mm", "mirror clamp: +X end of the pad and the magnet tab (takes mirrors 20 to 25 mm long)",
       "design")
     p("fl_ap_r", 5.0, "mm", "slit block aperture behind the field lens, radius", "design")
-    p("fl_seat", "=fl_ct + 0.1 - fl_r + sqrt(fl_r * fl_r - fl_ap_r * fl_ap_r)", "mm",
-      "field lens pocket depth: convex face on the aperture edge, flat face level with the blades at +0.1 mm CT",
-      "design")
+    p("fl_gap", "=blade_t + 0.05 + 0.1", "mm",
+      "slit to the field lens's convex vertex (a lens 0.1 mm over its nominal CT touches the blades)", "design")
+    p("fl_seat", "=fl_gap + fl_ct - blade_t - 0.05", "mm",
+      "field lens pocket depth below the blade recess, down to the ledge its flat face sits on", "design")
+    p("stop_d2", 5.0, "mm", "the second stop washer's hole, to compare with the 4 mm one at first light", "design")
+    p("cap_lip", 0.8, "mm", "filter cap: lip in front of the filter, and its width inside the seat", "design")
     p("z_floor", 12.0, "mm", "top of the housing floor (interior starts here)", "design")
     p("sweep_r", 13.2, "mm", "clearance radius around the shaft for a full mirror turn", "design")
     p("puck_d", 29.0, "mm", "wrist puck diameter (clears the wrist bracket's lug at r = 15 mm)", "design")
