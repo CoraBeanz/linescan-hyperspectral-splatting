@@ -233,12 +233,12 @@ def test_quaternion_round_trip():
 
 def test_line_poser_and_csv(robot, tmp_path):
     poser = LinePoser(robot)
-    assert poser.scene_distance == pytest.approx(0.15) and poser.half_line == pytest.approx(0.020937)
+    assert poser.scene_distance == pytest.approx(0.15) and poser.half_line == pytest.approx(0.021538)
     q = dict(zip(ARM_JOINTS, np.radians([0, 0, 50.3, -50.3, -87.2])))
     head, cam = poser.poses(q, 0.0)
     np.testing.assert_allclose(cam[:3, 2], [0, 0, -1], atol=0.01)       # looking down
     ends = poser.line_ends(cam)
-    assert np.linalg.norm(ends[1] - ends[0]) == pytest.approx(2 * 0.020937)
+    assert np.linalg.norm(ends[1] - ends[0]) == pytest.approx(2 * 0.021538)
     # the mirror turns the view twice as far
     _, cam2 = poser.poses(q, math.radians(5))
     assert math.degrees(math.acos(np.dot(cam[:3, 2], cam2[:3, 2]))) == pytest.approx(10.0, abs=1e-6)

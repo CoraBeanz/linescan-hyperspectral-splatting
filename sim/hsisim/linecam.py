@@ -1,9 +1,9 @@
 """What one scan line sees: rays from the slit, through the objective, into the scene.
 
-The objective (16 mm, f/4, focused at 150 mm in the design) images the scene onto the
+The objective (the bought 15.6 mm f/3.9 lens, focused at 150 mm) images the scene onto the
 50 um x 5 mm slit. Seen from the scene it is a camera at line_camera_optical_frame, the
 objective reflected in the scan mirror: z looks at the scene, x runs along the slit. The
-slit's image in the scene is the in-focus scan line, 41.9 mm long and 0.42 mm wide at
+slit's image in the scene is the in-focus scan line, 43.1 mm long and 0.43 mm wide at
 150 mm.
 
 Slit position h runs from -1 to +1 between the slit's ends, as in hsical (h is the

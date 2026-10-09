@@ -29,7 +29,7 @@ import numpy as np
 from . import board as board_mod
 from .model import slit_coordinate, slit_pixels
 
-SLIT_HALF_WIDTH = 0.0014   # the 50 um slit seen from the 16 mm objective: +-1.4 mrad across the line
+SLIT_HALF_WIDTH = 0.0014   # the 50 um slit seen from the 15.6 mm objective: +-1.4 mrad across the line
 
 
 @dataclass
