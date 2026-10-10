@@ -43,18 +43,24 @@ void write_sweep_pngs(const std::string& prefix, const Dataset& d, const std::ve
   }
 }
 
-std::vector<LineCamera> pinhole_rows(const Pose& camera_in_world, int width, int height, double f) {
+std::vector<LineCameraT<double>> pinhole_rows_d(const Pose& camera_in_world, int width, int height, double f) {
   LineIntrinsics in;
   in.width = width;
   in.f = f;
   in.cu = 0.5 * width;
   in.sigma_u = in.sigma_v = std::sqrt(1.0 / 12.0);
   in.near_z = 0.005;
-  std::vector<LineCamera> cams(static_cast<size_t>(height));
+  std::vector<LineCameraT<double>> cams(static_cast<size_t>(height));
   for (int r = 0; r < height; ++r) {
     in.v_slit = r + 0.5 - 0.5 * height;
-    cams[size_t(r)] = cast_camera<float>(line_camera_from_pose(camera_in_world, in));
+    cams[size_t(r)] = line_camera_from_pose(camera_in_world, in);
   }
+  return cams;
+}
+
+std::vector<LineCamera> pinhole_rows(const Pose& camera_in_world, int width, int height, double f) {
+  std::vector<LineCamera> cams;
+  for (const auto& c : pinhole_rows_d(camera_in_world, width, height, f)) cams.push_back(cast_camera<float>(c));
   return cams;
 }
 

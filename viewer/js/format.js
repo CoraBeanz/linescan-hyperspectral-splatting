@@ -110,10 +110,13 @@ export function parseSplat(buffer) {
   const range = block('feature_range', 2);
   const features = block('features', K);
 
-  // Covariances R diag(s^2) R^T, as math.hpp builds them.
+  // Covariances R diag(s^2) R^T, as math.hpp builds them, kept in double as the
+  // C++ reference renders them: for a Gaussian seen almost edge-on, the probe's
+  // blur factor k is a difference of nearly equal products of these, and
+  // float's rounding can move its alpha by several percent.
   const [lo, hi] = header.blocks.log_scales.range;
   const step = (hi - lo) / 65535;
-  const cov = new Float32Array(6 * N);
+  const cov = new Float64Array(6 * N);
   const opacity = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     const sx = Math.exp(2 * (lo + logScales[3 * i] * step));

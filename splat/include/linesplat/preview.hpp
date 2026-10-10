@@ -28,5 +28,7 @@ void write_sweep_pngs(const std::string& prefix, const Dataset& d, const std::ve
 // a pose and differ only in where their "slit" sits. Row r gets
 // v_slit = r + 0.5 - height / 2, and the blur is one pixel's box.
 std::vector<LineCamera> pinhole_rows(const Pose& camera_in_world, int width, int height, double f);
+// The same cameras in double, for references that other code checks itself against.
+std::vector<LineCameraT<double>> pinhole_rows_d(const Pose& camera_in_world, int width, int height, double f);
 
 }  // namespace linesplat
