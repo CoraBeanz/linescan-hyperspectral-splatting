@@ -22,6 +22,7 @@
   <a href="#software"><b>Software</b></a> ·
   <a href="#reconstruction"><b>Reconstruction</b></a> ·
   <a href="#roadmap"><b>Roadmap</b></a> ·
+  <a href="docs/manual/README.md"><b>User's manual</b></a> ·
   <a href="docs/parts_list_and_design.md"><b>Parts list</b></a>
 </p>
 
