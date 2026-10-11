@@ -1,5 +1,5 @@
 # line_camera: the spectrograph camera. Exposure and gain can be changed while it runs
-# (ros2 param set /line_camera exposure_us 8000).
+# (ros2 param set /line_camera exposure_us 8000.0).
 line_camera:
   ros__parameters:
     source: v4l2               # v4l2: the IMX219 on /dev/video0; fake: a simulated one

@@ -753,7 +753,7 @@ The Nano runs the rig during a scan: the arm's servo driver, the mirror bridge, 
 | The repo | `/ws/src/linescan-hyperspectral-splatting` | The sources and the example plans |
 | `~/linesplat` | (`/data` in the splat container) | splat's build and the datasets you train there |
 
-- The ROS 2 container runs as root, so files it writes under `~/so101_scan` and `~/so101_ws` belong to root. Delete them with `sudo` on the host.
+- The ROS 2 container runs as root, so files it writes under `~/so101_scan` and `~/so101_ws` belong to root. Delete them with `sudo` on the host. The first `colcon build` also downloads the SO-101 meshes into the repo's `cad/vendor/so101/assets/`, as root.
 - `/tmp` inside a container disappears when it exits.
 - On the Nano, use `jetson/ros.sh` wherever [`ros2/README.md`](../../ros2/README.md) says `ros2/docker/run.sh`: the Nano's Docker (20.10.7) can't build the image the plain way.
 
@@ -914,7 +914,7 @@ It asks three things, with a live readout of the ticks:
 
 1. **Put the arm in the zero pose** (table below).
 2. **Move every joint slowly through its whole range.**
-3. **Nudge each joint the way it names**, by a few degrees (at least 25 ticks, about 2°). It answers `matches the URDF` or `turns the other way: sign -1`.
+3. **Put the arm back near the zero pose and nudge each joint the way it names**, by a few degrees (at least 25 ticks, about 2°). It answers `matches the URDF` or `turns the other way: sign -1`.
 
 **Expect** `wrote /data/calibration.yaml` and a line per joint such as `shoulder_pan   zero 2047  sign +1  range  795..3311`. It warns if a joint moved less than 200 ticks in step 2, or if a range runs into the encoder's wrap-around (then rerun with `--write-homing-offset`).
 
@@ -927,7 +927,7 @@ It asks three things, with a live readout of the ticks:
 | wrist_roll | 5 | Scan window facing right | Roll the window from facing right toward facing up |
 
 - **The wrist roll gets redone later.** Its zero is defined by the head's window, which doesn't exist yet. With the gripper on, pick a repeatable reference (the gripper's jaws level, say) and redo that joint once the head is on ([Mount the head on the arm](#mount-the-head-on-the-arm)).
-- **Already calibrated with LeRobot?** Convert that file instead of moving the arm. The container only sees `~/so101_scan`, so copy the JSON there first, then `ros2 run so101_scan_hardware sts_calibrate --from-lerobot /data/<file>.json`.
+- **Already calibrated with LeRobot?** Convert that file instead of moving the arm. The container only sees `~/so101_scan`, so copy the JSON there first (**Nano**: `cp <file>.json ~/so101_scan/`), then `ros2 run so101_scan_hardware sts_calibrate --from-lerobot /data/<file>.json`.
 - `sts_calibrate` leaves the servos' homing offsets alone unless you add `--write-homing-offset`, so a LeRobot calibration on the same arm keeps working.
 - To redo one joint: `--joints <name>`. The others are kept.
 
@@ -951,7 +951,7 @@ Keep a hand on the servo power switch for everything that moves. The switch is t
    ros2 launch so101_scan_bringup scan_arm.launch.py mirror:=fake foxglove:=true
    ```
 
-   If a joint is more than 57 ticks (about 5°) outside its calibrated range, the driver leaves the motors off and says which: recalibrate that joint, or launch with `torque:=false` and move it into range by hand.
+   **Expect** `Torque on, holding the current pose`. If a joint is more than 57 ticks (about 5°) outside its calibrated range, the driver leaves the motors off and says which: recalibrate that joint, or launch with `torque:=false` and move it into range by hand.
 
 2. **Open the e-stop and test it** (**ROS**, second shell). Leave it open whenever the motors are on.
 
@@ -959,7 +959,7 @@ Keep a hand on the servo power switch for everything that moves. The switch is t
    ros2 run so101_scan_safety arm_estop
    ```
 
-   **Expect** `now: ok`. Press **Enter**: `now: holding: e-stop (/arm_safety/estop)`. Press **r**: `now: ok` again. (Space also stops, **l** goes limp, **q** quits.)
+   **Expect** `now: ok`. Press **Enter**: `now: holding: e-stop (/arm_safety/estop)`. Press **r**: `now: resuming`, then `now: ok`. (Space also stops, **q** quits, and **l** switches the motors off, so hold the arm before you press it.)
 
 3. **Check the first plan** (**ROS**, third shell). It looks straight down at the table 26 cm in front of the base:
 
@@ -993,7 +993,7 @@ To go to any pose, give the five joints in degrees, shoulder_pan first: `ros2 ru
 
 ### What stops the arm
 
-Every check runs in the servo driver. **Stopping means holding**: each servo's goal becomes where it is and the driver ignores the controller until a reset. If a measured cause (load, heat, voltage) is still there 5 s into the hold, the motors switch off. An e-stop on its own holds until you reset it.
+Every check runs in the servo driver. **Stopping means holding**: each servo's goal becomes where it is and the driver ignores the controller until a reset. If a measured cause (load, heat, voltage) is still there 5 s into the hold, the motors switch off and the arm drops: keep a hand near it. An e-stop on its own holds until you reset it.
 
 | Check | Warns at | Stops at |
 |---|---|---|
@@ -1001,7 +1001,7 @@ Every check runs in the servo driver. **Stopping means holding**: each servo's g
 | Temperature | 55 °C | 65 °C for 1 s (the STS3215 cuts out at 70 °C on its own) |
 | Supply voltage | 90% of the reading at start | 80% for 0.5 s |
 | Stall | | A joint 0.2 rad (11.5°) short of its goal and slower than 0.1 rad/s for 0.5 s |
-| The servo's own alarms | | Two reads in a row |
+| The servo's own alarms | The angle-limit alarm | Voltage, overheat, overcurrent or overload, two reads in a row |
 | An e-stop | | At once |
 
 **Soft limits** hold the arm back rather than stop it: a step that would cross one isn't taken, the arm waits at the edge, and any move back is allowed.
@@ -1009,7 +1009,7 @@ Every check runs in the servo driver. **Stopping means holding**: each servo's g
 | Limit | Keeps |
 |---|---|
 | Table | The arm's wrist, elbow and shoulder joints and the corners of the head's collision box 10 mm above the table top |
-| Base keep-out | The head out of a cylinder 80 mm in radius around the shoulder's turning axis, up to 140 mm high (the base, the shoulder servo and the electronics) |
+| Base keep-out | The head out of a cylinder 80 mm in radius around the shoulder's turning axis, up to 140 mm above `base_link` (the base, the shoulder servo and the electronics) |
 | Gravity | No joint holding more than 60% of the STS3215's stall torque against gravity (warning at 50%) |
 | Calibrated range | Commands clamped to each joint's range from `sts_calibrate` |
 
@@ -1018,9 +1018,9 @@ The driver never turns a joint faster than 2 rad/s, whatever a controller asks. 
 | To | Run (**ROS**) |
 |---|---|
 | Stop from a script, or without `arm_estop` open | `ros2 run so101_scan_safety arm_estop --stop` or `ros2 service call /arm_safety/estop std_srvs/srv/Trigger` |
-| Switch the motors off (hold the arm) | `ros2 run so101_scan_safety arm_estop --torque-off` |
+| Switch the motors off (hold the arm first: it drops) | `ros2 run so101_scan_safety arm_estop --torque-off` |
 | Read the state and warnings | `ros2 run so101_scan_safety arm_estop --status` |
-| Let it move again | `ros2 run so101_scan_safety arm_estop --reset` (refused while the cause is still there) |
+| Let it move again | `ros2 run so101_scan_safety arm_estop --reset` (refused while the cause is still there). After a motors-off stop it switches the motors back on, holding the arm where it is |
 
 Reset with `arm_estop`, not by calling `/arm_safety/reset` yourself: it also restarts the arm controller, so the arm starts from where it is instead of jumping to its old goal. A stop also stops the mirror, and `scan_sweep` or `move_arm` cancels its move, writes what it logged and exits saying why. Every threshold is untested on real servos, and the voltage baseline is whatever the supply reads when the driver starts.
 
@@ -1048,7 +1048,7 @@ Open `arm_estop` in a second shell and move with `move_arm` in a third, as above
 python3 -c "from so101_scan_hardware.fake_bus import control; control('/data/fake/so101.ctl', 2, temperature=66)"
 ```
 
-**Expect** `now: holding: shoulder_lift at 66 C (limit 65 C)` in `arm_estop`, and about 5 s later a `torque off` line. Cool it with `temperature=31`, then press **r**: `now: resuming`, then `now: ok`. The control socket also takes `voltage=4.5`, `extra_load=950` (95% load) and `obstacle=[0, 2300]` (the servo can't pass those ticks, so a move past them stalls; `obstacle=None` removes it). This sequence follows the stack's own tests but hasn't been typed in as written.
+**Expect** `now: holding: shoulder_lift at 66 C (limit 65 C)` in `arm_estop`, and about 5 s later a `torque off` line. Cool it with `temperature=31`, then press **r**: `now: resuming`, then `now: ok`. The control socket also takes `voltage=4.5`, `extra_load=950` (95% load) and `obstacle=[0, 2300]` (the servo can't pass those ticks, so a move past them stalls; `obstacle=None` removes it). To finish, Ctrl+C the launch and `kill %1` stops the fake bus. This sequence follows the stack's own tests but hasn't been typed in as written.
 
 ## Assemble the scanner head
 
@@ -1430,7 +1430,7 @@ The side of an object facing the base (−x) is out of the arm's reach. To cover
    ros2 service call /scan_mirror/home std_srvs/srv/Trigger
    ```
 
-   **Expect** `success: True` once it has found the hall sensor and parked at 0, the 45° rest. If sweeps later run backwards, stop the launch and send the ESP32 `CFG dir_inv=1` then `SAVE` ([Mirror serial protocol](#mirror-serial-protocol)).
+   **Expect** `success: True` once it has found the hall sensor and parked at 0, the 45° rest. If sweeps later run backwards, stop the launch, send the ESP32 `CFG dir_inv=1` then `SAVE` ([Mirror serial protocol](#mirror-serial-protocol)), and home again: changing `dir_inv` clears the homed flag.
 
 5. **Watch it in Foxglove**: the 3D panel with `/scan/markers` shows the arm, the head and each scan line where it lands; Image panels on `/line_camera/scan_preview_true_color` (what your eye would see), `/line_camera/scan_preview_cir` (colour infrared, 800 to 900 nm as red, so plants glow red) and `/line_camera/scan_preview` (grey) fill in row by row during a sweep.
 
@@ -1447,8 +1447,10 @@ The dataset is reflectance: each line divided by a **white** (the PTFE, about 98
 2. **Set the exposure** so the white's peak is 50 to 90% of full scale. It changes while the node runs; the next three frames are skipped while the sensor takes it.
 
    ```bash
-   ros2 param set /line_camera exposure_us 8000
+   ros2 param set /line_camera exposure_us 8000.0
    ```
+
+   Keep the decimal point: `exposure_us` is a decimal parameter, and ROS 2 refuses a whole number for it (`Wrong parameter type`).
 
 3. **Take the white, then cap the lens and take the dark:**
 
@@ -1473,7 +1475,7 @@ A splat needs every point seen from at least two directions. Two plans ship in [
 | `one_view.yaml` | 1, straight down | The first sweep on the real arm; references |
 | `ring.yaml` | 4: straight down, then tilted 25° from three sides | The first real scan; a small scene |
 
-`make_plan` writes new ones. It never moves anything.
+`make_plan` writes new ones. It never moves anything. It always plans with the CAD head, even after a head calibration; `check_plan` and the dry run use the measured head, so run both on every plan after calibrating.
 
 > [!WARNING]
 > **Always add `--clearance 0.025` to `make_plan` and to the dry run** until the head's collision box is fixed: the box is 12.5 mm short at the camera end, so the default 10 mm can put the camera end into the table ([Safety with the head on](#safety-with-the-head-on)).
@@ -1534,7 +1536,7 @@ ros2 run so101_scan_sweep scan_sweep --plan src/linescan-hyperspectral-splatting
 Before it moves, `scan_sweep` checks the plan from where the arm is, and it won't start while the driver has the arm stopped. **Expect** `recording into /data/scans/ring_<date>-<time> (binned lines)`, then for each viewpoint `viewpoint 1/4 down: moving`, a bridge line `sweep <n>: 107 lines locked to the camera, 1 frame a line (33.3 ms)`, and at the end `wrote 428 lines to /data/scans/ring_<date>-<time>`.
 
 - **Ctrl+C** stops the arm and the mirror and still writes what was logged; `scan.json` then says `"interrupted": true`.
-- `--output /data/scans/relief_try1` names the folder yourself.
+- `--output /data/scans/relief_try1` names the folder yourself. It must not exist yet.
 - A move that fails ends the run with the arm holding where it is.
 
 **How the timing works.** The camera runs on its own 30 fps clock. For every frame, `line_camera` says when the rows that see the slit were exposing; the mirror bridge locks the ESP32's line clock to that, so each mirror step falls between two exposures. `line_camera` keeps a frame for a line only if its whole exposure fell while the mirror held still. The 1640 × 1232 mode reads the slit's rows in about 20 ms, which leaves time for the step; at full resolution a line would take two frames. Long exposures also eat into that time: past a point the bridge uses two frames a line, and its log says so.
@@ -1572,7 +1574,7 @@ Two things can only be learned from a real scan: **which end of the slit is pixe
 2. **Every line got a frame:** `cut -d, -f3 /data/scans/<scan>/frames/frames.csv | sort | uniq -c` counts every line as `ok`. Any `no_frame`, `unsettled` or `dropped` needs a look.
 3. **The mirror settled on every line:** `cut -d, -f6 /data/scans/<scan>/lines.csv | sort | uniq -c` counts every line as `1`. Zeros call for a longer `sweep.line_period_s`.
 4. **The arm held still:** `grep arm_motion_max_rad /data/scans/<scan>/scan.json`, one value in radians per viewpoint. The converter warns when the head moved more than 1 mm or 0.2° during a sweep.
-5. **Not mirrored:** convert it ([From a scan to a dataset](#from-a-scan-to-a-dataset)) and look at it. If the target comes out mirrored along the slit, pixel 0 is the head's +X end: set `slit_reversed: true` in your copy of the camera settings (below) and relaunch with it. Scans already taken can be fixed: set `"slit_reversed": true` in their `frames/camera.json` and convert again with `--force`, because the binned lines are stored unflipped.
+5. **Not mirrored:** convert it ([From a scan to a dataset](#from-a-scan-to-a-dataset)) and look at it. If the target comes out mirrored along the slit, pixel 0 is the head's +X end: set `slit_reversed: true` in your copy of the camera settings (below) and relaunch with it. Scans already taken can be fixed: set `"slit_reversed": true` in their `frames/camera.json` and convert again into the same dataset folder, which is overwritten; the binned lines are stored unflipped.
 6. **Sharp across lines:** the target's edges should be as sharp across the scan lines as along the slit. If lines blur into their neighbours, the frames aren't stamped at the start of read-out: change `stamp_offset_us` in your copy of the camera settings, relaunch and scan again. This can't be fixed afterwards, because it decides which frames are kept. If the driver stamps the end of read-out, the offset is about −23,300 µs (one frame's read-out, an estimate).
 
 Running first light on the scan ([Running first light](#running-first-light)) shows the measured lines beside the trained ones, which shows both problems too. The head calibration's report also says if `slit_reversed` is wrong.
@@ -1584,6 +1586,8 @@ Only `exposure_us` and `gain` change while it runs. For the others, copy the set
 ```bash
 cp ros2/so101_scan_camera/config/line_camera.yaml ~/so101_scan/line_camera.yaml
 ```
+
+Keep the decimal points in the copy (`exposure_us: 5000.0`, not `5000`): a value of the wrong type stops the node from starting.
 
 ```bash
 ros2 launch so101_scan_bringup scan_arm.launch.py camera:=v4l2 camera_config:=/data/line_camera.yaml camera_calibration:=/data/hsical/cal foxglove:=true
@@ -1598,7 +1602,7 @@ ros2 launch so101_scan_bringup scan_arm.launch.py camera:=v4l2 camera_config:=/d
 | `slit_reversed` | `false` | `true` if binned pixel 0 is at the head's +X end |
 | `stamp_offset_us` | 0 | Added to the driver's frame times |
 | `raw_every` | −1 | Keep every n-th line's raw frame; −1 keeps all without a calibration, none with one |
-| `reference_dir` | `/data/references` | Where darks and whites taken outside a scan go |
+| `reference_dir` | `/data/references` | Where darks and whites taken outside a scan go (not in the file; add the line to change it) |
 
 The launch's `camera_calibration:=` overrides the file's `calibration`. Magenta in the colour waterfalls marks a slit bin with a saturated pixel: lower `exposure_us`, then retake the white and dark.
 
@@ -1637,7 +1641,7 @@ What it does:
 | `--sweeps 0,2` | Keep only these sweeps |
 | `--nm-min`, `--nm-max`, `--nm-step` | Other bands |
 | `--calibration <cal>` | Bin raw frames with this spectral calibration (for a scan recorded without one) |
-| `--force` | Write into a folder that already holds a dataset |
+| `--force` | Write into a folder that holds other files. An old dataset folder is overwritten without it |
 
 **After a head calibration**, reconvert earlier scans with its robot model, so their poses start from the measured head:
 
@@ -1645,7 +1649,7 @@ What it does:
 python splat/tools/scan_to_dataset.py <scan> <dataset> --urdf calibration/headcal_out/robot.urdf --references references
 ```
 
-**Expect** `head: calibration/headcal_out/robot.urdf (poses from the joint readings, scan line <l> mm long at <d> mm)` before the usual last line. (The CAD head gives 44.37 mm at 150.0 mm.)
+**Expect** `head: calibration/headcal_out/robot.urdf (poses from the joint readings, scan line <l> mm long at <d> mm)` before the usual last line. (The CAD head gives 43.08 mm at 150.0 mm.)
 
 The dataset folder holds `dataset.json`, `lines.npy`, `line_sweep.npy`, `line_mirror_angle.npy` and `sweep_head_pose.npy`; [`splat/README.md`](../../splat/README.md) describes the format. To train on the Nano, copy it into `~/linesplat` first ([splat on the Nano](#splat-on-the-nano)).
 
@@ -1717,7 +1721,7 @@ build\splat\Release\splat_materials.exe <name>.lsplat <name>.lsplat --library my
 | **Clusters** | k-means into 12 groups by spectrum, weighted by opacity; each named after the nearest library spectrum if one is close | Exploring a scene you have no spectra for |
 | **Abundances** | Each Gaussian's spectrum as a mix of the library spectra, shares non-negative and summing to 1 | Edges and mixed surfaces |
 
-**The library.** Without `--library` it uses the synthetic scene's 11 materials, which won't match real things. For the rig, measure your own: scan samples of what you'll be scanning, read each one's spectrum by clicking it in the viewer (the *Values by band* table), and write a CSV with a header row `nm,<name>,<name>,...`, one row per wavelength, and optionally a `color` row of `#rrggbb` map colours.
+**The library.** Without `--library` it uses the synthetic scene's 11 materials, which won't match real things. For the rig, measure your own: scan samples of what you'll be scanning, read each one's spectrum by clicking it in the viewer (the *Values by band* table), and write a CSV with a header row `nm,<name>,<name>,...`, one row per wavelength with the wavelengths going up, and optionally a `color` row of `#rrggbb` map colours. Every row needs one cell per material, and the rows must cover the splat's whole wavelength range: a library that stops short of it fails with `<csv> covers <first> to <last> nm, not <band> nm`.
 
 | Option | Default | Does |
 |---|---|---|
@@ -1727,7 +1731,7 @@ build\splat\Release\splat_materials.exe <name>.lsplat <name>.lsplat --library my
 | `--endmembers clusters` | `library` | Unmix into the cluster means instead of the library |
 | `--png DIR` | | Also write the maps as pictures |
 
-The input must be a file `splat_export` wrote, not a gzipped one; the output may be the same file, as above. A file without maps still opens in the viewer, just without the **Materials** and **Abundance** views.
+The input must be a file `splat_export` wrote, not a gzipped one, so gzip a file only after its maps are in; the output may be the same file, as above. Add the maps last: exporting the scene again writes a new file without them. A file without maps still opens in the viewer, just without the **Materials** and **Abundance** views.
 
 <p align="center"><img src="img/first_light_materials.jpg" width="95%" alt="The viewer's Materials view of the simulated relief target: each Gaussian coloured by its matched library material, white paper, PTFE, yellow paint, orange plastic, the rare-earth tile and others, with the list of materials and their shares beside it."></p>
 
@@ -1921,7 +1925,7 @@ First light doesn't need it: training refines each sweep's pose anyway. The head
 4. **Light the board** evenly with the halogen and set the line camera's exposure so the board's white paper reads 50 to 90% of full scale on `/line_camera/preview` in Foxglove (the preview is the raw frame in 8 bits, so about 130 to 230 out of 255):
 
    ```bash
-   ros2 param set /line_camera exposure_us 8000
+   ros2 param set /line_camera exposure_us 8000.0
    ```
 
 5. **Focus the pose camera** (**Nano** host, in `calibration/`). Its lens is set for far away; with the arm at this first viewpoint, turn it with the focus tool until the sharpness number peaks, then Ctrl+C. `--auto` does nothing here, so set the exposure by hand with `--exposure-ms` until the board isn't clipped:
@@ -2018,7 +2022,7 @@ A session holds what the rig would write (`lines.csv`, `scan.json`, `robot.urdf`
 cd ..\calibration
 python -m hsical calibrate ../sim/sim_out/calibration -o ../sim/sim_out/cal
 cd ..
-python splat/tools/scan_to_dataset.py sim/sim_out sim_ds --calibration sim/sim_out/cal
+python splat/tools/scan_to_dataset.py sim/sim_out build/sim_ds --calibration sim/sim_out/cal
 ```
 
 | Option | Does |
@@ -2033,7 +2037,7 @@ python splat/tools/scan_to_dataset.py sim/sim_out sim_ds --calibration sim/sim_o
 | `--stamp-error-us 15000` | The camera's timestamps 15 ms late, to see what a wrong `stamp_offset_us` does |
 | `--pose-camera`, `--head-errors 1` | Also render the pose camera's stills, and build the head off its CAD numbers as a hand-built one would be: a head calibration scan to solve |
 
-`python -m hsisim evaluate sim_out sim_out/cal` turns every sweep into reflectance and compares it with the truth; `python -m hsisim handeye` runs a whole simulated head calibration and compares the result with the true head (about five minutes). On the ring plan the reflectance comes back with a median error of 0.00% and 1.6% rms, and the rare-earth tile's absorption bands within 0.04 nm.
+`python -m hsisim evaluate sim_out sim_out/cal` turns every sweep into reflectance and compares it with the truth; `python -m hsisim handeye` runs a whole simulated head calibration and compares the result with the true head (about five minutes). On the ring plan the reflectance comes back with a median error of 0.00% and 1.6% rms, and the rare-earth tile's absorption bands within 0.04 to 0.06 nm of the truth, against a 0.30 nm limit.
 
 What it leaves out: shiny surfaces, light bouncing between surfaces and fluorescence; stray light and ghosts; the arm moving during a sweep; and any drift between calibration and scan. A real scan will be worse in those ways.
 
@@ -2119,7 +2123,7 @@ The commands you'll type most, by where they run. `<plans>` is `src/linescan-hyp
 | ROS | `ros2 launch so101_scan_bringup scan_arm.launch.py camera:=v4l2 camera_calibration:=/data/hsical/cal foxglove:=true` | The arm, the mirror and the camera |
 | ROS | `ros2 run so101_scan_safety arm_estop` | The e-stop: Enter stops, r resets, l limp, q quits |
 | ROS | `ros2 service call /scan_mirror/home std_srvs/srv/Trigger` | Home the mirror |
-| ROS | `ros2 param set /line_camera exposure_us 8000` | Set the exposure |
+| ROS | `ros2 param set /line_camera exposure_us 8000.0` | Set the exposure |
 | ROS | `ros2 run so101_scan_camera capture_reference white` (then `dark`) | The white and dark references |
 | ROS | `ros2 run so101_scan_sweep make_plan --object 0.24 0 --size 0.06 0.06 0.012 --clearance 0.025 --name relief --out /data/plans/relief.yaml` | A coverage plan |
 | ROS | `ros2 run so101_scan_safety check_plan --plan /data/plans/relief.yaml` | Check it against the soft limits |
@@ -2250,18 +2254,21 @@ Find the message or the symptom, then the fix. Messages are quoted as the tools 
 | `line_camera` warns `no calibration: lines can't be binned ...` | No calibration given | `camera_calibration:=/data/hsical/cal` |
 | Magenta stripes in the waterfalls | Saturated pixels | Lower `exposure_us`, then retake the white and dark |
 | `/line_camera/capture_reference isn't there: is line_camera running?` | The launch has no camera | Relaunch with `camera:=v4l2` |
+| `ros2 param set` says `Setting parameter failed: Wrong parameter type, expected 'Type.DOUBLE' got 'Type.INTEGER'` | `exposure_us` and `gain` are decimal parameters | Write the decimal point: `8000.0` |
+| `line_camera` won't start after you edited a copy of its settings (`InvalidParameterTypeException`) | A decimal setting written as a whole number (`5000` for `5000.0`) | Put the decimal points back |
 
 ### Scans and datasets
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | The dry run says `the mirror bridge can't reach the mirror ESP32` | No ESP32 on `/dev/scan_mirror` | Plug it in (the bridge keeps trying), or `mirror:=fake` |
+| `scan_sweep --output ...` stops with `FileExistsError` | The folder already exists | A new folder name |
 | `settled = 0` on some lines | The mirror was still moving as the next line came | A longer `sweep.line_period_s` |
 | The dataset comes out mirrored along the slit | Pixel 0 is the head's +X end | `slit_reversed: true` ([Check the first real scan](#check-the-first-real-scan)) |
 | Lines blur into their neighbours | The frame times aren't at the start of read-out | Change `stamp_offset_us` and scan again |
 | `... has no frames/camera.json: line_camera wasn't recording during this scan` | The scan ran without the camera | Scan again with `camera:=v4l2`; put `camera: {record: required}` in the plan |
 | The dataset on the PC says `of radiance` | The white is in the Nano's `references/`, which the PC can't see | Copy it and pass `--references` |
-| `<out> isn't empty and isn't a dataset; give another folder` | The output folder holds other files | An empty folder, or `--force` over an old dataset |
+| `<out> isn't empty and isn't a dataset; give another folder` | The output folder holds other files | A new folder, or `--force` |
 
 ### The head calibration
 
@@ -2283,7 +2290,9 @@ Find the message or the symptom, then the fix. Messages are quoted as the tools 
 | `device the CPU, Adam on the CPU` although you passed `--gpu-adam` | The build has no CUDA, or no GPU is visible | Install the CUDA toolkit and configure a new build folder without `-DLINESPLAT_CUDA=OFF` ([Build the splat tools](#build-the-splat-tools)) |
 | The viewer says `Browsers block loading files from a page opened straight from disk...` | `index.html` was opened as a file | Serve it: `python -m http.server -d viewer 8000`, then <http://localhost:8000> |
 | The viewer says it needs WebGL2, or `The graphics card dropped this page. Reload to continue.` | No WebGL2, or the GPU dropped the page | A current Chrome, Edge, Firefox or Safari with hardware acceleration on; reload |
-| No **Materials** or **Abundance** buttons | The file has no material maps | `splat_materials <file> <file> --library <csv>`, then open it again |
+| No **Materials** or **Abundance** buttons | The file has no material maps, or it was exported again after `splat_materials` | `splat_materials <file> <file> --library <csv>`, then open it again |
+| `splat_materials` says `<csv> covers <first> to <last> nm, not <band> nm` | The library CSV stops short of the splat's bands | Measure the library over the splat's whole range |
+| `splat_materials` says `... is gzipped; gunzip it first` | The input was gzipped | Add the maps to the plain file, then gzip it |
 | The Pages address gives a 404 | Pages is off | **Settings**, **Pages**, **Source: GitHub Actions**; then **Actions**, **pages**, **Run workflow** |
 | `source is scan but scan.path isn't set` | `rig.yaml` ran without a scan folder | `--set scan.path=C:/scans/<scan>` |
 | `<folder> has no lines.csv` (or `scan.json`, `frames/camera.json`) | `scan.path` is the wrong folder, or the camera didn't record | Point it at the scan's own folder, the one with `lines.csv` and `frames\` |

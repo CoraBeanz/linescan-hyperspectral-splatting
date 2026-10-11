@@ -297,7 +297,7 @@ but the plan check still runs.
    `scp -r cal <user>@<nano>:so101_scan/hsical/`), then `ros2 launch so101_scan_bringup
    scan_arm.launch.py camera:=v4l2 camera_calibration:=/data/hsical/cal`.
    [`config/line_camera.yaml`](so101_scan_camera/config/line_camera.yaml) has its settings;
-   `ros2 param set /line_camera exposure_us 8000` changes the exposure while it runs, and
+   `ros2 param set /line_camera exposure_us 8000.0` changes the exposure while it runs, and
    `~/preview` and `~/scan_preview` show the frames and the sweep so far, the sweep in colour
    too (see [the colour waterfalls](#seeing-a-scan-before-and-while-it-runs)).
 3. **Take a white and a dark**, with the mirror still and the head over the PTFE sheet under the
