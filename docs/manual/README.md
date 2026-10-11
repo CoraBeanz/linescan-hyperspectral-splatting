@@ -71,22 +71,24 @@ It works one line at a time:
 
 1. **A slit picks one line of the scene.** The objective images the object onto a 50 µm slit made from two blade pieces. At 150 mm from the objective that line is about 43 mm long and 0.4 mm thick.
 2. **A grating spreads that line by wavelength.** Behind the slit, a collimator makes the light parallel, a 500 lines/mm grating film fans it out by wavelength, and a camera lens focuses the fan onto an IMX219 sensor. Each camera frame is one line of the object (down the sensor) by its spectrum (across the sensor).
-3. **A mirror sweeps the line across the object.** A front-surface mirror on a small NEMA 8 stepper sits in front of the objective. Turning it one microstep per frame moves the line about 0.3 mm, and about 150 lines cover a 63 mm wide patch.
+3. **A mirror sweeps the line across the object.** A front-surface mirror on a small NEMA 8 stepper sits in front of the objective. Each microstep moves the line about 0.3 mm. The shipped plans step it two microsteps a frame, so a sweep of 107 lines covers a strip about 64 mm long.
 4. **The arm sets the viewpoint.** The SO-101 carries the head to a pose and holds still while the mirror sweeps. Each line's pose comes from the arm's joint angles through the robot model. Several viewpoints give a 3D scan.
 5. **A 3D Gaussian splat is trained from the lines.** Each Gaussian stores a spectrum (46 bands from 500 to 950 nm) instead of an RGB colour. The trainer renders the splat through a model of the line camera at each line's pose, compares it with the measured line, and also refines the poses.
 6. **The browser viewer shows it.** You can look at the splat at any single wavelength, in true colour, in colour infrared, as a band index such as NDVI, or as a map of materials, and click a point to plot its spectrum.
 
-Halogen lamps light the scene, because white LEDs give almost no light past 700 nm. A second camera on the head (a Pi NoIR v2, the *pose camera*) is used once after assembly, to measure where the head really sits on the wrist.
+Halogen lamps light the scene, because white LEDs give almost no light past 700 nm. A second camera on the head (a Pi NoIR v2, the *pose camera*) is used by the head calibration, after assembly and whenever the head is moved on the wrist, to measure where the head really sits.
 
 | Quantity | Value | Source |
 |---|---|---|
 | Band | about 500 to 950 nm (the dataset keeps 46 bands, 10 nm apart) | optics model, converter |
 | Spectral resolution | 4.1 nm with ideal lenses; expect 5 to 8 nm with real M12 lenses | optics model |
 | Scan line at 150 mm | 43 mm long, about 0.4 mm thick, 256 pixels along it in the dataset | optics model, converter |
-| One sweep | about 150 lines, 63 mm wide, at 30 frames per second | firmware, simulator |
+| One sweep | 107 lines, about 64 mm long, at 30 frames per second | the shipped plans |
 | Head | 187 g, 64 × 53 × 136 mm | CAD |
 
 <p align="center"><img src="../img/hero.svg" width="100%" alt="The idea: the SO-101 carries the spectrograph, its scan line sweeps across a plant, and the plant turns into Gaussians that each store a spectrum."></p>
+
+*The idea. The drawing's 3.7 nm is an older estimate; the bought parts trace to 4.1 nm.*
 
 ## Inside the scanner head
 
@@ -322,15 +324,15 @@ Each takes a minute and needs no tools.
 | CIL122, CIL161, LN016 | Look through from the thread end at a white sheet. Neutral is right; a pink, red or blue-green tint means an IR-cut filter. Faint coloured reflections off the coatings are fine. | Send it back: an IR-cut filter blocks 650 to 1000 nm, half the band |
 | Arducam B0152 | The board says B0152, not B0183, and the stock lens unscrews. Later, a TV remote's flash shows in the live view. | Return a B0183 |
 | Edmund #49-840 field lens | Find the curved side by its edge and mark the box. | The curved side goes toward the slit |
-| BTT TMC2209 V1.3 | Pot side up, pot at the top: the left header reads EN, MS1, MS2, RX, TX, CLK, STEP, DIR. | A V1.2 reads PDN, PDN in place of RX, TX; the UART still goes to the 4th pin |
-| Your ESP32 | The metal can says ESP32-WROOM-32 (any suffix); 38 pins; rows 25.4 mm apart. | A WROVER module won't work at all (its PSRAM uses GPIO 16 and 17). 30 pins or 22.9 mm rows work on a breadboard but need a new socket on the controller board |
+| BTT TMC2209 V1.3 | Pot side up, pot at the top: the left header reads EN, MS1, MS2, RX, TX, CLK, STEP, DIR. | A V1.2 reads PDN, PDN in place of RX, TX; the UART still goes to the 4th pin. Another make: the firmware sets the current from BTT's 0.11 Ω sense resistors, so put yours in `kTmcRSense` in `firmware/include/board_pins.h` before flashing |
+| Your ESP32 | The metal can says ESP32-WROOM-32 (any suffix); 38 pins; rows 25.4 mm apart. | A WROVER module won't work at all (its PSRAM uses GPIO 16 and 17). 30 pins or 22.9 mm rows work on a breadboard but need a new socket and symbol for the controller board |
 | Jetson Nano | Two camera connectors (B01) or one (A02). | An A02 can't run the head calibration as written |
 | Outlet tester | It glows orange (neon). | An LED tester gives no neon lines |
 | Heat-set inserts | Knurl diameter: M2 about 3.0 mm, M3 about 5.0 mm. | The holes are drawn 2.85 and 4.5 mm; they change for other inserts |
 
 ## Measure before you print
 
-Several sizes in the CAD are estimates or come from listings, and the housing, slit block, lid and filter cap are cut around them. Measure each part as it arrives, to 0.05 mm, and take the mean of two or three readings. Then the numbers go into [`cad/rig/params.py`](../../cad/rig/params.py), the model is rebuilt and the head's STLs are ready to print ([Changing the design](#changing-the-design) has the commands; or post the numbers in the project and Claude does it).
+Several sizes in the CAD are estimates or come from listings, and the housing, slit block, lid and filter cap are cut around them. Measure each part as it arrives, to 0.05 mm, and take the mean of two or three readings. Then the numbers go into [`cad/rig/params.py`](../../cad/rig/params.py), the model is rebuilt and the head's STLs are ready to print ([Changing the design](#changing-the-design) has the commands).
 
 | # | Part: what to measure | CAD now (mm) | How | What it holds up |
 |---|---|---|---|---|
@@ -380,7 +382,7 @@ Several sizes in the CAD are estimates or come from listings, and the housing, s
 
 <p align="center"><img src="img/measure_b6.png" width="100%" alt="A red laser through the grating onto a wall: the distance D between the two first-order spots and the distance L from grating to wall give the lines per millimetre, with a table of expected half-distances for common gratings."></p>
 
-*B6. Grating pitch. Shine a red laser through the film onto a wall L = 1.00 m away and measure D between the two first-order spots. Lines/mm = sin(atan(D / 2L)) / λ, with λ ≈ 0.00065 mm for a red pointer; the table's ranges don't overlap, so an uncalibrated diode still decides it. The grooves run at right angles to the row of spots; mark that direction, because the grooves go along X in the carrier. Never look into the beam.*
+*B6. Grating pitch. Shine a red laser through the film onto a wall L = 1.00 m away and measure D between the two first-order spots. Lines/mm = sin(atan(D / 2L)) / λ, with λ ≈ 0.00065 mm for a red pointer; the table's ranges don't overlap, so an uncalibrated diode still decides it. The grooves run at right angles to the row of spots; mark that direction, because the grooves go along X in the carrier. Never look into the beam. A 600 lines/mm film would need the camera at 26.7° (a new housing and lid) and would cover only 516 to 967 nm; 1000 lines/mm can't work; 300 lines/mm fits but gives about 6.9 nm.*
 
 To post the numbers, copy this and fill in what you have:
 
@@ -409,13 +411,13 @@ Checks: lens tints / field lens side marked / ESP32 module, pins, rows / Nano B0
 Print the parts in the light path in **black PETG**: it copes with the stepper's warmth, which PLA may not, and black keeps stray light down. Some black filaments look grey in near infrared, so check yours first.
 
 1. **Check the filament.** Print the grating carrier and photograph it in sunlight with the Pi NoIR next to the white PTFE, with the exposure short enough that the PTFE isn't clipped (LED room light has almost no near infrared). It should look as dark as it does to your eye. If it looks grey, change filament or line the inside with flocking.
-2. **Print the parts no measurement changes**, while you measure: both stop washers, the objective carrier, the grating carrier, the mirror clamp and the wrist puck. The bench puck and the controller tray are safe too, but have nothing to hold yet.
-3. **After the measurements and a rebuild**, print the housing, slit block, lid and filter cap.
+2. **Print the parts no measurement changes**, while you measure: both stop washers, the objective carrier, the grating carrier, the wrist puck, and the mirror clamp once the stepper's shaft measures 4 mm (M11). The bench puck and the controller tray are safe too, but have nothing to hold yet.
+3. **After the measurements and a rebuild**, print the housing, slit block, lid and filter cap. The housing prints standing up, 129.4 mm tall: check your printer's build height.
 4. **Clean up:** clear any stringing from the stop washer's hole (its edge is the aperture stop) and check the filter cap is a snug push fit on the objective.
 
 <p align="center"><img src="img/print_layout.jpg" width="100%" alt="All twelve printed parts laid out in their print orientations with their file names and print settings."></p>
 
-*Every printed part in its print orientation. The STLs in `cad/stl/` are already turned this way.*
+*Every printed part in its print orientation. The STLs in `cad/stl/` are already turned this way. The masses in the picture are older and rounded; the table has the current ones.*
 
 | Part | File | How to print | Size (mm) | Mass |
 |---|---|---|---|---|
@@ -444,7 +446,7 @@ You can build the whole circuit on a breadboard now and move to the controller b
 
 ### Flash the ESP32
 
-Flash it before anything else is connected, so no old program can drive the motor. **On the PC**, with the ESP32 on a micro-USB data cable and nothing else plugged in:
+Flash it before anything else is connected, so no old program can drive the motor. **On the PC**, with the ESP32 on a USB data cable and nothing else plugged in:
 
 1. Install PlatformIO and pyserial, and go to the firmware folder:
 
@@ -550,11 +552,11 @@ Find the motor's two coils with a multimeter, not by wire colour: about 24 Ω ac
    | `MOVE rel=32` | `EV MOVED pos=32`: one full step, 1.8° |
    | `MOVE rel=-32` | `EV MOVED pos=0` |
    | `SCAN lines=20 step=8 period=100000` | 20 `EV LINE` lines 100 ms apart, then `EV SCAN_DONE lines=20 ... aborted=0` |
-   | `DISABLE` | `OK DISABLE`; the motor goes slack |
+   | `DISABLE` | `OK DISABLE`; the motor goes slack. It's also the quickest stop from the terminal |
 
 4. After a few minutes enabled, feel the motor. At 0.2 A it turns 1 to 2 W into heat: warm, not too hot to hold.
 
-`HOME` waits until the mirror clamp with its magnet is on the shaft: on the bare shaft nothing carries the magnet past the sensor, so it ends in `HOME_FAILED`. Homing is in [Home the mirror and set the working angle](#home-the-mirror-and-set-the-working-angle). If the mirror turns the wrong way for your setup later, send `CFG dir_inv=1`, then `SAVE` and `HOME`.
+`HOME` waits until the mirror clamp with its magnet is on the shaft: on the bare shaft nothing carries the magnet past the sensor, so it ends in `HOME_FAILED`. Homing is in [Home the mirror and set the working angle](#home-the-mirror-and-set-the-working-angle). A positive move should turn the view from the head's +Y (out of the scan window) toward +Z; if it turns the other way, send `CFG dir_inv=1`, `SAVE`, `ENABLE` and `HOME`.
 
 ### The controller board
 
@@ -569,7 +571,7 @@ The controller board carries the ESP32 DevKitC and the TMC2209 in sockets, adds 
 1. Upload `pcb/scan_controller/fab/scan_controller_gerbers.zip`. Keep the defaults: 2 layers, FR-4, 1.6 mm, 1 oz.
 2. Turn on PCB assembly, economic, top side, with `bom_jlc.csv` as the BOM and `cpl_jlc.csv` as the placement file from the same folder. JLCPCB fits 14 small parts.
 3. In the placement preview, check the four parts with a direction: D1 and D2 with the cathode stripe toward the left (toward the TMC2209), and the LEDs D3 and D4 with the cathode mark on the left. A reversed D1 blocks the 12 V; a reversed D2 shorts it through the fuse.
-4. Add the hall breakout as a second board from `pcb/hall_breakout/fab/hall_breakout_gerbers.zip`, **0.8 mm thick** (the head's recess and screw length are drawn for 0.8 mm). Its one 100 nF capacitor is easy to hand-solder.
+4. Add the hall breakout as a second board from `pcb/hall_breakout/fab/hall_breakout_gerbers.zip`, **0.8 mm thick** (the CAD and the M2 × 5's 2.5 mm of thread in the wall assume 0.8 mm). Its one 100 nF capacitor is easy to hand-solder.
 
 **Solder** the low parts first: J5 (1×3 header), J3 (4-pin JST XH) and J4 (3-pin JST XH), then C1 (100 µF, long lead in the + hole), then the four female headers with their modules plugged in so the rows stay straight, then J2 and the jack J1. Leave the solder jumper JP1 bridged 1-2 for a stock BTT module. Before any power, with no modules fitted, measure for shorts from J2 + to J2 −, and from the DevKit socket's 3V3 and 5V pins to GND.
 
@@ -580,7 +582,7 @@ The controller board carries the ESP32 DevKitC and the TMC2209 in sockets, adds 
 | J3 | JST XH 4-pin: 1 A2, 2 A1, 3 B1, 4 B2 | The NEMA 8, one coil on pins 1-2 and the other on 3-4 |
 | J4 | JST XH 3-pin: 1 +5 V, 2 GND, 3 OUT | The hall breakout's cable |
 | J5 | 1×3 header: 1 MOVING, 2 TRIG, 3 GND | Free Nano GPIO inputs or a scope (no code reads them yet) |
-| DevKit micro-USB | | The Nano: power and serial |
+| DevKit USB | | The Nano: power and serial |
 
 | LED | Means |
 |---|---|
@@ -591,7 +593,7 @@ Seat or remove the ESP32 and the driver only with USB and 12 V both off, the Dev
 
 ### Connect the controller to the Nano
 
-1. Plug the DevKit's micro-USB into the Nano with a data cable.
+1. Plug the DevKit's USB into the Nano with a data cable.
 2. Once the Nano is set up ([The Jetson Nano](#the-jetson-nano)), check that the port got its fixed name (**Nano**):
 
    ```bash
@@ -1134,6 +1136,8 @@ Without the breakout board you can solder the cable straight to the bent leads, 
 
 `HOME` gives every scan the same start angle. It finds both edges of the hall sensor's window at a slow speed, takes the middle, calls that `home_pos` and moves the mirror to `home_park`. The defaults are `home_pos=-711` (the CAD puts the magnet at the sensor with the mirror 40° back from its 45° working angle) and `home_park=0`, so after homing, position 0 is the working angle.
 
+Wire the head to the controller (or the breadboard) first, with USB unplugged and the 12 V off: the motor to J3 and the hall cable to J4. VREF must already be at 0.28 V ([Set the motor current](#set-the-motor-current)). Then plug in USB, switch the 12 V on, and close the serial monitor before using `mirrorctl.py`.
+
 1. Check the sensor: with the motor disabled, `STATUS` shows `hall=1` when the magnet is at the sensor and `hall=0` when it's away.
 2. Home, then home again to check it repeats. **On the PC, in `firmware/`** (or in the monitor, one command per line):
 
@@ -1152,10 +1156,10 @@ Without the breakout board you can solder the cable straight to the bent leads, 
 
    No scraping through the whole sweep. The closest parts in the model are the lid (0.5 mm), the housing (0.9 mm), the hall sensor (1.1 mm) and the filter cap (1.4 mm).
 
-4. **Set the working angle.** Find the position P that centres the view (with the pose camera or the spectrograph's live view on a target), then set `home_pos` to −711 minus P, save and home again. For P = 40:
+4. **Set the working angle.** Find the position P that centres the view (with the pose camera or the spectrograph's live view on a target), then set `home_pos` to its current value minus P (from the default, −711 minus P), save, and home again. For P = 40 from the default:
 
    ```bat
-   python tools/mirrorctl.py -p COM5 "CFG home_pos=-751" SAVE HOME
+   python tools/mirrorctl.py -p COM5 "CFG home_pos=-751" SAVE ENABLE HOME
    ```
 
    After `HOME`, position 0 now centres the view. **Do this before the head calibration**, which measures the home angle and expects it to stay put.
@@ -1170,7 +1174,7 @@ Home again whenever the ESP32 restarts, and after `DISABLE`, a fault, or a chang
 
 1. **Gripper off.** Switch the arm's servo power off and support the arm. Unscrew the gripper from the wrist-roll horn and unplug the gripper servo's bus cable; keep the gripper to swap back. With the head on, the ROS side expects servo ids 1 to 5 only.
 2. **Puck on.** Screw the wrist puck onto the horn, horn side down, with four M3 × 6. Its rim centres on the 20 mm horn disc.
-3. **Housing on.** Slide the housing onto the puck's dovetail from the −X side until it stops against the closed end of the slot.
+3. **Housing on.** The dovetail slot in the housing's floor is open at its −X end. Start the puck's rail there and slide the housing on until the rail stops against the slot's closed end.
 4. **Lid on.** Fit the lid, then put the two M3 × 35 in from the counterbores on the +X face, through the floor and the lid, with a washer and nut on each on the lid's motor pad. Screw the two M3 × 8 through the lid ears into the housing's inserts. The lid closes the end of the dovetail slot and is what holds the head on the arm: without these screws the head can slide off the rail.
 5. **Redo the wrist roll's calibration.** The wrist roll's zero is defined by the head's window ("facing right"), so with the head on run the calibration for that joint again, then check with the motors off that the model in Foxglove follows the real arm (**ROS**):
 
@@ -1200,7 +1204,7 @@ As modelled the head weighs 187 g. With the arm stretched out level the shoulder
 2. Screw the controller board onto the posts with four M3 × 6, hall connector (J4) edge toward the arm and USB edge away from it, toward the Nano. The posts hold the board 6 mm up, clear of its trimmed leads.
 3. Set the tray on the table 4 mm behind the plate on the back of the arm's base and screw it down with two 1/4"-20 or M6 table screws and washers through its slots. Each slot is a full hole pitch long, so on a 1 in or 25 mm grid both slots find a hole.
 
-In the scanning pose the arm stays 62 mm from the tray. It could only reach it by leaning back over its base, which the ROS soft limits refuse.
+In the scanning pose the arm stays 62 mm from the tray. It reaches the tray only when it leans back over its base, which a scan of something in front of it never does. Leave air over the driver: it gets warm.
 
 ### Cables
 
@@ -1208,7 +1212,7 @@ In the scanning pose the arm stays 62 mm from the tray. It could only reach it b
 2. **Hall.** The 3-wire cable from the breakout goes to J4 (pin 1 +5 V, pin 2 GND, pin 3 OUT).
 3. **Up the arm.** Run the motor and hall cables down the arm to the tray with zip ties, kept apart: motor switching noise on the hall line can upset homing. Run both camera ribbons along the arm to the Nano, with strain relief where the arm bends and slack at the wrist so roll and flex don't pull on the connectors.
 4. **Check by hand.** With the servos' torque off, move the arm through its poses and the wrist through its roll range. No cable should pull tight or catch.
-5. **Power and data.** The DevKit's micro-USB goes to the Nano; the 12 V supply to J1. Never plug or unplug the motor with the green LED lit.
+5. **Power and data.** The DevKit's USB goes to the Nano; the 12 V supply to J1. Never plug or unplug the motor with the green LED lit.
 
 Cable clips and the slack to leave at the wrist aren't designed yet; zip ties and a hand check do for now.
 
@@ -2200,16 +2204,22 @@ Find the message or the symptom, then the fix. Messages are quoted as the tools 
 | No COM port appears | A charge-only cable, or no driver for the USB chip | Another cable; on Windows install the CP210x or CH340/CH9102 driver |
 | The ESP32 restarts whenever a terminal opens the port | The program drives DTR or RTS | Use `pio device monitor -e esp32dev` or `mirrorctl.py` |
 | A few garbage characters after a reset | The boot ROM prints at another baud rate | Ignore them |
+| `pyserial is missing: pip install pyserial` | `mirrorctl.py` needs it | `pip install pyserial` in the environment you run it from |
 | `Could not open port` or busy | The monitor, another `mirrorctl` or the ROS bridge holds it | Close it or stop the launch |
 | `ERR ENABLE code=driver msg=TMC2209 did not answer on UART: check 12 V, VIO and the PDN_UART wire ...` | 12 V off, no 3.3 V on VIO, the module the wrong way round, or the UART on the wrong pin (on the V1.3 "PDN_UART" is the pin printed RX) | 12 V on, 3.3 V at VIO, orientation, the RX wire; on the controller board JP1 bridged 1-2 |
 | `STATUS` says `drv=noresp` but `DRV` answers | The check ran at boot, before the 12 V | `ENABLE` (it checks again) or `REBOOT`. Power the 12 V first next time |
+| `EV FAULT code=drv_reset` | The driver lost its 12 V and went back to its power-up settings | Restore the 12 V, then `ENABLE` |
+| `EV FAULT code=drv_noresp` | The driver stopped answering on its UART while enabled, for example the 12 V went off | Restore the 12 V, check the RX wire, `ENABLE` |
+| `EV FAULT code=drv_err` | The driver shut its outputs off: overheating or a short | `DRV` shows `ot`, `s2g` or `s2vs`; fix the cause, `ENABLE` |
+| `mirrorctl` stops with `error: no reply to: <command>` | Nothing answered in 3 s: the wrong port, no firmware, or a command sent right after `REBOOT` | Check the port and that `INFO` answers in the monitor; after `REBOOT`, start a new run |
 | `ERR MOVE code=disabled ...` (or `HOME`, `SCAN`) | The motor is off | `ENABLE` first |
 | `EV HOME_FAILED reason=not_found` | No magnet seen: wiring, or the wrong face toward the sensor | `STATUS` with the magnet held at the sensor should say `hall=1`; flip the magnet. Bring the mirror back with `MOVE pos=0` |
 | `HOME_FAILED reason=stuck`, `too_wide`, `lost`, `timeout` | See [Mirror serial protocol](#mirror-serial-protocol) | |
 | `HOME` fails on the bare shaft | Nothing carries the magnet past the sensor | Expected until the clamp and magnet are on |
-| The mirror turns the wrong way, or sweeps run backwards | A coil reversed | Launch stopped: `CFG dir_inv=1`, `SAVE`, `HOME` |
+| The mirror turns the wrong way, or sweeps run backwards | A coil reversed | Launch stopped: `CFG dir_inv=1`, `SAVE`, `ENABLE`, `HOME` |
 | The motor buzzes but doesn't turn | Coil wires mixed between pin pairs | 12 V off, wait for the green LED to go dark, find the pairs (about 24 Ω within a coil), one pair on pins 1-2, the other on 3-4 |
 | The red STATUS LED (or the GPIO 2 LED) blinks and `STATUS` shows `state=fault` | The driver reported a fault | Read `EV FAULT code=` ([Mirror serial protocol](#mirror-serial-protocol)), fix it, `ENABLE` |
+| `HOME` gives a different `width` or `shift` each time, or fails now and then | Motor noise on the hall line | Run the hall cable apart from the motor's; on the controller board, fit C3 (1 nF), which is left off |
 | `EV LINE ... ready=-1` | The mirror was still moving at the next line | A longer period, a smaller step, or faster `vmax`/`accel` |
 | `ERR SCAN code=range msg=sweep speed ...` | A sweep faster than `vstart` | Smaller step or longer period |
 | `EV WARN code=events_dropped` | The host reads too slowly | Close other programs; `mirrorctl -q` for long scans |
@@ -2321,7 +2331,7 @@ The full specification is [`firmware/PROTOCOL.md`](../../firmware/PROTOCOL.md). 
 
 | Event | When |
 |---|---|
-| `EV BOOT fw= proto= reset= drv=` | After every start; the motor is off |
+| `EV BOOT fw= proto= reset= drv=` | After every start; the motor is off. `reset` says why it started: `poweron`, `external` (the EN button), `software`, `panic`, `brownout`, a watchdog and so on |
 | `EV LINE n= t= pos= [ready=]` | A scan line. `ready=-1` means the mirror hadn't settled by the next tick |
 | `EV SCAN_DONE lines= aborted=` | A scan ended (`aborted=1` after `STOP`, `DISABLE` or a fault) |
 | `EV MOVED pos=`, `EV STOPPED pos=` | A move arrived and settled; a stop finished |
