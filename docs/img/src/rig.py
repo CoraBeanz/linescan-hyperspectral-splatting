@@ -138,7 +138,7 @@ def inset():
         # pose camera on top
         f'<rect x="{IX + 270}" y="{yA - 58}" width="54" height="24" rx="5" fill="#121a33" stroke="#4b5f95"/>',
         f'<circle cx="{IX + 324}" cy="{yA - 46}" r="8" fill="#0a0f22" stroke="#7dd3fc" stroke-width="1.6"/>',
-        f'<text x="{IX + 412}" y="{IY + 30}" class="ls" text-anchor="end">RGB pose camera</text>',
+        f'<text x="{IX + 412}" y="{IY + 30}" class="ls" text-anchor="end">NoIR pose camera</text>',
         f'<path d="M{IX + 340} {IY + 38} L{IX + 330} {yA - 54}" stroke="#8b93b0" stroke-width="1.1"/>',
         # stepper + mirror; light comes up from the object and folds into the train
         f'<rect x="{IX + 24}" y="{yA - 26}" width="52" height="52" rx="6" fill="#121a33" stroke="#4b5f95"/>',
@@ -168,7 +168,7 @@ def inset():
 
 svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-labelledby="t d">
   <title id="t">The rig: SO-101 arm with the scanner head</title>
-  <desc id="d">Side view of the setup. An SO-101 arm holds the scanner head above a potted plant on an AprilTag board. A scan mirror on the head sweeps a line of light across the plant, an RGB camera on the head sees the tags, halogen lamps light the scene, and a Jetson Nano and an ESP32 sit on the table. A faded second arm pose shows the next viewpoint. An inset shows the head's internals.</desc>
+  <desc id="d">Side view of the setup. An SO-101 arm holds the scanner head above a potted plant on a ChArUco board. A scan mirror on the head sweeps a line of light across the plant, a pose camera on the head sees the board's tags for the head calibration, halogen lamps light the scene, and a Jetson Nano and an ESP32 sit on the table. A faded second arm pose shows the next viewpoint. An inset shows the head's internals.</desc>
   <style>
     text {{ font-family: {FONT}; }}
     .h1 {{ font-size: 30px; font-weight: 800; fill: #f1f5ff; }}
@@ -213,12 +213,12 @@ svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewB
   <rect x="36" y="{TABLE_Y}" width="1208" height="12" rx="3" fill="#18213f" stroke="#2c3966"/>
   <rect x="36" y="{TABLE_Y + 12}" width="1208" height="60" fill="url(#tableFace)"/>
 
-  <!-- AprilTag board -->
+  <!-- ChArUco board -->
   <path d="M520 {TABLE_Y} L900 {TABLE_Y} L930 {TABLE_Y - 26} L550 {TABLE_Y - 26}Z" fill="#141c38" stroke="#34436f"/>
   {"".join(tag(x, TABLE_Y - 22) for x in (548, 588, 832, 872))}
   {"".join(tag(x, TABLE_Y - 11) for x in (538, 578, 822, 862))}
 
-  <!-- RGB pose camera view -->
+  <!-- pose camera view -->
   <path d="M{f(W1[0] + 64)} {f(W1[1] - 4)} L548 {TABLE_Y - 20} M{f(W1[0] + 64)} {f(W1[1] - 4)} L900 {TABLE_Y - 14}" stroke="#7dd3fc" stroke-opacity="0.45" stroke-width="1.3" stroke-dasharray="5 5" fill="none"/>
 
   <!-- plant -->
@@ -275,13 +275,13 @@ svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewB
   {leader([(250, 352), (296, 400)])}
   {label(5, 60, 520, "ESP32 + TMC2209", ["Steps the mirror on", "serial commands."])}
   {leader([(232, 560), (398, TABLE_Y - 12)])}
-  {label(2, 470, 712, "AprilTag board", ["Pose of every viewpoint."])}
+  {label(2, 470, 712, "ChArUco board", ["Head calibration, once."])}
   {leader([(500, 690), (556, TABLE_Y - 14)])}
   {label(4, 900, 712, "Jetson Nano", ["Capture, calibration warp", "and the CUDA splat renderer."])}
   {leader([(930, 690), (1004, TABLE_Y - 8)])}
   {label(3, 1138, 474, "Halogen lamps", ["Fixed, NIR-rich light."], anchor="end")}
   <text x="540" y="{f(M_MAIN[1] + 76)}" class="small" text-anchor="end">mirror sweep:</text>
-  <text x="540" y="{f(M_MAIN[1] + 94)}" class="small" text-anchor="end">~150 lines per viewpoint</text>
+  <text x="540" y="{f(M_MAIN[1] + 94)}" class="small" text-anchor="end">~107 lines per viewpoint</text>
   {inset()}
 </svg>
 '''

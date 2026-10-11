@@ -104,7 +104,7 @@ The pose of line *l* in sweep *s* is
 camera_in_world(l) = head_in_world(s) * virtual_camera_in_head(mirror_angle(l))
 ```
 
-`head_in_world` comes from the arm (or the AprilTag board) and is fixed for the
+`head_in_world` comes from the arm's joint readings and is fixed for the
 whole sweep; the mirror angle comes from the stepper's step count. The head
 geometry is `cad_head_model()` in
 [`scan_model.cpp`](src/scan_model.cpp), taken from the head layout in
