@@ -18,8 +18,10 @@ DATA=${SO101_SCAN_DATA:-$HOME/so101_scan}
 WS=${SO101_WS:-$HOME/so101_ws}
 mkdir -p "$DATA" "$WS/src"
 
+# On a Jetson Nano (JetPack 4.6, Docker 20.10.7) this docker build fails: use jetson/ros.sh,
+# which builds the image another way and then runs this script.
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo "Building $IMAGE (once; about 10 minutes on a Jetson Nano)"
+    echo "Building $IMAGE (once; on a Jetson Nano use jetson/ros.sh instead)"
     docker build -t "$IMAGE" "$HERE"
 fi
 

@@ -79,7 +79,7 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
   </tr>
 </table>
 
-The whole rig is a parametric [FreeCAD model](cad/). One script builds the SO-101 from its URDF, reads the optical spacings from the Optiland model, and wraps the optics in a printable PETG housing that slides onto a puck on the wrist-roll servo. It checks the parts for clashes, the mirror's full turn and the wrist's clearance, and works out the servo load: the 185 g head needs 74% of the shoulder servo's stall torque with the arm stretched out level, and 18% in the folded scanning pose above. The STLs and assembly steps are in [`cad/`](cad/).
+The whole rig is a parametric [FreeCAD model](cad/). One script builds the SO-101 from its URDF, reads the optical spacings from the Optiland model, and wraps the optics in a printable PETG housing that slides onto a puck on the wrist-roll servo. It checks the parts for clashes, the mirror's full turn and the wrist's clearance, and works out the servo load: the 187 g head needs 75% of the shoulder servo's stall torque with the arm stretched out level, and 18% in the folded scanning pose above. The STLs and assembly steps are in [`cad/`](cad/).
 
 ## Optical path
 

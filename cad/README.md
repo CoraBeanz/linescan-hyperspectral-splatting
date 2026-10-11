@@ -75,7 +75,7 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | Filter cap | [`filter_cap.stl`](stl/filter_cap.stl) | Lip face down. Check that the sleeve is a snug push fit on the objective | 1 g |
 | Stop washer, 4 mm | [`stop_washer.stl`](stl/stop_washer.stl) | Flat, 0.2 mm layers. Clear any stringing from the hole, since its edge is the stop | 0.1 g |
 | Stop washer, 5 mm (optional) | [`stop_washer_5mm.stl`](stl/stop_washer_5mm.stl) | As the 4 mm one. Swap it in at first light to compare: see [Optics as built](#optics-as-built) | 0.1 g |
-| Bench puck (optional) | [`bench_puck.stl`](stl/bench_puck.stl) | Flat side down. A 1/4"-20 hex nut presses in from below | 19 g |
+| Bench puck (optional) | [`bench_puck.stl`](stl/bench_puck.stl) | Flat side down. Two 6.6 mm holes at x = ±19 mm take 1/4"-20 or M6 screws into an optical table; for a tripod, a 1/4"-20 hex nut presses into the middle hole from below | 19 g |
 | Controller tray | [`controller_tray.stl`](stl/controller_tray.stl) | Floor on the bed. 3 perimeters, 20% infill. It stays on the table, so PLA is fine: see [Controller tray](#controller-tray) | 30 g |
 
 ### Bought
@@ -93,7 +93,7 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | Long-pass filter: Edmund #54-652, SCHOTT GG-495, Ø12.5 × 3 mm | listing. The cap's seat takes the ±0.38 mm diameter tolerance |
 | Scan mirror: 20 × 20 mm piece cut from a RUEHALF 100 × 100 × 3 mm front-surface mirror | thickness from the listing |
 | Stepper: StepperOnline 8HS11-0204S, NEMA 8, 1.8°, 0.2 A | size, shaft and holes from the listing; boss and thread depth estimated |
-| A3144 hall sensor and a 5 × 1.6 mm magnet, magnetized through its thickness | measured |
+| A3144 hall sensor and a 5 × 1.6 mm magnet, magnetized through its thickness | magnet measured; the sensor's size estimated, see [Measure these first](#measure-these-first) |
 | Hall breakout from [`pcb/`](../pcb/README.md#hall-sensor-breakout), 14 × 12.4 × 0.8 mm, with its 3-wire cable soldered in | outline, holes and lead positions from `pcb/` |
 | Pose camera: Pi NoIR v2 (owned) | Raspberry Pi drawing |
 
@@ -102,11 +102,11 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | Qty | Part | Where |
 |---|---|---|
 | 4 | M3 × 6 | puck to the servo horn |
-| 4 | M2 × 4 | stepper to the lid, from inside (the heads sit flush) |
+| 4 | M2 × 5, with 1 mm filed off if the motor's holes are shallow (see [Measure these first](#measure-these-first)) | stepper to the lid, from inside (the heads sit flush) |
 | 2 + 2 + 2 | M3 × 35, M3 washers and M3 nuts | from the counterbores on the +X face, through the floor and the lid, nutted on the lid's motor pad |
-| 2 + 2 | M3 × 8 and M3 × 6 heat-set inserts (Pofsnnx: 5.0 mm knurl, 4.5 mm holes) | lid ears to the housing |
+| 2 + 2 | M3 × 8 screws, and M3 heat-set inserts 6 mm long (Pofsnnx: 5.0 mm knurl, 4.5 mm holes) | lid ears to the housing |
 | 1 + 1 | M3 × 8 and M3 nut | mirror clamp pinch screw |
-| 8 + 8 | M2 × 5 and M2 × 4 heat-set inserts (Pofsnnx: 3.0 mm knurl, 2.85 mm holes) | camera board (4) and pose camera (4) |
+| 8 + 8 | M2 × 5 screws, and M2 heat-set inserts 4 mm long (Pofsnnx: 3.0 mm knurl, 2.85 mm holes) | camera board (4) and pose camera (4) |
 | 2 | M2 × 5 | objective's M12 holder to its carrier, self-tapping into the printed pilot holes |
 | 2 | M2 × 5 | collimator's M12 holder to the back of the slit block, self-tapping (3 mm of thread in the block) |
 | 1 | M2 × 5 | hall breakout to the +X wall, self-tapping (2.5 mm of thread in the wall) |
@@ -117,24 +117,26 @@ Plus CA glue for the magnet, mirror and slit blades, and Kapton tape for the gra
 
 ## Measure these first
 
-These numbers came from estimates or listings, not datasheets. Check them when the parts arrive, before printing the part they affect. All of them are cells in the Params sheet; the estimates are marked `est`.
+These numbers came from estimates or listings, not datasheets. Check them when the parts arrive, before printing the part they affect. All of them but the A3144's pocket are cells in the Params sheet; the estimates are marked `est`.
 
 | Value | Assumed | Affects |
 |---|---|---|
 | B0152 hole spacing (`brd_hole` along X, `brd_hole_y` along the dispersion) | 29 mm square | camera standoffs on the housing |
-| B0152 lens holder size (`brd_holder_h`, `brd_holder_w`) | 10 mm tall, 14 mm square | camera opening in the end wall |
+| B0152 lens holder size (`brd_holder_w`; `brd_holder_h` only draws it) | 14 mm square, 10 mm tall | the end wall's 20.8 mm camera opening, cut to pass the holder's 19.8 mm across corners: measure across the corners too |
 | B0152 sensor above the PCB (`sensor_above_pcb`) and PCB thickness (`brd_t`) | 1 mm, 1.6 mm | where the end wall sits so the sensor is in focus; camera screw length |
-| CIL161 barrel (`obj_od`, `obj_len`), on the M12ANIR version | Ø14 × 18.5 mm | filter cap fit, objective position, and where the stop washer sits: 8.5 mm ahead of the lens's principal plane as drawn, 8.1 mm in layout E |
+| CIL161 barrel (`obj_od`, `obj_len`), on the M12ANIR version | Ø14 × 18.5 mm | filter cap fit, objective position, and where the stop washer sits: 8.5 mm ahead of the lens's principal plane as drawn, 8.1 mm in layout E. `obj_len` plus `obj_bfl` also sets the filter cap's 1.41 mm clearance to the turning mirror, which `build_rig.py` reports in `build_report.json` but doesn't fail on |
 | CIL122 barrel (`cam_od`, `cam_len`), on the M12ANIR version | Ø15 × 19 mm | how close the camera lens can get to the grating |
 | LN016 length (`coll_len`) | 21 mm | grating carrier position |
-| Lens back focal lengths (`*_bfl`) | 5–6 mm | carrier positions. Turning a lens in its M12 thread takes up a millimetre or two |
-| LN016 back focus (`coll_bfl`): rear of the barrel to the sharp image of a distant lamp | 6.0 mm; a sibling Arducam 25 mm lens lists 5.2 | slit block thickness, which puts the collimator where it focuses on the slit |
+| Lens back focal lengths (`*_bfl`) | 5–6 mm | carrier positions. A lens screwed in to the end of its cut holder can be turned back out a millimetre or two for a longer back focus than drawn, but not further in for a shorter one |
+| LN016 back focus (`coll_bfl`): rear of the barrel to the sharp image of a distant lamp | 6.0 mm; a sibling Arducam 25 mm lens lists 5.2 | slit block thickness, which puts the collimator where it focuses on the slit; the grating carrier (`z_film`), the camera end and the lid move with it one for one. At 5.2 mm the ledge the field lens sits on is only 0.18 mm thick |
 | CIL122 aperture: its spec table says f/2.0, the text on the same page f/2.4 | f/2.0, a 6 mm pupil | not the CAD. At f/2.4 (5 mm) the ends of the band lose a little more light; set `d_cam` to 5 in [`spectrograph_model.py`](../optics/spectrograph_model.py) and rerun `optics_check.py` to see how much |
+| Grating groove density (`lines_per_mm`, from layout E in [`spectrograph_model.py`](../optics/spectrograph_model.py)) | 500 l/mm | the camera tilt `theta` (22.02° at 500 l/mm), which the housing's camera end and the lid are drawn at. Measure the pitch with a laser ([parts list](../docs/parts_list_and_design.md#31-spectrograph-optics), row 8); for another pitch, set it in layout E and rebuild |
+| A3144 body | 4.1 × 3.0 × 1.5 mm | the hall pocket in the +X wall, 4.5 × 3.3 × 1.71 mm, set in [`rig/printed.py`](rig/printed.py) rather than the Params sheet |
 | Lens thread lengths (`obj_thread`, `coll_thread`): rear end to where the barrel widens | 9 mm | where to cut the M12 holders, see [Assembly](#assembly) |
 | M12 holder ear thickness (`h12_ear_t`) | 2 mm | holder screw length: M2 × 5 leaves 3 mm of thread in the carrier |
 | Snap-off blade thickness (`blade_t`) | 0.38 mm | depth of the blade recess in the slit block |
 | Stepper pilot boss (`mot_boss_d`, `mot_boss_h`) | Ø15 × 1.5 mm | the pocket in the lid it sits in; the motor has to sit flat on the pad |
-| Stepper thread depth (`mot_hole_depth`) | 2.5 mm | the M2 × 4 screws reach 2.2 mm into it. M2 × 5 reach 3.2 mm, so use them only if the holes are that deep, or file 1 mm off them |
+| Stepper thread depth (`mot_hole_depth`) | 2.5 mm | the M2 × 5 screws reach 3.2 mm into it, so use them as they are only if the holes are that deep; otherwise file 1 mm off four of them (2.2 mm) |
 
 ## Assembly
 
@@ -142,7 +144,7 @@ These numbers came from estimates or listings, not datasheets. Check them when t
 2. Press in the heat-set inserts: two M3 in the lid bosses on the housing, four M2 in the camera standoffs and four M2 in the pose-camera standoffs.
 3. Build the optics on their carriers. The objective's holder screws to the objective carrier. Drop the long-pass disc into the filter cap and the 4 mm stop washer in on top of it, then push the cap onto the front of the lens until the lens presses them together. In the slit block, the field lens drops into its pocket from the front, curved side up toward the blades, and its flat face sits on the ledge at the bottom of the pocket (a dot of glue on its rim stops it rattling). Turned the other way it would make the slit look 1.35× as wide, and the resolution would drop from 4.1 to 5.4 nm. The two blade pieces go in the recess over it with the 0.05 mm feeler blade setting the gap, and the collimator's holder screws to the back. Tape the grating film into its carrier with the grooves along X. Slide the three carriers into their slots.
 4. Fit the camera board on the end wall and the pose camera on the +Y face. Then the hall sensor. Solder the 3-wire cable into the breakout's S, G and + pads from the front, and pass a thread through the two tie holes below them so it runs across the back of the board. Bend the A3144's three leads 90° toward its back, away from the printed face, about 0.5 mm below the body. Push it into its pocket in the +X wall from inside, printed face toward the magnet, so the leads go out through the slot under the pocket and the body sits on the ledges either side of it. Feed the leads through the breakout's three holes from behind; seen from outside, VCC is on the right, at the square pad. Press the board flat on the wall and screw it on with an M2 × 5 through its M2 hole, then solder and trim the leads and tie the thread around the cable. A 0.8 mm recess behind the board's lower half leaves room for the thread and for solder that shows through the pads. The screw's tip comes 1.7 mm through the wall and passes about 1 mm from the mirror clamp as it turns, so don't use a longer one.
-5. Screw the stepper to the lid with the four M2 × 4 from inside. The A3144 switches on one pole only, so pass each face of the magnet over the powered sensor first and glue it into the clamp's tab with the face that switches it facing out. Glue the mirror onto the pad between the notches, then put the clamp on the shaft.
+5. Screw the stepper to the lid with the four M2 × 5 from inside, filed down first if its holes are shallow. The A3144 switches on one pole only, so pass each face of the magnet over the powered sensor first and glue it into the clamp's tab with the face that switches it facing out. Glue the mirror onto the pad between the notches, then put the clamp on the shaft.
 6. Take the gripper off the wrist-roll horn and screw the puck on. Slide the housing onto the rail, then fit the lid so the mirror goes in through the open side. The two M3 × 35 bolts go in from the +X face and take a washer and nut each on the lid's motor pad, and the two M3 × 8 go through the lid ears.
 
 ## Controller tray
@@ -183,7 +185,7 @@ The head was first drawn around a 150 g NEMA 17 pancake, which pushed the should
 |---|---|---|
 | Motor | NEMA 8, 1.8°, 0.2 A, 60 g | NEMA 17 pancake, 0.9°, 1.2 A, 150 g |
 | Head | 187 g | 280 g |
-| Motor to lid | 4× M2 × 4 from inside; the long bolts end in washers and nuts on the lid | 2× M3 × 6 from inside; the long bolts thread into its lower holes |
+| Motor to lid | 4× M2 × 5 from inside (filed if its holes are shallow); the long bolts end in washers and nuts on the lid | 2× M3 × 6 from inside; the long bolts thread into its lower holes |
 | Microstepping for 0.29 mm lines at 150 mm | 1/32 | 1/16 |
 
 The NEMA 8's 10 mm shaft reaches 5.5 mm into the clamp, with the pinch screw over it. Gravity on the mirror, clamp and magnet puts at most 0.014 N·cm on the shaft, about 1% of the motor's 1.6 N·cm holding torque. Build the pancake version with `RIG_MOTOR=17HM08 freecadcmd cad/build_rig.py`.
@@ -219,6 +221,8 @@ freecadcmd cad/build_rig.py                  # about 2 min: build, checks, STL/S
 On Windows, `freecadcmd` is `FreeCADCmd.exe` in FreeCAD's `bin` folder. Running the script with the GUI instead (`freecad cad/build_rig.py`, from the repo root) builds the same thing and keeps the part colours in the saved file.
 
 To change a number, open `so101_hsi_rig.FCStd`, edit the cell in the **Params** sheet and recompute. Everything that depends on it moves. Each value has a note saying what it is and where it came from. The joint angles (`q_*`) pose the arm. The STLs don't update on a recompute, so after a change either export the changed body by hand or make the same edit in [`rig/params.py`](rig/params.py) and rerun the script.
+
+After a rebuild with new numbers, bring the rest of the repo along: `python3 cad/optics_check.py` rewrites [`optics_as_built.txt`](optics_as_built.txt), `python3 calibration/tools/export_optiland_map.py` rewrites the calibration kit's design map, and `freecadcmd -c "exec(open('ros2/so101_scan_description/scripts/export_head_from_cad.py').read())"` rewrites the URDF's head (both Python ones need `optiland`). CI fails on whichever is out of date.
 
 Renders (Blender 4.x and Pillow):
 

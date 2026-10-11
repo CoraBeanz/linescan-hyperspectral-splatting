@@ -32,8 +32,9 @@ It doesn't touch the arm's own joint zeros (`sts_calibrate` sets those) or the s
 
 ## What you need
 
-- The rig working end to end: the arm calibrated with `sts_calibrate`, the mirror homing, and `line_camera` binning lines with an `hsical` calibration ([`ros2/README.md`](../../ros2/README.md#scanning-with-the-spectrograph-camera)).
-- The pose camera (the Pi Camera Module v2 NoIR on the head) on the Nano's second camera port, `/dev/video1`.
+- The rig working end to end: the arm calibrated with `sts_calibrate`, the mirror homing with its working angle (`home_pos`) already set ([firmware README](../../firmware/README.md#calibration)), and `line_camera` binning lines with an `hsical` calibration ([`ros2/README.md`](../../ros2/README.md#scanning-with-the-spectrograph-camera)).
+- The pose camera (the Pi Camera Module v2 NoIR on the head) on the Nano's second camera port, `/dev/video1`. That needs a B01 Nano: the A02 has only one camera port.
+- The camera's focus tool, the small plastic one that comes with the Camera Module v2, to refocus its lens for the board.
 - A **laser printer**. Toner is carbon black and stays black in the near infrared; most inkjet inks go transparent past about 700 nm, and the board would fade out of half the bands.
 - Stiff, flat card or foam board to glue the print to, and calipers or a steel rule.
 - The halogen lamp, lighting the board evenly.
@@ -55,9 +56,9 @@ python -m headcal board ~/headcal --span-mm 199.6
 
 That rewrites `board.json` to the printed size (it leaves `board.svg` alone). The board's size sets the scale of everything the calibration measures, so a 0.5% printer error would otherwise become a 0.5% error in every distance.
 
-**2. Place the board.** Lay it flat on the table with its centre 260 mm in front of the arm's base, on base_link's x axis (the centre ticks on its edges help; Foxglove's TF view shows the axis). A centimetre or two off and turned up to about 20° is fine: the calibration measures where the board is. For another spot, make a new plan: `python -m headcal plan --centre 0.24 0.03 --out myplan.yaml`.
+**2. Place the board.** Lay it flat on the table with its centre 260 mm in front of base_link's origin, on its x axis (the centre ticks on its edges help; Foxglove's TF view shows the axis). base_link's origin is 38.8 mm behind the shoulder's turning axis, so the board's centre is 221 mm in front of that axis. A centimetre or two off and turned up to about 20° is fine: the calibration measures where the board is. For another spot, make a new plan: `python -m headcal plan --centre 0.24 0.03 --out myplan.yaml`.
 
-**3. Bring up the rig.** In the ROS container (`ros2/docker/run.sh`), start the arm, the mirror and the spectrograph camera as for any scan, with the head at its CAD numbers:
+**3. Bring up the rig.** In the ROS container (`jetson/ros.sh` on the Nano), start the arm, the mirror and the spectrograph camera as for any scan, with the head at its CAD numbers:
 
 ```bash
 ros2 launch so101_scan_bringup scan_arm.launch.py camera:=v4l2 camera_calibration:=/data/hsical/cal head_calibration:=none
@@ -167,7 +168,7 @@ A scan line is about 0.3 mm on the board, so the calibration places it to about 
 | Arm joint zeros 1°, 0.8° and 0.6° off | 0.21 / 0.33 mm; with `--joint-offsets`, 0.14 / 0.23 mm and the offsets found within 0.06° |
 | No noise on the joint readings | 0.001 / 0.003 mm |
 
-The last row shows where the error comes from: almost all of it is the arm's joint readings, which put the head on the wrist. `pytest` (in `calibration/`) runs the pieces one at a time and an 8-viewpoint scan end to end, including the check that `head_calibration.yaml` builds through xacro into exactly the URDF the solver describes.
+The last row shows where the error comes from: almost all of it is the arm's joint readings, which put the head on the wrist. `python -m pytest` (in `calibration/`; bare `pytest` can't import the packages) runs the pieces one at a time and an 8-viewpoint scan end to end, including the check that `head_calibration.yaml` builds through xacro into exactly the URDF the solver describes.
 
 ## Limits
 
