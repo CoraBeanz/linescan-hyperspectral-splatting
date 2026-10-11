@@ -1,5 +1,5 @@
 # line_camera: the spectrograph camera. Exposure and gain can be changed while it runs
-# (ros2 param set /line_camera exposure_us 8000).
+# (ros2 param set /line_camera exposure_us 8000.0).
 line_camera:
   ros__parameters:
     source: v4l2               # v4l2: the IMX219 on /dev/video0; fake: a simulated one
@@ -18,7 +18,8 @@ line_camera:
     nm_step: 0.0               # band width, nm; 0: the calibration's grid
     nm_min: 0.0                # band range, nm; 0 and 0: the calibration's
     nm_max: 0.0
-    # true if binned pixel 0 is at the head's +X end of the slit (see the README's first light)
+    # true if binned pixel 0 is at the head's +X end of the slit (see ros2/README.md, "Scanning
+    # with the spectrograph camera")
     slit_reversed: false
     match_margin: 0.0005       # s a frame's exposure must keep clear of the mirror's moves
     raw_every: -1              # keep the raw frame of every n-th line; -1: all without a

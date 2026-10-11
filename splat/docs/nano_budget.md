@@ -253,6 +253,7 @@ builds (JetPack 4.6's CUDA 10.2):
 sudo nvpmodel -m 0 && sudo jetson_clocks       # 10 W mode and fixed clocks, so runs compare
 jetson/splat.sh build                          # the CUDA 10.2 build for sm_53
 jetson/splat.sh test                           # every test, the GPU ones included
+sudo -v                                        # the password now: tegrastats can't ask for it in the background
 sudo tegrastats --interval 1000 --logfile budget-tegrastats.txt &   # RAM and GPU load once a second
 jetson/splat.sh python3 /src/splat/tools/nano_budget.py --label "Jetson Nano"
 sudo pkill tegrastats
@@ -260,11 +261,15 @@ sudo pkill tegrastats
 
 `nano_budget.py` makes the `small` and `default` datasets with 16 sweeps (once,
 under `~/linesplat/budget`), trains each in the `gpu`, `gpu-adam` and `basis8`
-modes for 3000 steps, and prints the tables above with the Nano's numbers; it
-writes them to `~/linesplat/budget/results.json` too. Add `--presets tiny,small,default,full` for all
+modes for 3000 steps, and prints three tables with the Nano's numbers: the time per
+step, with each run's GPU buffers, device memory used and host peak; the GPU time by
+pass; and the GPU buffers by category. The 3000-step times and the sums in
+[What the Nano needs](#what-the-nano-needs) aren't printed, so work those out from the
+tables. It writes the results to `~/linesplat/budget/results.json` too. Add `--presets tiny,small,default,full` for all
 four, or `--modes gpu,gpu-adam,basis8,cpu` for the CPU as well (slow: 15 to
 35 minutes a run). Running headless (`sudo systemctl isolate multi-user.target`)
-frees about half a GB for `full`.
+frees about half a GB for `full`. It ends the desktop session, so run it over SSH;
+`sudo systemctl isolate graphical.target` brings the desktop back.
 
 The `RAM a/b MB` field in tegrastats' log is the whole board's memory, the
 number the 4 GB has to cover; its peak during each run goes in the memory

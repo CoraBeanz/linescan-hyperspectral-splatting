@@ -92,11 +92,13 @@ positive turns the view toward +Z. The hall sensor sits at -40°, which the firm
 
 **Arm joints:** zero is the URDF's zero pose (upper arm straight up, forearm level and
 forward, wrist in line, scan window facing right). `sts_calibrate` records each servo's ticks
-in that pose, which way it turns, and its range.
+in that pose, which way it turns, and its range. The scan window sets the wrist roll's zero, so
+once the head replaces the gripper, run `sts_calibrate --joints wrist_roll` again.
 
 ## Try it without hardware
 
-On any 64-bit Linux machine with Docker (or the Nano itself):
+On any 64-bit Linux machine with Docker (on the Nano, `jetson/ros.sh` in place of
+`ros2/docker/run.sh`, which can't build the image on JetPack 4.6's Docker):
 
 ```bash
 ros2/docker/run.sh                 # builds the image the first time, then opens a shell
@@ -116,7 +118,7 @@ simulated camera records them, and a folder appears under `~/so101_scan/scans/` 
 it into a dataset `splat_train` reads. To watch, open
 [Foxglove](https://foxglove.dev/download) on Windows, connect to `ws://<that machine's ip>:8765`, add a
 3D panel, and turn on `/scan/markers`: every scan line lands on the table in front of the arm.
-With ROS 2 on a desktop, `rviz:=true` does the same.
+`rviz:=true` does the same with ROS 2 on a desktop; the container has no RViz.
 
 New viewpoints: `make_plan` finds arm poses that put the scan line on a spot from several
 directions, and leaves out the ones the arm can't reach or that come too close to the table:
@@ -144,9 +146,9 @@ is named, so you can turn the object round for a second scan.
 
 **Dry run.** `scan_sweep --plan <plan> --dry-run` plays a plan on the running stack without
 moving anything ([`dry_run.py`](so101_scan_sweep/so101_scan_sweep/dry_run.py)): a see-through
-copy of the arm moves through the viewpoints at the plan's speed in RViz or Foxglove
-(`/scan/markers`), each sweep's scan lines appear where they would land, and a coverage plan's
-box shows its surface turning from red to yellow to green as views see it. It checks every move
+copy of the arm moves through the viewpoints at the plan's speed in Foxglove (`/scan/markers`,
+or RViz on a desktop install), each sweep's scan lines appear where they would land, and a
+coverage plan's box shows its surface turning from red to yellow to green as views see it. It checks every move
 for the joint limits and for how close the arm and head come to the table (and the object) on
 the way, the sweep against the bridge's mirror limits, and whether the controller, the mirror
 (homed?) and the camera are up, then prints a report and exits 1 if anything would go wrong.
@@ -169,8 +171,9 @@ JetPack 4 is Ubuntu 18.04 and Humble needs 22.04, so ROS runs in the container
 ([`docker/Dockerfile`](docker/Dockerfile)); the Nano only needs Docker, which JetPack includes.
 [`docker/run.sh`](docker/run.sh) explains each flag it passes.
 
-1. **Clone the repo** on the Nano, let your user run Docker, and give the two USB devices
-   stable names:
+1. **Clone the repo** on the Nano and run [`jetson/nano_setup.sh`](../jetson/README.md#on-the-nano)
+   (then log out and back in, once). It lets your user run Docker, adds a 4 GB swap file for the
+   builds, and gives the two USB devices stable names. The same by hand, without the swap:
    ```bash
    sudo usermod -aG docker $USER      # then log out and back in, once
    sudo cp ros2/udev/99-so101-scan.rules /etc/udev/rules.d/
@@ -179,9 +182,9 @@ JetPack 4 is Ubuntu 18.04 and Humble needs 22.04, so ROS runs in the container
    ```
    If a name is missing, check the device's id with `lsusb` and fix its line in the rules file
    (the file says how).
-2. **Build:** `ros2/docker/run.sh`, then `colcon build` inside (about 10 minutes the first time
-   on a Nano; later builds only redo what changed). On JetPack 4.6, use
-   [`jetson/ros.sh`](../jetson/README.md) in place of `run.sh`: its Docker can't build this image.
+2. **Build:** [`jetson/ros.sh`](../jetson/README.md), then `colcon build` inside (about 10 minutes
+   the first time on a Nano; later builds only redo what changed). Use `jetson/ros.sh` wherever
+   this page says `ros2/docker/run.sh`: JetPack 4.6's Docker can't build this image the plain way.
 
 ## First steps with the real arm
 
@@ -193,15 +196,17 @@ supply; keep a hand near the power switch for anything that moves, and once the 
 
 1. **Find the servos** (read-only, nothing moves):
    `ros2 run so101_scan_hardware sts_scan --port /dev/so101`
-   should list ids 1 to 5 with their positions and voltages.
+   should list ids 1 to 5 with their positions and voltages (and id 6, the gripper, while it's
+   still on).
 2. **Calibrate:** `ros2 run so101_scan_hardware sts_calibrate --port /dev/so101`.
    It switches the motors off (asking you to hold the arm first if they are holding it), then
    asks you to put the arm in the zero pose, move each joint through its range and nudge each
    joint the way it names, and writes `~/so101_scan/calibration.yaml`. The servos' homing
    offsets stay as they are unless you add `--write-homing-offset`, and a run you stop puts them
    back; the only other thing it writes is position mode, to a servo that isn't in it. Already
-   calibrated the arm with LeRobot? `--from-lerobot <its json>` converts that file instead;
-   check the wrist roll afterwards.
+   calibrated the arm with LeRobot? Copy its JSON into `~/so101_scan`, which the container sees
+   as `/data`; then `--from-lerobot /data/<its json>` converts that file instead. Check the wrist
+   roll afterwards.
 3. **Check the calibration with the motors off:**
    `ros2 launch so101_scan_bringup scan_arm.launch.py torque:=false mirror:=fake foxglove:=true`.
    The motors switch off as it starts, so hold the arm. Move it by hand: the model in Foxglove
@@ -244,9 +249,10 @@ controller until a reset. If the cause is still there 5 s later, it switches the
 | An e-stop | | at once |
 
 **Soft limits** hold the arm back rather than stop it. Before a goal goes to the servos, the
-driver puts it through the URDF: the head's collision box and the arm's links stay 10 mm above
-the table, the head stays out of a cylinder around the `shoulder_pan` axis (80 mm radius, up to
-140 mm) that holds the base and the electronics, and no joint holds more than 60% of its stall
+driver puts it through the URDF: the corners of the head's collision box and the origins of the
+arm's link frames (not the links' whole shapes) stay 10 mm above the table, the head stays out
+of a cylinder around the `shoulder_pan` axis (80 mm radius, up to 140 mm) that holds the base
+and the electronics, and no joint holds more than 60% of its stall
 torque against gravity (the CAD report has the stretched-out arm at 75%; the ring plan peaks
 just under 50%). A step that would cross one isn't taken: the arm waits at the edge, any move
 back is allowed, and `/arm_safety/state` says which limit held it.
@@ -286,10 +292,12 @@ but the plan check still runs.
    --width 1640 --height 1232`. The 2x2 binned mode reads the slit's rows in about 20 ms, which
    leaves time for the mirror to move between frames at 30 fps; at full resolution a line would
    take two frames.
-2. **Start the camera with the arm:** `ros2 launch so101_scan_bringup scan_arm.launch.py
-   camera:=v4l2 camera_calibration:=/data/hsical/cal` (the folder `hsical calibrate` wrote).
+2. **Start the camera with the arm.** Copy the `cal` folder `hsical calibrate` wrote on the PC
+   to `~/so101_scan/hsical/cal` on the Nano (`ssh <user>@<nano> mkdir -p so101_scan/hsical`, then
+   `scp -r cal <user>@<nano>:so101_scan/hsical/`), then `ros2 launch so101_scan_bringup
+   scan_arm.launch.py camera:=v4l2 camera_calibration:=/data/hsical/cal`.
    [`config/line_camera.yaml`](so101_scan_camera/config/line_camera.yaml) has its settings;
-   `ros2 param set /line_camera exposure_us 8000` changes the exposure while it runs, and
+   `ros2 param set /line_camera exposure_us 8000.0` changes the exposure while it runs, and
    `~/preview` and `~/scan_preview` show the frames and the sweep so far, the sweep in colour
    too (see [the colour waterfalls](#seeing-a-scan-before-and-while-it-runs)).
 3. **Take a white and a dark**, with the mirror still and the head over the PTFE sheet under the
@@ -303,7 +311,10 @@ but the plan check still runs.
 5. **Convert:** `ros2 run so101_scan_camera scan_to_dataset <scan folder> <dataset folder>`, or
    `python3 splat/tools/scan_to_dataset.py` on any computer with numpy, then `splat_train`.
    Values are reflectance against the white, 46 bands from 500 to 950 nm, 256 pixels along the
-   slit, one head pose per sweep; `--help` lists the options.
+   slit, one head pose per sweep; `--help` lists the options. Off the Nano, copy
+   `~/so101_scan/references` along with the scan and add `--references <that folder>`: the scan
+   names it by its path in the container (`/data/references`), and without it the dataset
+   quietly comes out as radiance instead of reflectance.
 
 Two things to check on the first real scan: that pixel 0 is the head's -X end of the slit (scan
 something asymmetric; if the dataset comes out mirrored, set `slit_reversed: true`), and that

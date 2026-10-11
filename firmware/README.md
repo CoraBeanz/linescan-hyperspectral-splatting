@@ -14,12 +14,12 @@ All the logic is plain C++ in [`lib/scanmirror`](lib/scanmirror/src), tested on 
 
 | Part | Notes |
 |---|---|
-| ESP32 DevKit (ESP32-WROOM-32, `esp32dev`) | any 30 or 38 pin board with GPIO 16 to 27 |
-| BIGTREETECH TMC2209 module | 0.11 Ω sense resistors; for another module set `kTmcRSense` in [`include/board_pins.h`](include/board_pins.h) |
+| ESP32 DevKit (ESP32-WROOM-32, `esp32dev`) | any 30 or 38 pin board with GPIO 16 to 27; not a WROVER module, whose PSRAM uses GPIO 16 and 17 |
+| BIGTREETECH TMC2209 V1.3 module | 0.11 Ω sense resistors; for another module set `kTmcRSense` in [`include/board_pins.h`](include/board_pins.h) |
 | StepperOnline 8HS11-0204S | NEMA 8, 1.8°, 0.2 A, 24 Ω per coil |
 | 12 V 3 A supply | for the motor only; the ESP32 runs from USB |
-| A3144 hall sensor + 5 × 2 mm magnet | magnet in the mirror clamp, sensor in the head's +X wall |
-| 100 µF 25 V electrolytic capacitor | across VM and GND at the driver |
+| A3144 hall sensor + 5 × 1.6 mm magnet | magnet in the mirror clamp, sensor in the head's +X wall |
+| 100 µF 25 V electrolytic capacitor | across VS and GND at the driver |
 | 10 kΩ resistors (2), 1 kΩ resistor (1) | EN pull-up, hall pull-up, UART |
 
 ## Wiring
@@ -29,9 +29,9 @@ All the logic is plain C++ in [`lib/scanmirror`](lib/scanmirror/src), tested on 
 | GPIO 26 | TMC2209 STEP | |
 | GPIO 25 | TMC2209 DIR | |
 | GPIO 27 | TMC2209 EN | **and 10 kΩ from EN to 3.3 V**, so the motor stays off while the ESP32 boots |
-| GPIO 16 (RX2) | TMC2209 PDN_UART | straight to the pin |
-| GPIO 17 (TX2) | TMC2209 PDN_UART | **through 1 kΩ** (both ends share the one wire) |
-| 3.3 V | TMC2209 VDD (VIO) | logic supply |
+| GPIO 16 (RX2) | TMC2209 RX (PDN_UART on the V1.2) | straight to the pin |
+| GPIO 17 (TX2) | TMC2209 RX, the same pin | **through 1 kΩ** (both ends share the one wire) |
+| 3.3 V | TMC2209 VIO (VDD on the V1.2) | logic supply |
 | GND | TMC2209 GND, 12 V supply −, A3144 GND | one common ground |
 | GPIO 33 | A3144 OUT (pin 3) | **and 10 kΩ from OUT to 3.3 V** |
 | 5 V (VIN) | A3144 VCC (pin 1) | the A3144 needs 4.5 V or more; its output only pulls low, so 3.3 V is all the ESP32 sees |
@@ -39,13 +39,13 @@ All the logic is plain C++ in [`lib/scanmirror`](lib/scanmirror/src), tested on 
 | GPIO 19 | TRIG out | 100 µs pulse when a scan line is ready |
 | GPIO 2 | status LED | off: disabled; on: enabled; blinking: driver fault. A genuine DevKitC has no LED on this pin (many clones have a blue one); the [controller board](../pcb/README.md#scan-mirror-controller) has its own, D4 |
 
-TMC2209 MS1 and MS2 go to GND (UART address 0). The 12 V supply goes to VM and GND, with the capacitor right at the module. The motor's two coils go to A1/A2 and B1/B2 (the BTT board labels them A2, A1, B1, B2, below VM and GND). Find the pairs with a multimeter instead of trusting wire colours: about 24 Ω within a coil, open between coils. A coil wired backwards only reverses the direction, which `CFG dir_inv=1` undoes.
+TMC2209 MS1, MS2 and CLK go to GND (UART address 0, and the driver's own clock); TX stays unconnected. The 12 V supply goes to VS and GND, with the capacitor right at the module. The motor's two coils go to A1/A2 and B1/B2 (the BTT board labels them A2, A1, B1, B2, below VS and GND). Find the pairs with a multimeter instead of trusting wire colours: about 24 Ω within a coil, open between coils. Without a meter, short two leads together and turn the shaft by hand: it drags when they are a pair. A coil wired backwards only reverses the direction, which `CFG dir_inv=1` undoes.
 
 The motor and hall wires run up the arm to the head. Twist each coil's pair, and keep the hall wires away from them.
 
 ## Before the first power-up
 
-1. **Turn the current down.** The BTT module leaves the factory with VREF at about 1.2 V, which is 0.85 A, over four times what this motor takes. Its current follows I<sub>RMS</sub> = VREF / √2, so 0.2 A needs **VREF ≈ 0.28 V**. With 12 V on and the motor *unplugged*, measure between the potentiometer and GND and turn it down. The firmware sets the current over the UART and ignores VREF, but VREF is what the driver uses before the firmware takes over and in `ENABLE force=1`.
+1. **Turn the current down.** The BTT module leaves the factory with VREF at about 1.2 V, which is 0.85 A, over four times what this motor takes. Its current follows I<sub>RMS</sub> = VREF / √2, so 0.2 A needs **VREF ≈ 0.28 V**. With 12 V on and the motor *unplugged*, measure between the potentiometer and GND (with a multimeter, or the Analog Discovery 3's voltmeter) and turn it down. The firmware sets the current over the UART and ignores VREF, but VREF is what the driver uses before the firmware takes over and in `ENABLE force=1`.
 2. **Never plug or unplug the motor while the 12 V is on.** The voltage spike can kill the driver.
 3. Check the EN pull-up: with the ESP32 in reset (hold its EN button), the TMC2209's EN pin should read 3.3 V.
 
@@ -77,7 +77,7 @@ HOME                            EV HOMED ... width=<the hall window, in microste
 SCAN lines=20 step=8 period=100000
 ```
 
-If `HOME` reports `not_found`: check that `STATUS` shows `hall=1` with the magnet held at the sensor, and if it never does, flip the magnet over (the A3144 only reacts to one pole). If the mirror turns the wrong way for your setup, `CFG dir_inv=1` then `SAVE`. Settings stay in RAM until `SAVE`.
+`STATUS` reports the driver check the ESP32 made when it booted, so switch the 12 V on first: if it came on later, `STATUS` shows `drv=noresp` until a `REBOOT` (`ENABLE` checks again anyway). If `HOME` reports `not_found`: check that `STATUS` shows `hall=1` with the magnet held at the sensor, and if it never does, flip the magnet over (the A3144 only reacts to one pole). If the mirror turns the wrong way for your setup, `CFG dir_inv=1` then `SAVE`. Settings stay in RAM until `SAVE`.
 
 ## Bench test without the motor
 
@@ -87,12 +87,12 @@ The timing can be checked before the stepper arrives, with the Analog Discovery 
 python tools/mirrorctl.py -p COM5 "ENABLE force=1" "SCAN start=0 step=2 lines=10 period=33333.333"
 ```
 
-From line 1 on, each line shows two STEP pulses about 0.65 ms apart starting at its tick, MOVING high from the first step until 3 ms after the last, and a TRIG pulse as MOVING falls. A sweep (`mode=sweep step=4 period=10000`) shows STEP pulses every 2.5 ms with MOVING high throughout. The `t` and `ready` in the `EV LINE` lines match the edges to within a few microseconds.
+From line 1 on, each line shows two STEP pulses about 0.65 ms apart starting at its tick, MOVING high from the first step until 3 ms after the last, and a TRIG pulse as MOVING falls. A sweep (`SCAN mode=sweep step=4 lines=10 period=10000`) shows STEP pulses every 2.5 ms with MOVING high throughout. The `t` and `ready` in the `EV LINE` lines match the edges to within a few microseconds.
 
 ## Calibration
 
 - **Microstep angles are not even.** A hybrid stepper's microsteps can be a few percent of a full step off their ideal angles, repeating every 4 full steps (128 microsteps at 1/32). For the datacube, measure once: shine a laser pointer off the mirror onto a wall a couple of metres away and mark the spot every 8 microsteps over 128 (one microstep moves it 4 mm at 2 m). The marks give a correction table from position to angle.
-- **Working angle.** `home_pos` (−711 by default, the CAD's −40°) sets which position is the mirror's 45° working angle. Once the head is built, find the position that centres the view, then `CFG home_pos=<−711 minus that position>`, `SAVE` and `HOME` again.
+- **Working angle.** `home_pos` (−711 by default, the CAD's −40°) sets which position is the mirror's 45° working angle. Once the head is built, find the position that centres the view, then `CFG home_pos=<−711 minus that position>`, `SAVE` and `HOME` again. Do this before the [head calibration](../calibration/headcal/README.md), which measures the home angle and has to be redone after any change to `home_pos`.
 - **Settle time.** 3 ms covers a small mirror on this motor with margin. If stare lines look smeared, raise `settle`.
 
 ## How it works

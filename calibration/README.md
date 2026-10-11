@@ -44,9 +44,11 @@ The other calibration here, [`headcal`](headcal/README.md), measures where the s
 
 ## Install
 
-**PC** (Windows, Linux or macOS, Python 3.10 or newer), from this folder:
+**PC** (Windows, Linux or macOS, Python 3.10 or newer), from this folder, in a virtual environment (on Ubuntu 23.04 and newer and Debian 12, pip refuses to install outside one):
 
 ```bash
+python -m venv .venv             # once
+.venv\Scripts\activate            # Windows, in every new prompt; Linux and macOS: source .venv/bin/activate
 pip install -r requirements.txt
 python -m hsical selftest        # renders, calibrates and checks a small synthetic session: under a minute
 ```
@@ -59,7 +61,7 @@ cd calibration
 python3 -m hsical probe          # lists the camera's formats and controls
 ```
 
-Look for the `RG10` format at 3264 x 2464 and the `exposure`, `gain` and `frame_rate` controls. If your driver names them differently, pass the names with `--ctrl`, for example `--ctrl exposure_ctrl=exposure_time_absolute`. Every capture command accepts `--dry-run`, which prints the `v4l2-ctl` command line instead of running it. A Raspberry Pi works too: the kit uses picamera2's raw stream there.
+Look for the `RG10` format at 3264 x 2464 and 1640 x 1232 (the binned mode `line_camera` scans in) and the `exposure`, `gain` and `frame_rate` controls. If your driver names them differently, pass the names with `--ctrl`, for example `--ctrl gain_ctrl=analogue_gain`. The exposure control has to take microseconds: `exposure_time_absolute` counts in 100 µs steps, so every exposure would come out 100 times too long. Every capture command accepts `--dry-run`, which prints the `v4l2-ctl` command line instead of running it. A Raspberry Pi works too with `--backend picamera2`, which reads picamera2's raw stream; without it the kit uses `v4l2-ctl` whenever `/dev/video0` and `v4l2-ctl` exist.
 
 Raw frames matter. The normal camera pipeline (`nvarguscamerasrc`, libcamera's processed output) demosaics, white-balances and applies a tone curve, and all of that bends the numbers. The capture commands read the sensor's own 10-bit values.
 
@@ -67,9 +69,9 @@ Raw frames matter. The normal camera pipeline (`nvarguscamerasrc`, libcamera's p
 
 ### 1. Look at a lamp frame
 
-With the CFL lit in front of the slit, the frame should show bright vertical lines. The spectrum runs along the sensor's long side, blue on the left, and the slit runs top to bottom between rows 123 and 2340. A camera mounted on its side or flipped is fine: the kit finds out from the frames and turns them.
+With the CFL lit in front of the slit, the frame should show bright vertical lines. To see one, start `line_camera` with the real camera and no arm (on the Nano: `jetson/ros.sh ros2 launch so101_scan_bringup scan_arm.launch.py use_mock_hardware:=true mirror:=fake camera:=v4l2 foxglove:=true`; see [`ros2/README.md`](../ros2/README.md)) and open `/line_camera/preview` in Foxglove. The focus aid in step 2 also prints the brightest line's column. The spectrum runs along the sensor's long side, blue on the left, and the slit runs top to bottom between rows 123 and 2340. A camera mounted on its side or flipped is fine: the kit finds out from the frames and turns them.
 
-Where the design puts the brightest lines, in the middle of the slit, counting columns across the full 3280-px width (the Jetson's 3264-px mode trims a few):
+Where the design puts the brightest lines, in the middle of the slit, counting columns across the full 3280-px width (the Jetson's 3264-px mode trims a few; in the 1640 x 1232 mode, halve them):
 
 | Line | nm | Column | Lamp |
 |---|---|---|---|
@@ -92,15 +94,15 @@ A real build will sit a hundred pixels or so away from these columns, which is f
 python3 -m hsical focus --exposure-ms 20
 ```
 
-With the CFL lit, this prints the width of the brightest line, frame after frame. Turn the camera lens slowly and stop at the smallest number. The slit's own image is 23 to 24 px wide, so the width can't go below that. Perfect lenses would get within a pixel or two of it; real M12 lenses will probably bottom out somewhere around 30 to 45 px, which is 5 to 8 nm of resolution. What matters is finding the minimum. Keep the peak level the command prints between 40% and 90% by changing `--exposure-ms`. The camera lens can only fix its own focus: the collimator has to sit one focal length (25 mm) from the slit, as the printed housing holds it. If the minimum is broad and high, check that spacing first.
+With the CFL lit, this prints the width of the brightest line, frame after frame. Turn the camera lens slowly and stop at the smallest number. The slit's own image is 23 to 24 px wide, so the width can't go below that. Perfect lenses would get within a pixel or two of it; real M12 lenses will probably bottom out somewhere around 30 to 45 px, which is 5 to 8 nm of resolution. What matters is finding the minimum. Keep the peak level the command prints between 40% and 90% by changing `--exposure-ms`. The camera lens can only fix its own focus: the collimator has to sit 26.76 mm behind the slit (one 25 mm focal length behind the slit's image in the field lens), as the printed slit block holds it. If the minimum is broad and high, check that spacing first.
 
 ### 3. Capture a session
 
 ```bash
-python3 -m hsical plan ~/sessions/first_light
+python3 -m hsical plan ~/sessions/first_light --width 1640 --height 1232
 ```
 
-This walks through each setup in turn, waits for Enter, sets the exposure on its own, and shows the peak level and saturation after every set; `r` retakes a set. At the end it takes darks at every exposure and gain it used.
+`--width 1640 --height 1232` takes it in the 2x2 binned mode `line_camera` scans in, which refuses a calibration taken at any other size; without them the plan captures at the full 3264 x 2464. This walks through each setup in turn, waits for Enter, sets the exposure on its own, and shows the peak level and saturation after every set; `r` retakes a set. At the end it takes darks at every exposure and gain it used.
 
 | Set | Setup | Exposure | What it gives |
 |---|---|---|---|
@@ -113,7 +115,7 @@ This walks through each setup in turn, waits for Enter, sets the exposure on its
 | `laser` | Red laser spot or line on the PTFE | 60% | A check of the smile correction |
 | `dark_*` | Lens capped or slit covered, lamps off | Each exposure and gain used above | Black level and hot pixels |
 
-On the bench, before the objective is fitted, hold a piece of PTFE against the slit with the halogen shining through it, and lay the wires straight across the slit. Once the objective is in, the PTFE and wires go where the scan line falls, in focus. Each set is 16 frames (8 for the laser); at full resolution a whole session comes to about 3 GB, and `--frames 8` halves that. `--steps flat,wires` retakes only those sets.
+On the bench, before the objective is fitted, hold a piece of PTFE against the slit with the halogen shining through it, and lay the wires straight across the slit. The GG-495 has no seat there, so hold it between the lamp and the slit for every set: without it, mercury's 404.7 and 435.8 nm lines land in second order at 809.3 and 871.7 nm. Once the objective is in, the PTFE and wires go where the scan line falls, in focus. Each set is 16 frames (8 for the laser); a whole session comes to somewhat under 1 GB at 1640 x 1232 (about 3 GB at full resolution), and `--frames 8` halves that. `--steps flat,wires` retakes only those sets.
 
 ### 4. Copy the session to the PC and check it
 
@@ -203,9 +205,10 @@ A printed housing shifts a little with temperature and handling, and a knock can
 
 ```bash
 # on the Jetson
-python3 -m hsical capture checks cfl --kind lamp --source cfl --exposure-ms 60 --frames 4
-python3 -m hsical capture checks dark_60ms --kind dark --exposure-ms 60 --frames 4
+python3 -m hsical capture ~/checks cfl --kind lamp --source cfl --exposure-ms 60 --frames 4 --width 1640 --height 1232
+python3 -m hsical capture ~/checks dark_60ms --kind dark --exposure-ms 60 --frames 4 --width 1640 --height 1232
 # on the PC
+scp -r <user>@<jetson-address>:checks .
 python -m hsical check cal checks/cfl
 ```
 
@@ -261,7 +264,7 @@ The synthetic instrument is deliberately not the design. Its spectrum is shifted
 
 The largest wavelength errors sit beyond the outermost lamp lines, where the curve is extrapolated.
 
-A real M12 lens will likely be softer than this synthetic one, so the tests also run a session with twice the blur, where lines come out about 6 nm wide; it stays within the same limits. `pytest` runs 24 tests of `hsical` in about a minute and a half (and [`headcal`](headcal/README.md#testing-without-the-hardware)'s 22 in about 20 seconds more): the whole chain on quarter-size sessions (as designed, with the soft lens, and with the camera turned sideways and mirrored), the drift check on fresh lamp frames of the calibrated instrument as it was and knocked, plus the building blocks. They need numpy 2 and scipy 1.15 or newer, which is what pip installs on Python 3.10 and up: with older versions the wavelength fit finds fewer near-infrared lines or fits them less closely, and a few tests miss their limits.
+A real M12 lens will likely be softer than this synthetic one, so the tests also run a session with twice the blur, where lines come out about 6 nm wide; it stays within the same limits. `python -m pytest` (bare `pytest` can't import `hsical`) runs 24 tests of `hsical` in about a minute and a half (and [`headcal`](headcal/README.md#testing-without-the-hardware)'s 22 in about 20 seconds more): the whole chain on quarter-size sessions (as designed, with the soft lens, and with the camera turned sideways and mirrored), the drift check on fresh lamp frames of the calibrated instrument as it was and knocked, plus the building blocks. They need numpy 2 and scipy 1.15 or newer, which is what pip installs on Python 3.10 and up: with older versions the wavelength fit finds fewer near-infrared lines or fits them less closely, and a few tests miss their limits.
 
 ## Limits
 

@@ -32,12 +32,12 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
 
 | 1 · Pick a viewpoint | 2 · Sweep the slit | 3 · Train the splat |
 |---|---|---|
-| The SO-101 arm carries the scanner head to a pose and holds still. An RGB camera on the head reads an AprilTag board to get that pose. | A NEMA 8 stepper turns the scan mirror one microstep per frame. Each frame is one line of the object by its spectrum, and about 150 lines cover a 63 × 42 mm patch. | Every scan line is a training sample. A C++/CUDA renderer draws the splat through a line-camera model at that line's pose and compares it with the measured line. |
+| The SO-101 arm carries the scanner head to a pose and holds still. Its joint angles, through the robot model, give that pose. | A NEMA 8 stepper turns the scan mirror two microsteps per frame. Each frame is one line of the object by its spectrum, and a 107-line sweep covers about 64 × 43 mm. | Every scan line is a training sample. A C++/CUDA renderer draws the splat through a line-camera model at that line's pose and compares it with the measured line. |
 
 ## The rig
 
 <p align="center">
-  <img src="docs/img/rig.svg" width="100%" alt="Side view of the setup: the SO-101 arm holds the scanner head above a potted plant on an AprilTag board, a scan mirror sweeps a line across the plant, halogen lamps light it, and a Jetson Nano and an ESP32 sit on the table. An inset shows the parts inside the scanner head.">
+  <img src="docs/img/rig.svg" width="100%" alt="Side view of the setup: the SO-101 arm holds the scanner head above a potted plant on a ChArUco board, a scan mirror sweeps a line across the plant, halogen lamps light it, and a Jetson Nano and an ESP32 sit on the table. An inset shows the parts inside the scanner head.">
 </p>
 
 <table>
@@ -52,7 +52,7 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
 
 **Scanner head.** The spectrograph below, plus a first-surface scan mirror on a 60 g NEMA 8 stepper. A TMC2209 driver runs it at 1/32 microstepping from an ESP32, which takes plain-text commands from the Jetson over USB serial.
 
-**Pose.** An RGB camera on the head sees an AprilTag board under the object.
+**Pose.** The arm's joint readings give the head's pose for every line. A Pi NoIR camera on the head reads a printed ChArUco board once, in the [head calibration](calibration/headcal/README.md), to measure where the head really sits on the wrist.
 
 **Light.** Halogen lamps, because LEDs give almost nothing past 700 nm.
 
@@ -79,7 +79,7 @@ A hyperspectral camera records a whole spectrum at every pixel instead of three 
   </tr>
 </table>
 
-The whole rig is a parametric [FreeCAD model](cad/). One script builds the SO-101 from its URDF, reads the optical spacings from the Optiland model, and wraps the optics in a printable PETG housing that slides onto a puck on the wrist-roll servo. It checks the parts for clashes, the mirror's full turn and the wrist's clearance, and works out the servo load: the 185 g head needs 74% of the shoulder servo's stall torque with the arm stretched out level, and 18% in the folded scanning pose above. The STLs and assembly steps are in [`cad/`](cad/).
+The whole rig is a parametric [FreeCAD model](cad/). One script builds the SO-101 from its URDF, reads the optical spacings from the Optiland model, and wraps the optics in a printable PETG housing that slides onto a puck on the wrist-roll servo. It checks the parts for clashes, the mirror's full turn and the wrist's clearance, and works out the servo load: the 187 g head needs 75% of the shoulder servo's stall torque with the arm stretched out level, and 18% in the folded scanning pose above. The STLs and assembly steps are in [`cad/`](cad/).
 
 ## Optical path
 
@@ -232,9 +232,8 @@ It also shows what each part of the scene is made of: [`splat_materials`](splat/
 - [x] [FreeCAD model](cad/) of the arm and scanner head, with printable housing, optics carriers and wrist mount
 - [x] [Software](#software), tested in CI against simulated hardware: scan-mirror firmware, ROS 2 scan arm, calibration kit, line-camera splat renderer and trainer, browser viewer, the Jetson Nano build and an instrument simulator
 - [ ] **Bench spectrometer:** slit, field lens, collimator, grating and camera aimed at neon and CFL lamps; fit the wavelength map and the smile/keystone warp with the [calibration kit](calibration/)
-- [ ] **Line imager:** add the objective, focus it on a printed target, measure the line on a knife edge
-- [ ] **Scanner:** add the mirror and stepper, scan a color card, assemble the datacube on the Jetson (first CUDA kernel: warp + bin)
-- [ ] **3D:** arm viewpoints and AprilTag poses, then the first splat trained on real scans
+- [ ] **Line imager and scanner:** add the objective, mirror and stepper together (in the printed head the objective sees out only through the mirror), measure the line on a knife edge, scan a color card, assemble the datacube on the Jetson (first CUDA kernel: warp + bin)
+- [ ] **3D:** calibrate the head on the ChArUco board, then scan from several arm viewpoints and train the first splat on real scans
 
 Details for each step are in the [build order](docs/parts_list_and_design.md#4-build-order).
 

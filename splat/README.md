@@ -104,7 +104,7 @@ The pose of line *l* in sweep *s* is
 camera_in_world(l) = head_in_world(s) * virtual_camera_in_head(mirror_angle(l))
 ```
 
-`head_in_world` comes from the arm (or the AprilTag board) and is fixed for the
+`head_in_world` comes from the arm's joint readings and is fixed for the
 whole sweep; the mirror angle comes from the stepper's step count. The head
 geometry is `cad_head_model()` in
 [`scan_model.cpp`](src/scan_model.cpp), taken from the head layout in
@@ -532,7 +532,7 @@ python3 -m pip install --user --upgrade pip   # JetPack's pip is too old for the
 python3 -m pip install --user cmake           # then put ~/.local/bin first on PATH
 cmake -S splat -B build/splat -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=53
-cmake --build build/splat -j4
+cmake --build build/splat -j2                 # four jobs can run the 4 GB Nano out of memory
 ```
 
 Or let [`jetson/splat.sh`](../jetson/README.md) build and run it in a container with JetPack's CUDA.

@@ -10,13 +10,18 @@ different config.
 ```bash
 python3 pipeline/first_light.py                                   # the simulator's ring scan: about 10 minutes on 4 cores
 python3 pipeline/first_light.py pipeline/configs/sim-quick.yaml   # a smaller one: about 2 minutes
-python3 pipeline/first_light.py pipeline/configs/rig.yaml --set scan.path=~/so101_scan/scans/<scan>
+python3 pipeline/first_light.py pipeline/configs/rig.yaml --set scan.path=<scan>   # a real scan: see below
 ```
 
 It needs Python 3.10 or newer with the simulator's packages (`pip install -r sim/requirements.txt`:
 numpy, scipy, PyYAML and xacro), CMake with a C++17 compiler, and Node 18 or newer for the viewer
 check, which is skipped without Node. If `build/splat` doesn't have `splat_train` and
 `splat_export` yet, the first stage builds them, with CUDA when CMake finds it.
+
+On Windows, type `python` for `python3`, and run `set PYTHONUTF8=1` first (PowerShell:
+`$env:PYTHONUTF8=1`): without it, writing `report.md` fails on its ≤ and ≥ signs. The `--set`
+examples below are quoted for bash; in `cmd`, `--set sim.views='["down"]'` is
+`--set sim.views=[\"down\"]`.
 
 ## Contents
 
@@ -86,9 +91,26 @@ the same limits on the conversion and only asks that training doesn't make the p
 `scan_sweep` and `line_camera` write, as [ros2/README.md](../ros2/README.md#scanning-with-the-spectrograph-camera)
 describes.
 
-```bash
-python3 pipeline/first_light.py pipeline/configs/rig.yaml --set scan.path=~/so101_scan/scans/ring_20261010-140000
+First light runs on the PC, where the trainer has the GPU. Copy the scan from the Nano, and
+with it `~/so101_scan/references`, where `capture_reference` keeps the white and the dark: the
+scan names that folder by its path in the ROS container (`/data/references`), which the PC
+doesn't have, and without the white the converter quietly writes radiance instead of
+reflectance. Give the folder to the converter in a copy of `rig.yaml`, with its `convert:`
+section reading:
+
+```yaml
+convert:
+  slit_bins: 256
+  args: [--references, <folder>/references]
 ```
+
+```bash
+scp -r <user>@<nano>:so101_scan/scans/ring_20261010-140000 <user>@<nano>:so101_scan/references <folder>/
+python3 pipeline/first_light.py my_rig.yaml --set scan.path=<folder>/ring_20261010-140000
+```
+
+The converter's log, `logs/convert.log`, names the white it used, and its `wrote` line says
+`bands of reflectance`; `radiance` there means it found no white.
 
 If `line_camera` ran with a calibration, its lines are already binned and that's all it needs.
 Otherwise `--set scan.calibration=<hsical calibration>` bins the raw frames, or
@@ -180,7 +202,8 @@ python3 pipeline/first_light.py --help
 - `--from STAGE` and `--to STAGE` rerun part of the chain and reuse what the earlier stages left.
   For example, `--from train --set train.iterations=6000` retrains without scanning again.
 - `train.args` and `convert.args` pass extra flags straight to `splat_train` and
-  `scan_to_dataset.py`.
+  `scan_to_dataset.py`. Give them as a list, in the config file as above or as JSON with
+  `--set`: a plain string is split into single characters, which the tools ignore.
 
 ## Files
 

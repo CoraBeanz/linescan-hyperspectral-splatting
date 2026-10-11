@@ -22,7 +22,7 @@ is open writes them into the scan folder (session.py says what goes where).
   /scan_mirror/line    ScanLine          (subscribed) the mirror's scan lines
 
 Exposure and gain are parameters (exposure_us, gain) and can be changed while it runs, e.g.
-`ros2 param set /line_camera exposure_us 8000`; the next few frames are skipped while the sensor
+`ros2 param set /line_camera exposure_us 8000.0`; the next few frames are skipped while the sensor
 takes the new setting. Without a calibration the lines can't be binned, so every line's raw
 frame is kept instead (4 MB each): calibrate first (calibration/README.md) for real scans.
 

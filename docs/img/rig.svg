@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="784" viewBox="0 0 1280 784" role="img" aria-labelledby="t d">
   <title id="t">The rig: SO-101 arm with the scanner head</title>
-  <desc id="d">Side view of the setup. An SO-101 arm holds the scanner head above a potted plant on an AprilTag board. A scan mirror on the head sweeps a line of light across the plant, an RGB camera on the head sees the tags, halogen lamps light the scene, and a Jetson Nano and an ESP32 sit on the table. A faded second arm pose shows the next viewpoint. An inset shows the head's internals.</desc>
+  <desc id="d">Side view of the setup. An SO-101 arm holds the scanner head above a potted plant on a ChArUco board. A scan mirror on the head sweeps a line of light across the plant, a pose camera on the head sees the board's tags for the head calibration, halogen lamps light the scene, and a Jetson Nano and an ESP32 sit on the table. A faded second arm pose shows the next viewpoint. An inset shows the head's internals.</desc>
   <style>
     text { font-family: ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
     .h1 { font-size: 30px; font-weight: 800; fill: #f1f5ff; }
@@ -45,12 +45,12 @@
   <rect x="36" y="652" width="1208" height="12" rx="3" fill="#18213f" stroke="#2c3966"/>
   <rect x="36" y="664" width="1208" height="60" fill="url(#tableFace)"/>
 
-  <!-- AprilTag board -->
+  <!-- ChArUco board -->
   <path d="M520 652 L900 652 L930 626 L550 626Z" fill="#141c38" stroke="#34436f"/>
   <g transform="translate(548 630) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(588 630) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(832 630) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(872 630) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g>
   <g transform="translate(538 641) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(578 641) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(822 641) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g><g transform="translate(862 641) skewX(-48) scale(1 0.55)"><rect width="18.0" height="18.0" fill="#e6e9f2" fill-opacity="0.9"/><rect x="3.0" y="3.0" width="12.0" height="12.0" fill="#141c38"/><rect x="5.0" y="5.0" width="4.0" height="4.0" fill="#e6e9f2"/><rect x="9.0" y="9.0" width="4.0" height="4.0" fill="#e6e9f2"/></g>
 
-  <!-- RGB pose camera view -->
+  <!-- pose camera view -->
   <path d="M571.8 290.6 L548 632 M571.8 290.6 L900 638" stroke="#7dd3fc" stroke-opacity="0.45" stroke-width="1.3" stroke-dasharray="5 5" fill="none"/>
 
   <!-- plant -->
@@ -130,20 +130,20 @@
   <path d="M250 352 L296 400" fill="none" stroke="#8b93b0" stroke-width="1.2" stroke-opacity="0.8"/><circle cx="296" cy="400" r="3" fill="#8b93b0"/>
   <g><circle cx="73" cy="514" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="73" y="519" text-anchor="middle" class="num">5</text><text x="96" y="520" text-anchor="start" class="lt">ESP32 + TMC2209</text><text x="96" y="543" text-anchor="start" class="ls">Steps the mirror on</text><text x="96" y="563" text-anchor="start" class="ls">serial commands.</text></g>
   <path d="M232 560 L398 640" fill="none" stroke="#8b93b0" stroke-width="1.2" stroke-opacity="0.8"/><circle cx="398" cy="640" r="3" fill="#8b93b0"/>
-  <g><circle cx="483" cy="706" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="483" y="711" text-anchor="middle" class="num">2</text><text x="506" y="712" text-anchor="start" class="lt">AprilTag board</text><text x="506" y="735" text-anchor="start" class="ls">Pose of every viewpoint.</text></g>
+  <g><circle cx="483" cy="706" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="483" y="711" text-anchor="middle" class="num">2</text><text x="506" y="712" text-anchor="start" class="lt">ChArUco board</text><text x="506" y="735" text-anchor="start" class="ls">Head calibration, once.</text></g>
   <path d="M500 690 L556 638" fill="none" stroke="#8b93b0" stroke-width="1.2" stroke-opacity="0.8"/><circle cx="556" cy="638" r="3" fill="#8b93b0"/>
   <g><circle cx="913" cy="706" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="913" y="711" text-anchor="middle" class="num">4</text><text x="936" y="712" text-anchor="start" class="lt">Jetson Nano</text><text x="936" y="735" text-anchor="start" class="ls">Capture, calibration warp</text><text x="936" y="755" text-anchor="start" class="ls">and the CUDA splat renderer.</text></g>
   <path d="M930 690 L1004 644" fill="none" stroke="#8b93b0" stroke-width="1.2" stroke-opacity="0.8"/><circle cx="1004" cy="644" r="3" fill="#8b93b0"/>
   <g><circle cx="1125" cy="468" r="13" fill="#7dd3fc" fill-opacity="0.14" stroke="#7dd3fc" stroke-width="1.4"/><text x="1125" y="473" text-anchor="middle" class="num">3</text><text x="1102" y="474" text-anchor="end" class="lt">Halogen lamps</text><text x="1102" y="497" text-anchor="end" class="ls">Fixed, NIR-rich light.</text></g>
   <text x="540" y="458" class="small" text-anchor="end">mirror sweep:</text>
-  <text x="540" y="476" class="small" text-anchor="end">~150 lines per viewpoint</text>
+  <text x="540" y="476" class="small" text-anchor="end">~107 lines per viewpoint</text>
   <rect x="812" y="34" width="432" height="268" rx="16" fill="#0e1631" fill-opacity="0.96" stroke="#2c3b6e"/>
   <text x="832" y="64" class="lt">Scanner head, close up</text>
   <rect x="924" y="118" width="282" height="68" rx="10" fill="#18213f" stroke="#4b5f95" stroke-width="1.5"/>
   <rect x="932" y="128" width="266" height="48" rx="6" fill="#070b18" stroke="#2c3966"/>
   <rect x="1082" y="94" width="54" height="24" rx="5" fill="#121a33" stroke="#4b5f95"/>
   <circle cx="1136" cy="106" r="8" fill="#0a0f22" stroke="#7dd3fc" stroke-width="1.6"/>
-  <text x="1224" y="64" class="ls" text-anchor="end">RGB pose camera</text>
+  <text x="1224" y="64" class="ls" text-anchor="end">NoIR pose camera</text>
   <path d="M1152 72 L1142 98" stroke="#8b93b0" stroke-width="1.1"/>
   <rect x="836" y="126" width="52" height="52" rx="6" fill="#121a33" stroke="#4b5f95"/>
   <circle cx="862" cy="152" r="7" fill="#2b3a63" stroke="#4b5f95"/>

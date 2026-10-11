@@ -21,7 +21,9 @@ wired up:
 
 ## On the Nano
 
-It needs JetPack 4.6.x, the last JetPack for the Nano (L4T r32.7, Ubuntu 18.04, CUDA 10.2).
+It needs JetPack 4.6.1 or a later 4.6.x, the last JetPack for the Nano (L4T r32.7, Ubuntu 18.04,
+CUDA 10.2); `head -1 /etc/nv_tegra_release` should say `REVISION: 7`. Plain JetPack 4.6 is
+L4T r32.6.1: it will probably work, but splat's container is built from the r32.7.1 image.
 The SD card image has everything else: Docker and NVIDIA's container runtime.
 
 **Once.** Clone the repo and run the setup:
@@ -47,7 +49,9 @@ failure:
 The first run downloads the images and compiles everything, so it takes a while; later runs
 only redo what changed.
 
-**After that.** splat's builds and data live in `~/linesplat`:
+**After that.** splat's builds and data live in `~/linesplat`. The container sees that folder
+and the repo, nothing else, so copy a dataset made with ROS 2 over from `~/so101_scan/datasets`
+first (`cp -r ~/so101_scan/datasets/ring ~/linesplat/ring`):
 
 ```bash
 jetson/splat.sh build                                # after changing splat/
