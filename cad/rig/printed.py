@@ -186,7 +186,7 @@ def lid(doc, parent, P):
     x_out = -xi - P.lid_motor_t - 0.1
     cuts.append(b.cyl("shaft_hole", "x", (x_out, P.y_shaft, P.z_shaft), P.mot_shaft_d / 2 + 1,
                       P.lid_motor_t + 0.2))
-    cuts.append(b.cyl("boss_pocket", "x", (x_out, P.y_shaft, P.z_shaft), P.mot_boss_d / 2 + 0.25,
+    cuts.append(b.cyl("boss_pocket", "x", (x_out, P.y_shaft, P.z_shaft), P.mot_boss_d / 2 + P.boss_clear,
                       P.mot_boss_h + 0.3))
     into_motor = MOTORS[MOTOR]["bolts_into_motor"]
     for i, (sy, sz) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1))):
