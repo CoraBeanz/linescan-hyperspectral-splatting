@@ -35,8 +35,8 @@
    },
    {
     "part": "Lid with motor mount (printed)",
-    "g": 13.5,
-    "source": "PETG, 13.3 cm3 at 80%"
+    "g": 13.4,
+    "source": "PETG, 13.2 cm3 at 80%"
    },
    {
     "part": "Mirror clamp (printed)",
@@ -159,9 +159,9 @@
     "source": "est"
    }
   ],
-  "total_g": 186.8,
+  "total_g": 186.7,
   "com_head_mm": [
-   -10.7,
+   -10.6,
    -1.2,
    55.9
   ]
@@ -320,10 +320,10 @@
     ]
    ],
    "elbow_flex": [
-    0.702,
+    0.701,
     [
-     0,
-     0,
+     -15,
+     15,
      0
     ]
    ],
@@ -338,9 +338,9 @@
    "wrist_roll": [
     0.003,
     [
-     15,
-     -90,
-     75
+     -15,
+     -75,
+     90
     ]
    ]
   }
@@ -383,7 +383,7 @@
    "part": "Lid",
    "qty": 1,
    "print": "inner (flat) face on the bed; 0.2 mm layers, 4 perimeters around the motor holes",
-   "volume_cm3": 13.3,
+   "volume_cm3": 13.2,
    "size_mm": [
     125.9,
     47.7,

@@ -346,7 +346,7 @@ Several sizes in the CAD are estimates or come from listings, and the housing, s
 | M8 | B0152 holder: width across flats and across corners 3 to 6 mm above the PCB; base or ear thickness | 14 across flats | Calipers. Across corners must stay under about 20.3, the base under 3 | Housing end-wall hole (20.8 mm) |
 | M9 | uxcell M12 holders: ear thickness, hole spacing, footprint | ear 2, holes 20, 24 × 17 | Calipers; hole spacing as M7 | Screw length; the carriers if the holes aren't 20 mm apart |
 | M10 | Snap-off blades: thickness | `blade_t` 0.38 | Calipers on the flat back, away from the bevel; two blades | Slit block blade recess |
-| M11 | NEMA 8: pilot boss diameter and height; shaft diameter and length | 15 × 1.5; shaft 4 × 10 | Calipers (B5) | Lid motor pocket (fits up to 15.5 × 1.8 as drawn); clamp bore |
+| M11 | NEMA 8: pilot boss diameter and height; shaft diameter and length | 16 (measured) × 1.5; shaft 4 × 10 | Calipers (B5) | Lid motor pocket (16.8 × 1.8 as drawn, about 16.6 across as printed); clamp bore |
 | M12 | NEMA 8: M2 thread depth, two holes | 2.5 | One M2 × 5 screwed in by hand; depth ≈ 5 − gap (B5) | 3.2 or more: use M2 × 5 as they are. Less: file 1 mm off four |
 | M13 | Mirror sheet: thickness; front-surface check | `mirror_t` 3.0 | Calipers. A pencil tip on the coated face touches its own reflection | Mirror clamp and the housing's axis, only if not 3 mm |
 | M14 | Your grating: lines/mm; one row of spots? | 500 (camera tilt 22.0°) | Laser through it onto a wall 1.00 m away (B6). A grid of spots means a crossed grating: unusable | Housing and lid camera tilt; whether to buy the $15.60 film |
@@ -422,7 +422,7 @@ Print the parts in the light path in **black PETG**: it copes with the stepper's
 | Part | File | How to print | Size (mm) | Mass |
 |---|---|---|---|---|
 | Housing | `housing.stl` | Floor (dovetail side) on the bed, camera end up. 0.2 mm layers, 3 perimeters, 20% gyroid, supports only under the camera flange | 38.0 × 48.3 × 129.4 | 37 g |
-| Lid | `lid.stl` | Inner (flat) face on the bed. 0.2 mm layers, 4 perimeters around the motor holes | 125.9 × 47.7 × 4.0 | 13.5 g |
+| Lid | `lid.stl` | Inner (flat) face on the bed. 0.2 mm layers, 4 perimeters around the motor holes | 125.9 × 47.7 × 4.0 | 13.4 g |
 | Slit block | `slit_block.stl` | Back face down so the blade recess prints flat. 0.12 mm layers | 26.5 × 33.2 × 6.8 | 5.1 g |
 | Filter cap | `filter_cap.stl` | Lip face down | 16.7 × 16.7 × 9.5 | 0.7 g |
 | Mirror clamp | `mirror_clamp.stl` | Mirror pad face down. 0.15 mm layers, 100% infill | 25.5 × 17.0 × 15.1 | 1.7 g |

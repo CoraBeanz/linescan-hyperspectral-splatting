@@ -92,7 +92,7 @@ Print the housing, lid and carriers in black PETG. PETG holds up to the stepper'
 | Grating: 15 × 15 mm piece of 500 l/mm film, grooves along X | |
 | Long-pass filter: Edmund #54-652, SCHOTT GG-495, Ø12.5 × 3 mm | listing. The cap's seat takes the ±0.38 mm diameter tolerance |
 | Scan mirror: 20 × 20 mm piece cut from a RUEHALF 100 × 100 × 3 mm front-surface mirror | thickness from the listing |
-| Stepper: StepperOnline 8HS11-0204S, NEMA 8, 1.8°, 0.2 A | size, shaft and holes from the listing; boss and thread depth estimated |
+| Stepper: StepperOnline 8HS11-0204S, NEMA 8, 1.8°, 0.2 A | size, shaft and holes from the listing; boss diameter measured, boss height and thread depth estimated |
 | A3144 hall sensor and a 5 × 1.6 mm magnet, magnetized through its thickness | magnet measured; the sensor's size estimated, see [Measure these first](#measure-these-first) |
 | Hall breakout from [`pcb/`](../pcb/README.md#hall-sensor-breakout), 14 × 12.4 × 0.8 mm, with its 3-wire cable soldered in | outline, holes and lead positions from `pcb/` |
 | Pose camera: Pi NoIR v2 (owned) | Raspberry Pi drawing |
@@ -135,7 +135,7 @@ These numbers came from estimates or listings, not datasheets. Check them when t
 | Lens thread lengths (`obj_thread`, `coll_thread`): rear end to where the barrel widens | 9 mm | where to cut the M12 holders, see [Assembly](#assembly) |
 | M12 holder ear thickness (`h12_ear_t`) | 2 mm | holder screw length: M2 × 5 leaves 3 mm of thread in the carrier |
 | Snap-off blade thickness (`blade_t`) | 0.38 mm | depth of the blade recess in the slit block |
-| Stepper pilot boss (`mot_boss_d`, `mot_boss_h`) | Ø15 × 1.5 mm | the pocket in the lid it sits in; the motor has to sit flat on the pad |
+| Stepper pilot boss (`mot_boss_d`, `mot_boss_h`) | Ø16 (measured) × 1.5 mm | the pocket in the lid it sits in, drawn 0.4 mm bigger a side (`boss_clear`) because printed holes come out about 0.2 mm small; the motor has to sit flat on the pad |
 | Stepper thread depth (`mot_hole_depth`) | 2.5 mm | the M2 × 5 screws reach 3.2 mm into it, so use them as they are only if the holes are that deep; otherwise file 1 mm off four of them (2.2 mm) |
 
 ## Assembly

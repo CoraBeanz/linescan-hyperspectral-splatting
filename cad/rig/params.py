@@ -55,7 +55,7 @@ MOTORS = {
             ("mot_w", 20.3, "body square", "listing"),
             ("mot_len", 28.0, "body length", "listing"),
             ("mot_chamfer", 1.5, "body corner chamfer", "est"),
-            ("mot_boss_d", 15.0, "pilot boss diameter", "est"),
+            ("mot_boss_d", 16.0, "pilot boss diameter (16.0 on the motor in hand)", "measured"),
             ("mot_boss_h", 1.5, "pilot boss height", "est"),
             ("mot_shaft_d", 4.0, "shaft diameter (7 mm D flat at the end)", "listing"),
             ("mot_shaft_len", 10.0, "shaft length past the mounting face", "listing"),
@@ -244,6 +244,8 @@ def rows():
     sec("Printed parts")
     p("wall", 2.5, "mm", "housing wall thickness", "design")
     p("fit", 0.25, "mm", "clearance for sliding fits, per side", "design")
+    p("boss_clear", 0.4, "mm",
+      "lid pocket around the stepper's pilot boss, per side: prints about 0.1 under, leaving 0.3", "design")
     p("carrier_t", 3.0, "mm", "optic carrier plate thickness", "design")
     p("rib_h", 1.6, "mm", "slot rib height", "design")
     p("rib_w", 1.6, "mm", "slot rib width", "design")
