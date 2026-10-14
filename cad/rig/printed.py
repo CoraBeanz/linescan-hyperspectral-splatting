@@ -109,10 +109,11 @@ def shell(doc, parent, P):
     for i, (sx, sy) in enumerate(cam_holes):
         adds.append(b.cyl("cam_standoff%d" % i, "z", (sx * hbx, sy * hby, zw_out - 0.5), 3.0, P.standoff_h + 0.5,
                           cf))
-    # Pi camera v2 holes, relative to its lens centre (local x, local y -> world -Z)
+    # Pi camera v2 holes, relative to its lens centre (local x -> world -X, local y -> world +Z: the board's
+    # ribbon end faces away from the wrist, see vendor.pose_camera)
     pose_holes = ((-10.49, -12.40), (10.49, -12.40), (-10.49, 0.12), (10.49, 0.12))
     for i, (hx, hy) in enumerate(pose_holes):
-        adds.append(b.cyl("pose_standoff%d" % i, "y", (hx, yhi - 0.5, P.z_pose - hy), 2.5, 4.0))
+        adds.append(b.cyl("pose_standoff%d" % i, "y", (-hx, yhi - 0.5, P.z_pose + hy), 2.5, 4.0))
     solid = b.fuse("ribbed", [hollow] + adds)
 
     # --- holes and pockets
@@ -154,7 +155,7 @@ def shell(doc, parent, P):
                           P.insert_m2_d / 2, P.insert_m2_l + 0.1, cf))
     for i, (hx, hy) in enumerate(pose_holes):
         # the standoffs end 3.5 mm proud of the +Y face; inserts go 0.5 mm deeper than they are long
-        cuts.append(b.cyl("pose_insert%d" % i, "y", (hx, yhi + 3.0 - P.insert_m2_l, P.z_pose - hy), P.insert_m2_d / 2,
+        cuts.append(b.cyl("pose_insert%d" % i, "y", (-hx, yhi + 3.0 - P.insert_m2_l, P.z_pose + hy), P.insert_m2_d / 2,
                           P.insert_m2_l + 0.6))
     for i, y in enumerate((yhi + 1, ylo - 1)):
         cuts.append(b.cyl("lid_insert%d" % i, "x", (-xi - 0.1, y, P.z_lid_screw), P.insert_d / 2, P.insert_l + 0.6))

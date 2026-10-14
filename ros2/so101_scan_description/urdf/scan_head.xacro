@@ -73,7 +73,7 @@
                       value="0 ${obj_dy - 2 * obj_dn * cos(mirror_rest)} ${obj_dz - 2 * obj_dn * sin(mirror_rest)}"/>
       <xacro:property name="folded_rpy" value="${2 * mirror_rest + pi} 0 0"/>
       <xacro:property name="pose_camera_xyz" value="${pose_camera_x} ${pose_camera_y} ${pose_camera_z}"/>
-      <xacro:property name="pose_camera_rpy" value="${pose_camera_roll} 0 0"/>
+      <xacro:property name="pose_camera_rpy" value="${pose_camera_roll} ${pose_camera_pitch} ${pose_camera_yaw}"/>
       <xacro:property name="line_half_length" value="${scan_line_half_length}"/>
     </xacro:if>
     <xacro:unless value="${head_calibration_file == ''}">

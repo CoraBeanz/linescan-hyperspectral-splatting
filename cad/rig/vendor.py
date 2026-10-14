@@ -229,11 +229,14 @@ def camera_board(doc, parent, P, frame):
 def pose_camera(doc, parent, P, y_board):
     """Pi NoIR v2 on standoffs on the +Y face, lens looking at the scene.
 
+    The ribbon connector end points away from the wrist (+Z): the other way
+    round, the ribbon would have to run back over the scan window.
+
     Local frame: origin at the lens centre on the PCB underside, +Z out of the
-    lens (world +Y), +Y toward the wrist (world -Z). Hole and connector
-    positions from the RPI-CAM-V2_1 drawing."""
+    lens (world +Y), +Y toward the connector end (world +Z), +X along world -X.
+    Hole and connector positions from the RPI-CAM-V2_1 drawing."""
     f = Frame((0, y_board, P.z_pose))
-    rot = App.Rotation(App.Vector(1, 0, 0), -90)
+    rot = App.Rotation(App.Vector(1, 0, 0), -90).multiply(App.Rotation(App.Vector(0, 0, 1), 180))
     c = container(doc, parent, "HSI_pose_camera", "Pose camera: Pi NoIR v2 (owned)", f, fixed_rot=rot)
     b = Part(doc, c, "posecam")
     x0, y0 = -12.49, -14.40   # board corner relative to the lens centre

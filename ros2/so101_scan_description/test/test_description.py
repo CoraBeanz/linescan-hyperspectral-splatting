@@ -281,3 +281,15 @@ def test_scan_line_is_in_front_of_the_window(robot):
     seen = [0, p["objective_y"] * 1e3 - (st["z_obj"] - st["z_mirror"]), st["z_mirror"]]
     np.testing.assert_allclose(cam[:3, 3] * 1e3, seen, atol=0.05)
     np.testing.assert_allclose(line[:3, 3], cam[:3, 3] + [0, p["scene_distance"], 0], atol=1e-6)
+
+
+def test_pose_camera_ribbon_end_faces_away_from_the_window(robot):
+    """The Pi camera's ribbon connector is on the board's +y end (its optical frame's +y). That end
+    faces +Z, away from the wrist: the other way round the ribbon would run back over the window."""
+    st = json.loads(BUILD_REPORT.read_text())["stations_mm"]
+    pc = robot.fk("pose_camera_optical_frame", {}, base="scan_head_link")
+    np.testing.assert_allclose(pc[:3, 2], [0, 1, 0], atol=1e-6)   # looks out at the scene
+    np.testing.assert_allclose(pc[:3, 1], [0, 0, 1], atol=1e-6)   # connector end away from the wrist
+    # the board's other edge, 14.4 mm from the lens (RPI-CAM-V2 drawing), clears the window's hood
+    # (half its 16 mm window plus 2 mm)
+    assert pc[2, 3] * 1e3 - 14.4 > st["z_mirror"] + 10

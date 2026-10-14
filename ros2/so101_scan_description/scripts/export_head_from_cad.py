@@ -156,7 +156,10 @@ def main():
         ("pose_camera_x", pose_pl.Base.x * mm, "Pi NoIR v2 pose camera board, lens centre on the PCB back"),
         ("pose_camera_y", pose_pl.Base.y * mm, ""),
         ("pose_camera_z", pose_pl.Base.z * mm, ""),
-        ("pose_camera_roll", rpy(pose_pl.Rotation)[0], "board frame: +Z out of the lens, +Y toward the wrist"),
+        ("pose_camera_roll", rpy(pose_pl.Rotation)[0], "board frame: +Z out of the lens, +Y toward its ribbon "
+         "connector (away from the wrist), +X along the head's -X"),
+        ("pose_camera_pitch", rpy(pose_pl.Rotation)[1], ""),
+        ("pose_camera_yaw", rpy(pose_pl.Rotation)[2], ""),
         ("pose_camera_lens", 4.5 * mm, "PCB back to the front of the lens module (RPI-CAM-V2 drawing)"),
         ("head_mass", mass_kg, "mass budget in cad/build_report.json, wrist puck included"),
         ("head_com_x", com[0], "centre of mass in the head frame (build_report.json)"),
