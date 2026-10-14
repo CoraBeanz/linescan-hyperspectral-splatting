@@ -35,9 +35,11 @@
   <!-- Pi NoIR v2 pose camera board, lens centre on the PCB back -->
   <xacro:property name="pose_camera_x" value="0"/>
   <xacro:property name="pose_camera_y" value="0.02172"/>
-  <xacro:property name="pose_camera_z" value="0.05112"/>
-  <!-- board frame: +Z out of the lens, +Y toward the wrist -->
-  <xacro:property name="pose_camera_roll" value="-1.570796"/>
+  <xacro:property name="pose_camera_z" value="0.0634"/>
+  <!-- board frame: +Z out of the lens, +Y toward its ribbon connector (away from the wrist), +X along the head's -X -->
+  <xacro:property name="pose_camera_roll" value="1.570796"/>
+  <xacro:property name="pose_camera_pitch" value="0"/>
+  <xacro:property name="pose_camera_yaw" value="-3.141593"/>
   <!-- PCB back to the front of the lens module (RPI-CAM-V2 drawing) -->
   <xacro:property name="pose_camera_lens" value="0.0045"/>
   <!-- mass budget in cad/build_report.json, wrist puck included -->
@@ -45,7 +47,7 @@
   <!-- centre of mass in the head frame (build_report.json) -->
   <xacro:property name="head_com_x" value="-0.0106"/>
   <xacro:property name="head_com_y" value="-0.0012"/>
-  <xacro:property name="head_com_z" value="0.0559"/>
+  <xacro:property name="head_com_z" value="0.0561"/>
   <!-- inertia of a solid box the head's size (64 x 53 x 136 mm) about the centre of mass -->
   <xacro:property name="head_ixx" value="0.000333"/>
   <xacro:property name="head_iyy" value="0.000354"/>

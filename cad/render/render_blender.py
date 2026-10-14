@@ -4,7 +4,7 @@
     blender -b -P cad/render/render_blender.py -- /tmp/rig_meshes cad/renders [shot ...]
 
 Shots: rig (arm scanning a table), head (outside), head_open (lid and motor
-hidden, showing the optical train). Tested with Blender 4.0.
+hidden, showing the optical train). Tested with Blender 4.0 and 4.2.
 """
 
 import json
@@ -105,9 +105,11 @@ def load(manifest):
                 bpy.ops.mesh.customdata_custom_splitnormals_clear()
             for poly in o.data.polygons:
                 poly.use_smooth = True
-            if hasattr(o.data, "use_auto_smooth"):
+            if hasattr(o.data, "use_auto_smooth"):          # Blender 4.0
                 o.data.use_auto_smooth = True
                 o.data.auto_smooth_angle = math.radians(35)
+            elif hasattr(o.data, "set_sharp_from_angle"):   # 4.1 dropped auto smooth for this
+                o.data.set_sharp_from_angle(angle=math.radians(35))
             o.select_set(False)
             objs.append(o)
     bpy.context.view_layer.update()

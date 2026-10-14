@@ -1079,7 +1079,7 @@ This chapter waits on the measurements and the printed head. The order builds a 
 ### Cameras
 
 1. **Spectrograph camera.** Fit the B0152 outside the end wall on its four standoffs, with the CIL122 reaching in through the 21 mm hole, and fix it with four M2 × 5 into the inserts. Turn the board so the **sensor's long side runs across the slit**: the spectrum is 3.27 mm long and only fits on the 3.68 mm side. Run black tape around the board's edge where it meets the end wall.
-2. **Pose camera.** Fit the Pi NoIR v2 on the four standoffs on the +Y face, next to the scan window, lens facing out, with four M2 × 5.
+2. **Pose camera.** Fit the Pi NoIR v2 on the four standoffs on the +Y face, next to the scan window, lens facing out, with four M2 × 5. Turn it so its **ribbon connector is at the end away from the scan window**. The holes fit either way round, but the other way the ribbon has to run back over the window. Keep the ribbon off the +Y face between the camera and the wrist for the same reason.
 3. **Ribbons.** With the Nano powered off, plug a 100 cm ribbon into each camera: the spectrograph camera on the Nano's first camera port (`/dev/video0`, the calibration kit's default) and the pose camera on the second (`/dev/video1`, the head calibration's default).
 
 The camera end wall is printed at the 22° camera tilt. Each degree of tilt error moves the band about 33 nm, which is why the tilt is printed rather than adjusted.
@@ -2278,7 +2278,7 @@ Find the message or the symptom, then the fix. Messages are quoted as the tools 
 | The board fades in the near-infrared bands | Inkjet ink | A laser printer |
 | Fewer than about 8 line-camera corners per sweep | The board is dim, out of focus, or not under the scan line | Light it to 50 to 90%, check focus and the board's spot |
 | "Check these" names one viewpoint that doesn't fit | The arm slipped or a servo misread there | Check the arm; scan again |
-| "Check these" says the pose camera is mounted another way round | It's fitted rotated | Refit it as the CAD has it, or accept the warning |
+| "Check these" says the pose camera is mounted another way round | It's fitted turned from the CAD, which has its ribbon connector at the end away from the scan window | If its ribbon end faces the window, turn it round and calibrate again. If it already faces away, accept the warning: the calibration measured how the camera really sits |
 | "What changed" shows 10 mm or 10° | A part is loose or seated wrong | Reseat it and scan again |
 | `No head calibration at ...` | The file isn't where the launch looks | Copy it to `~/so101_scan/head_calibration.yaml`, or `head_calibration:=none` |
 

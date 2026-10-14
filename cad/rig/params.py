@@ -156,7 +156,9 @@ def rows():
     p("z_sensor", "=z_cam + f_cam * cos(theta)", "mm", "sensor centre, Z", "design")
     p("y_sensor", "=y_cam - f_cam * sin(theta)", "mm", "sensor centre, Y", "design")
     p("standoff_h", 3.0, "mm", "camera board standoffs above the end wall", "design")
-    p("z_pose", "=z_mirror + 22", "mm", "pose camera lens centre, Z", "design")
+    p("z_pose", "=z_mirror + 34.28", "mm",
+      "pose camera lens centre, Z: the board's ribbon end faces +Z, away from the scan window, which puts the "
+      "lens on the hole row further from the window", "design")
     p("win", 16.0, "mm", "scan window, square", "design")
     p("hood_h", 4.0, "mm", "window hood height", "design")
     p("z_lid_screw", "=z_film - 8", "mm", "lid screws on the side walls, Z", "design")
