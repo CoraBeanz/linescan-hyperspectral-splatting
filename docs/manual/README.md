@@ -2212,7 +2212,7 @@ Find the message or the symptom, then the fix. Messages are quoted as the tools 
 | `Could not open port` or busy | The monitor, another `mirrorctl` or the ROS bridge holds it | Close it or stop the launch |
 | `ERR ENABLE code=driver msg=TMC2209 did not answer on UART: check 12 V, VIO and the PDN_UART wire ...` | 12 V off, no 3.3 V on VIO, the module the wrong way round, or the UART on the wrong pin (on the V1.3 "PDN_UART" is the pin printed RX) | 12 V on, 3.3 V at VIO, orientation, the RX wire; on the controller board JP1 bridged 1-2 |
 | `STATUS` says `drv=noresp` but `DRV` answers | The check ran at boot, before the 12 V | `ENABLE` (it checks again) or `REBOOT`. Power the 12 V first next time |
-| `EV FAULT code=drv_reset` about 0.5 s after every `ENABLE` | A firmware bug: it clears the driver's status flags by writing 0s, and the TMC2209 clears them only when written with 1s, so its power-up flag never clears | Needs the firmware fix (writing `0b111` to `GSTAT` in `firmware/src/main.cpp`); no setting works round it |
+| `EV FAULT code=drv_reset` about 0.5 s after every `ENABLE` | Firmware built before the GSTAT fix: it cleared the driver's status flags by writing 0s, and the TMC2209 clears them only when written with 1s, so its power-up flag never cleared | Pull `main` and flash again; no setting works round it |
 | `EV FAULT code=drv_reset` at another time | The driver lost its 12 V and went back to its power-up settings | Restore the 12 V, then `ENABLE` |
 | `EV FAULT code=drv_noresp` | The driver stopped answering on its UART while enabled, for example the 12 V went off | Restore the 12 V, check the RX wire, `ENABLE` |
 | `EV FAULT code=drv_err` | The driver shut its outputs off: overheating or a short | `DRV` shows `ot`, `s2g` or `s2vs`; fix the cause, `ENABLE` |
@@ -2456,6 +2456,5 @@ Everything in this manual was checked against the code, and the software was run
 
 - The head's collision box is 12.5 mm short at the camera end: use `--clearance 0.025` on new plans ([Safety with the head on](#safety-with-the-head-on)).
 - `move_arm`'s own joint-limit check never runs; the driver's limits still apply.
-- The firmware clears the TMC2209's status flags by writing 0s, but the driver clears them only with 1s. On a real driver its power-up flag will likely never clear, so every `ENABLE` would end in `EV FAULT code=drv_reset` half a second later. The simulated rig doesn't show this.
 
 **Not designed yet:** cable clips and the slack to leave at the wrist; an STL for the relief target; using the pose camera for ordinary scans.

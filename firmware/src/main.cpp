@@ -142,7 +142,7 @@ class Tmc2209 : public sm::Driver {
 
   bool configure(const sm::Config& c) override {
     if (tmc_.version() != 0x21 || tmc_.CRCerror) return false;  // nobody there, or not a TMC2209
-    tmc_.GSTAT(0);                 // clear the reset and error flags
+    tmc_.GSTAT(0b111);             // clear reset, drv_err and uv_cp: write-1-to-clear
     tmc_.begin();                  // PDN_UART is the UART; microsteps come from MRES
     tmc_.I_scale_analog(false);    // current from IRUN/IHOLD, not from the VREF pot
     tmc_.en_spreadCycle(c.stealth == 0);
@@ -174,7 +174,7 @@ class Tmc2209 : public sm::Driver {
   bool read(sm::DriverStatus* s) override {
     s->gstat = tmc_.GSTAT();
     if (tmc_.CRCerror) return false;
-    if (s->gstat != 0) tmc_.GSTAT(0);  // write-1-to-clear
+    if (s->gstat != 0) tmc_.GSTAT(s->gstat);  // write-1-to-clear: clear just the flags read
     s->drv_status = tmc_.DRV_STATUS();
     if (tmc_.CRCerror) return false;
     s->ioin = tmc_.IOIN();
